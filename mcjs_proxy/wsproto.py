@@ -1,7 +1,8 @@
-"""RFC 6455 WebSocket 服务端协议: 握手 + 帧编解码(仅用标准库)。
+"""RFC 6455 WebSocket server side: handshake + frame codec (standard library only).
 
-浏览器端 MC 客户端把 Minecraft 协议的原始字节装在 WebSocket 二进制帧里,
-本模块负责把两者对接起来; 不涉及任何 Minecraft 协议内容。
+Browser-based MC clients wrap the raw Minecraft protocol bytes in WebSocket
+binary frames; this module joins the two together and does not touch any
+Minecraft protocol content.
 """
 
 from __future__ import annotations
@@ -9,6 +10,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import secrets
+
+from .i18n import tr
 
 GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
@@ -22,12 +25,12 @@ OP_PONG = 0xA
 DEFAULT_MAX_PAYLOAD = 16 * 1024 * 1024
 MAX_HEADER_SIZE = 16384
 
-# 内部哨兵: 缓冲区里的数据还不够组成一整帧
+# Internal sentinel: the buffer does not hold a complete frame yet
 _NEED_MORE = object()
 
 
 class ProtocolError(Exception):
-    """协议违例, close_code 是应当回给对端的关闭码。"""
+    """Protocol violation; close_code is the close code that should be sent back to the peer."""
 
     def __init__(self, message: str, close_code: int = 1002):
         super().__init__(message)
@@ -46,21 +49,23 @@ class Frame:
     def is_control(self) -> bool:
         return self.opcode >= 0x8
 
-    def __repr__(self) -> str:  # pragma: no cover - 调试用
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return 'Frame(opcode=0x%x, fin=%s, len=%d)' % (self.opcode, self.fin, len(self.payload))
 
 
 def compute_accept_key(sec_websocket_key: str) -> str:
-    """Sec-WebSocket-Accept = base64(sha1(key + GUID))。"""
+    """Sec-WebSocket-Accept = base64(sha1(key + GUID))."""
     digest = hashlib.sha1((sec_websocket_key.strip() + GUID).encode('ascii')).digest()
     return base64.b64encode(digest).decode('ascii')
 
 
 def decode_base64_text(payload: bytes) -> bytes | None:
-    """把文本帧里的 base64 内容还原成字节, 解不出来返回 None。
+    """Turn the base64 text carried by a text frame back into bytes; None when it cannot be decoded.
 
-    浏览器端客户端的写法并不统一: 有的省略 '=' 补齐, 有的用 URL-safe 字符表(- 和 _),
-    有的会插入换行。这里统一兼容; 结果里出现非法字符时按标准库规则处理。
+    Browser clients are not consistent here: some omit the '=' padding, some
+    use the URL-safe alphabet (- and _), some insert line breaks.  All of
+    those are accepted; invalid characters are handled the same way the
+    standard library handles them.
     """
     text = ''.join(payload.decode('utf-8', 'ignore').split())
     if not text:
@@ -74,7 +79,7 @@ def decode_base64_text(payload: bytes) -> bytes | None:
 
 
 def encode_frame(opcode: int, payload: bytes = b'', fin: bool = True, mask: bool = False) -> bytes:
-    """组帧。服务端 -> 客户端不加掩码; 客户端 -> 服务端必须加掩码。"""
+    """Build a frame. Server -> client frames are not masked; client -> server frames must be."""
     length = len(payload)
     header = bytearray()
     header.append((0x80 if fin else 0x00) | (opcode & 0x0F))
@@ -95,7 +100,7 @@ def encode_frame(opcode: int, payload: bytes = b'', fin: bool = True, mask: bool
 
 
 def apply_mask(data: bytes, mask_key: bytes) -> bytes:
-    """用 4 字节掩码还原数据。大数据用大整数异或, 避免逐字节循环。"""
+    """Undo the 4-byte XOR mask. Large buffers use big-int XOR instead of a per-byte loop."""
     if not data:
         return data
     repeats = (len(data) + 3) // 4
@@ -104,7 +109,7 @@ def apply_mask(data: bytes, mask_key: bytes) -> bytes:
 
 
 class FrameDecoder:
-    """增量式帧解析器: 喂字节, 得到帧列表(分片消息会在结束后合并成单帧)。"""
+    """Incremental frame parser: feed it bytes, get frames back (a fragmented message is merged into a single frame once complete)."""
 
     def __init__(self, max_payload: int = DEFAULT_MAX_PAYLOAD):
         self.max_payload = max_payload
@@ -120,7 +125,7 @@ class FrameDecoder:
             frame = self._next_frame()
             if frame is _NEED_MORE:
                 break
-            if frame is not None:  # 分片中间帧会被消费但不产生帧
+            if frame is not None:  # mid-fragment frames are consumed without producing a frame
                 frames.append(frame)
         return frames
 
@@ -131,12 +136,12 @@ class FrameDecoder:
         first, second = buffer[0], buffer[1]
         fin = bool(first & 0x80)
         if first & 0x70:
-            raise ProtocolError('RSV 位被置位(未协商任何扩展)')
+            raise ProtocolError(tr('wsproto.rsv_set'))
         opcode = first & 0x0F
         masked = bool(second & 0x80)
         length = second & 0x7F
         if opcode >= 0x8 and (not fin or length > 125):
-            raise ProtocolError('控制帧必须不分片且长度不超过 125')
+            raise ProtocolError(tr('wsproto.control_frame_rules'))
 
         offset = 2
         if length == 126:
@@ -150,9 +155,10 @@ class FrameDecoder:
             length = int.from_bytes(buffer[2:10], 'big')
             offset = 10
             if length >> 63:
-                raise ProtocolError('帧长度非法')
+                raise ProtocolError(tr('wsproto.bad_length'))
         if length > self.max_payload:
-            raise ProtocolError('帧长度 %d 超过上限 %d' % (length, self.max_payload))
+            raise ProtocolError(tr('wsproto.length_over_max',
+                                   length=length, limit=self.max_payload))
 
         mask_key = b''
         if masked:
@@ -170,15 +176,15 @@ class FrameDecoder:
         return self._classify(fin, opcode, payload)
 
     def _classify(self, fin: bool, opcode: int, payload: bytes) -> Frame | None:
-        if opcode >= 0x8:  # 控制帧原样透出, 不参与分片状态
+        if opcode >= 0x8:  # control frames are passed through untouched and take no part in fragmentation state
             return Frame(fin, opcode, payload)
         if opcode == OP_CONTINUATION:
             if self._fragment_opcode is None:
-                raise ProtocolError('收到续帧, 但此前没有分片消息')
+                raise ProtocolError(tr('wsproto.unexpected_continuation'))
             self._fragment_parts.append(payload)
             self._fragment_size += len(payload)
             if self._fragment_size > self.max_payload:
-                raise ProtocolError('分片消息超过上限')
+                raise ProtocolError(tr('wsproto.fragment_over_max'))
             if not fin:
                 return None
             data = b''.join(self._fragment_parts)
@@ -187,14 +193,14 @@ class FrameDecoder:
             return Frame(True, start_opcode, data)
         if opcode in (OP_TEXT, OP_BINARY):
             if self._fragment_opcode is not None:
-                raise ProtocolError('上一条分片消息尚未结束')
+                raise ProtocolError(tr('wsproto.frame_after_fragment'))
             if fin:
                 return Frame(True, opcode, payload)
             self._fragment_opcode = opcode
             self._fragment_parts = [payload]
             self._fragment_size = len(payload)
             return None
-        raise ProtocolError('未知 opcode: 0x%x' % opcode)
+        raise ProtocolError(tr('wsproto.unknown_opcode', opcode='0x%x' % opcode))
 
     def _reset_fragments(self) -> None:
         self._fragment_opcode = None
@@ -203,7 +209,7 @@ class FrameDecoder:
 
 
 def close_payload(code: int | None = None, reason: str = '') -> bytes:
-    """生成关闭帧负载。"""
+    """Build a close frame payload."""
     if code is None:
         return b''
     data = code.to_bytes(2, 'big')
@@ -220,7 +226,7 @@ def parse_close_payload(payload: bytes) -> tuple[int, str]:
 
 
 def parse_http_head(data: bytes) -> tuple[str, dict[str, str]]:
-    """解析 HTTP 请求头, 返回 (请求行, 小写键的请求头字典)。"""
+    """Parse an HTTP request head; returns (request line, headers dict with lowercase keys)."""
     text = data.split(b'\r\n\r\n', 1)[0].decode('latin-1')
     lines = text.split('\r\n')
     request_line = lines[0].strip()
@@ -234,9 +240,10 @@ def parse_http_head(data: bytes) -> tuple[str, dict[str, str]]:
 
 
 def handshake_response(sec_websocket_key: str, subprotocol: str | None = None) -> bytes:
-    """生成 101 Switching Protocols 响应。
+    """Build the 101 Switching Protocols response.
 
-    不返回 Sec-WebSocket-Extensions, 浏览器因此不会启用压缩, 帧里就是原始字节。
+    No Sec-WebSocket-Extensions is returned, so the browser will not enable
+    compression and frames keep carrying the raw bytes.
     """
     lines = [
         'HTTP/1.1 101 Switching Protocols',
@@ -261,7 +268,7 @@ def http_response(status: str, body: bytes = b'', content_type: str = 'applicati
 
 
 def first_subprotocol(header_value: str | None) -> str | None:
-    """客户端请求的子协议列表里取第一个(按客户端自己的偏好顺序)。"""
+    """Take the first subprotocol from the client's list (the client's own order of preference)."""
     if not header_value:
         return None
     for item in header_value.split(','):

@@ -1,9 +1,11 @@
-"""纯 Python 生成自签名 X.509 证书(RSA + SHA-256)。
+"""Generate self-signed X.509 certificates in pure Python (RSA + SHA-256).
 
-浏览器只接受 wss://, 而浏览器又不信任自签名证书, 因此本工具在本地
-自动签发一张带 localhost / 127.0.0.1 / ::1 等 SAN 的自签名证书,
-交给用户导入系统信任库。这里不依赖 cryptography 之类的第三方库,
-用标准库就能把证书完整造出来。
+Browsers only accept wss://, and they do not trust self-signed certificates,
+so this tool issues a self-signed certificate with SANs for
+localhost / 127.0.0.1 / ::1 and friends, which the user imports into the
+system trust store.  No third-party libraries such as cryptography are
+needed here -- the standard library is enough to build the whole
+certificate.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import math
 import secrets
 
 from . import der
+from .i18n import tr
 
 OID_RSA_ENCRYPTION = '1.2.840.113549.1.1.1'
 OID_SHA256_WITH_RSA = '1.2.840.113549.1.1.11'
@@ -29,17 +32,17 @@ OID_SUBJECT_KEY_ID = '2.5.29.14'
 OID_AUTHORITY_KEY_ID = '2.5.29.35'
 OID_SERVER_AUTH = '1.3.6.1.5.5.7.3.1'
 
-# DER 前缀: DigestInfo(SHA-256, 空参数) + 摘要占位
+# DER prefix: DigestInfo(SHA-256, no parameters) + digest placeholder
 _SHA256_DIGEST_INFO = bytes.fromhex('3031300d060960864801650304020105000420')
 
-# keyUsage 位(从高位开始): digitalSignature(0) | keyEncipherment(2) | keyCertSign(5) => 0b10100100
+# keyUsage bits (from the MSB): digitalSignature(0) | keyEncipherment(2) | keyCertSign(5) => 0b10100100
 _KEY_USAGE_BITS = (0xA4, 2)
 
 
 def _sha1(data: bytes) -> bytes:
     try:
         return hashlib.sha1(data, usedforsecurity=False).digest()
-    except TypeError:  # 极老的 Python 没有 usedforsecurity 参数
+    except TypeError:  # very old Pythons have no usedforsecurity argument
         return hashlib.sha1(data).digest()
 
 
@@ -56,7 +59,7 @@ _SMALL_PRIMES = _small_primes()
 
 
 def _is_probable_prime(number: int, rounds: int = 24) -> bool:
-    """Miller-Rabin 素性检测。"""
+    """Miller-Rabin primality test."""
     if number < 2:
         return False
     for prime in _SMALL_PRIMES:
@@ -95,9 +98,9 @@ def _generate_prime(bits: int) -> int:
 
 
 def generate_rsa_key(bits: int = 2048, public_exponent: int = 65537) -> dict:
-    """生成 RSA 私钥(返回各分量, 私钥本身不会离开本进程)。"""
+    """Generate an RSA private key (returns the components; the key itself never leaves this process)."""
     if bits < 1024 or bits % 2:
-        raise ValueError('RSA 密钥长度必须是 >=1024 的偶数')
+        raise ValueError(tr('x509.bad_key_bits'))
     while True:
         p = _generate_prime(bits // 2)
         q = _generate_prime(bits - bits // 2)
@@ -110,7 +113,7 @@ def generate_rsa_key(bits: int = 2048, public_exponent: int = 65537) -> dict:
         if math.gcd(public_exponent, phi) != 1:
             continue
         d = pow(public_exponent, -1, phi)
-        if d.bit_length() < bits // 2:  # 保证私钥指数足够长
+        if d.bit_length() < bits // 2:  # keep the private exponent long enough
             continue
         if p < q:
             p, q = q, p
@@ -127,13 +130,13 @@ def public_key_der(key: dict) -> bytes:
 
 
 def subject_public_key_info(key: dict) -> bytes:
-    """SubjectPublicKeyInfo (X.509 中使用的公钥结构)。"""
+    """SubjectPublicKeyInfo (the public key structure used inside X.509)."""
     algorithm = der.sequence(der.oid(OID_RSA_ENCRYPTION), der.null())
     return der.sequence(algorithm, der.bit_string(public_key_der(key), 0))
 
 
 def private_key_der(key: dict) -> bytes:
-    """PKCS#1 RSAPrivateKey。"""
+    """PKCS#1 RSAPrivateKey."""
     return der.sequence(
         der.integer(0), der.integer(key['n']), der.integer(key['e']), der.integer(key['d']),
         der.integer(key['p']), der.integer(key['q']), der.integer(key['dp']),
@@ -142,11 +145,11 @@ def private_key_der(key: dict) -> bytes:
 
 
 def sign_sha256(key: dict, data: bytes) -> bytes:
-    """RSASSA-PKCS1-v1_5 签名(用于给证书自签名)。"""
+    """RSASSA-PKCS1-v1_5 signature (used to self-sign the certificate)."""
     digest_info = _SHA256_DIGEST_INFO + hashlib.sha256(data).digest()
     size = (key['bits'] + 7) // 8
     if len(digest_info) + 11 > size:
-        raise ValueError('RSA 密钥过小, 无法完成签名')
+        raise ValueError(tr('x509.key_too_small'))
     block = b'\x00\x01' + b'\xff' * (size - len(digest_info) - 3) + b'\x00' + digest_info
     signature = pow(int.from_bytes(block, 'big'), key['d'], key['n'])
     return signature.to_bytes(size, 'big')
@@ -164,7 +167,7 @@ def pem_to_der(pem: str) -> bytes:
 
 
 def _general_name(value: str) -> bytes:
-    """GeneralName: IP 地址用 [7] IMPLICIT OCTET STRING, 域名用 [2] IMPLICIT IA5String。"""
+    """GeneralName: IP addresses use [7] IMPLICIT OCTET STRING, domain names use [2] IMPLICIT IA5String."""
     text = value.strip()
     try:
         address = ipaddress.ip_address(text)
@@ -225,7 +228,7 @@ def _build_certificate_body(key: dict, common_name: str, organization: str | Non
         der.context(0, der.integer(2), constructed=True),   # version v3
         der.integer(bytes(serial)),
         _signature_algorithm(),
-        name,                                                 # issuer(自签名, 与 subject 相同)
+        name,                                                 # issuer (self-signed, same as subject)
         der.sequence(der.utc_time(not_before), der.utc_time(not_after)),
         name,                                                 # subject
         subject_public_key_info(key),
@@ -238,7 +241,7 @@ def create_self_signed_certificate(common_name: str = 'localhost',
                                    days: int = 3650,
                                    key_bits: int = 2048,
                                    organization: str = 'MCJS Protocol Bridge') -> dict:
-    """生成自签名证书, 返回 PEM 文本与原始 DER。"""
+    """Generate a self-signed certificate; returns the PEM text and the raw DER."""
     names = list(alt_names) if alt_names else ['localhost', '127.0.0.1', '::1']
     if common_name and common_name not in names:
         names.insert(0, common_name)

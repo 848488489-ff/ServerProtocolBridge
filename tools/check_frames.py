@@ -1,20 +1,23 @@
-"""像真正的 EaglercraftX 客户端那样读代理发回来的数据, 校验"一个帧 = 一个原版包"。
+"""Read proxy return data the way a real EaglercraftX client does, to verify "one frame = one vanilla packet".
 
-用法:
+Usage:
     py -3.14 -X utf8 tools\\check_frames.py
     py -3.14 -X utf8 tools\\check_frames.py --url wss://127.0.0.1:1000 --seconds 20
 
-为什么需要它: 浏览器端客户端读 WebSocket 帧时是**直接拿帧的开头当包 id** 的 —— 帧里
-既没有原版的 [VarInt 包长] 前缀, 也没有压缩。所以代理必须"一个包发一个帧, 帧里就是
-裸包"。本工具按这个规则严格校验回程的每一个帧:
+Why this tool exists: when the browser-side client reads WebSocket frames it takes the **first
+byte of the frame as the packet id directly** -- frames carry neither the vanilla [VarInt packet
+length] prefix nor compression. The proxy must therefore "send one packet per frame, and the frame
+contains the bare packet". This tool strictly validates every returning frame against that rule:
 
-* 包 id 必须是 1.8 客户端方向的合法 id;
-* 包内容要被正好解析完(不多不少);
-* 游戏阶段出现 Set Compression 直接算错(客户端根本不支持压缩)。
+* the packet id must be a valid id for the 1.8 clientbound direction;
+* the packet body must be consumed exactly (no bytes left over, none missing);
+* a Set Compression during the play phase counts as an immediate failure (the client does not
+  support compression at all).
 
-只要出现"未知包 id"或"结构对不上", 就说明封帧又错了 —— 客户端会卡在加载界面。
+Any "unknown packet id" or "structure mismatch" means framing is broken again -- the client will
+hang on the loading screen.
 
-退出码: 0 = 全部合法; 1 = 发现可疑数据。
+Exit code: 0 = everything valid; 1 = suspicious data found.
 """
 
 from __future__ import annotations
@@ -39,10 +42,10 @@ from mcjs_proxy import eagler, vanilla, wsproto       # noqa: E402
 from mcjs_proxy.config import Config                   # noqa: E402
 
 
-# ---------------------------------------------------------------- 数据读取
+# ---------------------------------------------------------------- data reader
 
 class Reader:
-    """按 1.8 的数据类型读一个包的内容, 读过头就报错。"""
+    """Read a packet body using the 1.8 data types; reading past the end is an error."""
 
     def __init__(self, data: bytes):
         self.data = data
@@ -53,7 +56,7 @@ class Reader:
 
     def take(self, size: int) -> bytes:
         if self.pos + size > len(self.data):
-            raise ValueError('读到第 %d 字节就没了(还差 %d)'
+            raise ValueError('read past the end at byte %d (missing %d)'
                              % (self.pos, self.pos + size - len(self.data)))
         chunk = self.data[self.pos:self.pos + size]
         self.pos += size
@@ -100,8 +103,8 @@ class Reader:
         return self.take(self.left())
 
 
-# 客户端方向 (1.8.8) 的包 id -> (名字, 严格解析函数)
-# 解析函数读完后必须刚好读完整个帧, 否则说明封帧错了
+# clientbound (1.8.8) packet id -> (name, strict parser function)
+# The parser must consume exactly the whole frame; any leftover bytes mean the framing is wrong
 PARSERS = {
     0x00: ('KeepAlive', lambda r: r.varint()),
     0x01: ('JoinGame', lambda r: (r.i32(), r.u8(), r.i8(), r.u8(), r.u8(),
@@ -165,7 +168,7 @@ PARSERS = {
     0x48: ('ResourcePackSend', lambda r: (r.string(), r.string())),
 }
 
-# id 合法但结构太啰嗦(要解析 NBT / 元数据), 这里只检查 id 不检查内容
+# valid ids whose structure is too verbose to parse here (NBT / metadata); only the id is checked
 LOOSE_IDS = {
     0x04: 'EntityEquipment', 0x0A: 'UseBed', 0x0C: 'SpawnPlayer',
     0x0E: 'SpawnObject', 0x0F: 'SpawnMob', 0x10: 'SpawnPainting',
@@ -183,7 +186,7 @@ def _chunk_data(r: Reader):
     chunk_x, chunk_z, full = r.i32(), r.i32(), r.boolean()
     size = r.varint()
     if size < 0 or size > r.left():
-        raise ValueError('ChunkData 声明 %d 字节, 实际只剩 %d' % (size, r.left()))
+        raise ValueError('ChunkData declares %d bytes but only %d remain' % (size, r.left()))
     r.take(size)
 
 
@@ -195,7 +198,7 @@ def _map_chunk_bulk(r: Reader):
     for _ in range(count):
         size = r.varint()
         if size < 0 or size > r.left():
-            raise ValueError('MapChunkBulk 声明 %d 字节, 实际只剩 %d' % (size, r.left()))
+            raise ValueError('MapChunkBulk declares %d bytes but only %d remain' % (size, r.left()))
         r.take(size)
 
 
@@ -203,7 +206,7 @@ def _explosion(r: Reader):
     r.f32(), r.f32(), r.f32(), r.f32()
     count = r.i32()
     if count < 0 or count * 3 > r.left() + 12:
-        raise ValueError('Explosion 声明 %d 个方块, 剩下只有 %d 字节' % (count, r.left()))
+        raise ValueError('Explosion declares %d blocks but only %d bytes remain' % (count, r.left()))
     for _ in range(count):
         r.i8(), r.i8(), r.i8()
     r.f32(), r.f32(), r.f32()
@@ -230,7 +233,7 @@ def _player_list_item(r: Reader):
     action = r.varint()
     for _ in range(r.varint()):
         r.uuid()
-        if action == 0:                      # 加人: 名字 + 属性列表(皮肤签名很占地方)
+        if action == 0:                      # add player: name + property list (skin signatures take a lot of space)
             r.string()
             for _ in range(r.varint()):
                 r.string(), r.string()
@@ -249,8 +252,8 @@ def _player_list_item(r: Reader):
 def _scoreboard_objective(r: Reader):
     r.string()
     mode = r.u8()
-    if mode != 1:                            # 1 = 删除, 没有后面两个字段
-        r.string(), r.string()               # 显示名 + 类型(integer/hearts)
+    if mode != 1:                            # 1 = remove, no display name / type fields follow
+        r.string(), r.string()               # display name + type (integer/hearts)
 
 
 def _combat_event(r: Reader):
@@ -264,37 +267,38 @@ def _combat_event(r: Reader):
 
 
 def check_frame(frame: bytes) -> tuple[str, str]:
-    """校验一个帧; 返回 (结果, 说明)。结果: ok / loose / bad。"""
+    """Validate one frame; return (result, detail). result: ok / loose / bad."""
     if not frame:
-        return 'bad', '空帧'
+        return 'bad', 'empty frame'
     try:
         packet_id, at = vanilla.read_varint(frame, 0)
     except vanilla.ProtocolError as exc:
-        return 'bad', '开头不是合法的包 id: %s' % exc
+        return 'bad', 'frame does not start with a valid packet id: %s' % exc
     if packet_id > PLAY_MAX_ID:
-        return 'bad', '包 id 0x%02x 超出 1.8 游戏阶段范围(最大 0x49), 说明帧里带了长度前缀' % packet_id
+        return 'bad', ('packet id 0x%02x is beyond the 1.8 play range (max 0x49), '
+                       'so the frame carries a length prefix' % packet_id)
     body = frame[at:]
     if packet_id in LOOSE_IDS:
         return 'loose', LOOSE_IDS[packet_id]
     entry = PARSERS.get(packet_id)
     if entry is None:
-        return 'bad', '包 id 0x%02x 在 1.8 客户端方向不存在' % packet_id
+        return 'bad', 'packet id 0x%02x does not exist in the 1.8 clientbound direction' % packet_id
     name, parse = entry
     reader = Reader(body)
     try:
         parse(reader)
     except Exception as exc:
-        return 'bad', '%s 结构对不上: %s' % (name, exc)
+        return 'bad', '%s structure mismatch: %s' % (name, exc)
     if reader.left() != 0:
-        return 'bad', ('%s 读完还剩 %d 字节(帧共 %d 字节): %s'
+        return 'bad', ('%s parsed with %d bytes left (frame is %d bytes): %s'
                        % (name, reader.left(), len(frame), reader.rest()[:16].hex(' ')))
     return 'ok', name
 
 
-# ---------------------------------------------------------------- WebSocket 客户端
+# ---------------------------------------------------------------- minimal WebSocket client
 
 class MiniWs:
-    """够用的 WebSocket 客户端(带掩码, 读服务端帧)。"""
+    """Just enough WebSocket client (masks outgoing frames, reads server frames)."""
 
     def __init__(self, url: str, timeout: float = 10.0):
         parsed = urlparse(url)
@@ -321,11 +325,11 @@ class MiniWs:
         while b'\r\n\r\n' not in head:
             chunk = sock.recv(4096)
             if not chunk:
-                raise RuntimeError('WebSocket 握手时连接被关闭')
+                raise RuntimeError('connection closed during the WebSocket handshake')
             head += chunk
         first_line = head.split(b'\r\n', 1)[0].decode('latin-1')
         if '101' not in first_line:
-            raise RuntimeError('WebSocket 握手失败: %s' % first_line)
+            raise RuntimeError('WebSocket handshake failed: %s' % first_line)
         self.sock = sock
         self.decoder = wsproto.FrameDecoder()
         self.inbox: list[wsproto.Frame] = []
@@ -377,17 +381,17 @@ class MiniWs:
             pass
 
 
-# ---------------------------------------------------------------- 客户端握手包
+# ---------------------------------------------------------------- client handshake packets
 
 def client_version_packet(username: str) -> bytes:
     out = bytearray([eagler.PROTOCOL_CLIENT_VERSION, 0x02])
-    out += (3).to_bytes(2, 'big')                  # 支持 3 个握手协议
+    out += (3).to_bytes(2, 'big')                  # 3 handshake protocols supported
     for item in (3, 4, 5):
         out += item.to_bytes(2, 'big')
     out += (1).to_bytes(2, 'big') + (47).to_bytes(2, 'big')
     for text in ('EaglercraftX', 'u53'):
         out += bytes([len(text)]) + text.encode('ascii')
-    out.append(0)                                  # 不带密码
+    out.append(0)                                  # no password
     out += bytes([len(username)]) + username.encode('ascii')
     return bytes(out)
 
@@ -396,9 +400,9 @@ def request_login_packet(username: str) -> bytes:
     out = bytearray([eagler.PROTOCOL_CLIENT_REQUEST_LOGIN])
     for field in (username.encode('ascii'), b'default', b''):
         out += bytes([len(field)]) + field
-    out += bytes([0, 0])                           # 不用 cookie
+    out += bytes([0, 0])                           # no cookie
     out += eagler._varint(0)                       # standardCaps
-    out.append(0)                                  # extCaps 数量
+    out.append(0)                                  # extCaps count
     return bytes(out)
 
 
@@ -410,7 +414,7 @@ def client_settings() -> bytes:
     locale = b'zh_CN'
     return (vanilla.write_varint(0x15)
             + vanilla.write_varint(len(locale)) + locale
-            + bytes([8, 0, 1, 0x7F]))              # 视距 / 聊天 / 颜色 / 皮肤部位
+            + bytes([8, 0, 1, 0x7F]))              # view distance / chat / colors / skin parts
 
 
 def brand_plugin_message(brand: str = 'EaglercraftX') -> bytes:
@@ -420,7 +424,7 @@ def brand_plugin_message(brand: str = 'EaglercraftX') -> bytes:
             + vanilla.write_varint(len(brand)) + brand.encode('ascii'))
 
 
-# ---------------------------------------------------------------- 主流程
+# ---------------------------------------------------------------- main flow
 
 def default_url() -> str:
     try:
@@ -435,62 +439,62 @@ def default_url() -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='校验代理回程数据是不是"一个帧一个原版包"')
-    parser.add_argument('--url', default=None, help='代理监听地址(默认读 config.json)')
-    parser.add_argument('--seconds', type=float, default=20.0, help='收多久(默认 20 秒)')
-    parser.add_argument('--username', default='ProxyCheck', help='用哪个名字登录')
-    parser.add_argument('--no-play', action='store_true', help='不模拟客户端发游戏包')
+    parser = argparse.ArgumentParser(description='verify that proxy return data is "one frame per vanilla packet"')
+    parser.add_argument('--url', default=None, help='proxy listen address (default: read from config.json)')
+    parser.add_argument('--seconds', type=float, default=20.0, help='how long to capture (default 20 s)')
+    parser.add_argument('--username', default='ProxyCheck', help='login name to use')
+    parser.add_argument('--no-play', action='store_true', help='do not send play packets like a client')
     args = parser.parse_args()
 
     url = args.url or default_url()
-    print('连接 %s (用名字 %s)' % (url, args.username))
+    print('connecting to %s (username %s)' % (url, args.username))
     client = None
     last_error: Exception | None = None
     deadline = time.time() + 10.0
     while client is None and time.time() < deadline:
         try:
             client = MiniWs(url)
-        except Exception as exc:          # 代理可能刚启动, 稍微等一下再试
+        except Exception as exc:          # the proxy may have just started, retry for a bit
             last_error = exc
             time.sleep(0.5)
     if client is None:
-        print('连不上代理: %s' % last_error)
-        print('(确认代理已经在运行, 而且地址/端口对得上)')
+        print('cannot reach the proxy: %s' % last_error)
+        print('(make sure the proxy is running and the address/port match)')
         return 1
 
     try:
         client.send(client_version_packet(args.username))
         frame = client.recv(8.0)
         if frame is None:
-            print('没等到服务端版本包')
+            print('no server version packet received')
             return 1
         if frame[0] != eagler.PROTOCOL_SERVER_VERSION:
-            print('第一个回包不是服务端版本包(0x%02x)' % frame[0])
+            print('first response is not a server version packet (0x%02x)' % frame[0])
             return 1
         protocol = int.from_bytes(frame[1:3], 'big')
         game = int.from_bytes(frame[3:5], 'big')
-        print('服务端版本包: 握手协议 v%d / 游戏协议 %d' % (protocol, game))
+        print('server version packet: handshake v%d / game protocol %d' % (protocol, game))
 
         client.send(request_login_packet(args.username))
         frame = client.recv(10.0)
         if frame is None:
-            print('没等到允许登录包')
+            print('no allow-login packet received')
             return 1
         if frame[0] == eagler.PROTOCOL_SERVER_DENY_LOGIN:
             length = int.from_bytes(frame[1:3], 'big')
-            print('服务器拒绝登录: %s' % frame[3:3 + length].decode('utf-8', 'replace'))
+            print('server denied login: %s' % frame[3:3 + length].decode('utf-8', 'replace'))
             return 1
         if frame[0] != eagler.PROTOCOL_SERVER_ALLOW_LOGIN:
-            print('第二个回包不是允许登录包(0x%02x)' % frame[0])
+            print('second response is not an allow-login packet (0x%02x)' % frame[0])
             return 1
-        print('允许登录')
+        print('login allowed')
 
         client.send(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
         frame = client.recv(10.0)
         if frame is None or frame[0] != eagler.PROTOCOL_SERVER_FINISH_LOGIN:
-            print('没等到完成登录包')
+            print('no finish-login packet received')
             return 1
-        print('完成登录, 开始校验游戏数据(一个帧必须是一个完整的 1.8 包)\n')
+        print('login finished, validating play data (one frame must be one complete 1.8 packet)\n')
 
         sent_play = False
         bad: list[str] = []
@@ -505,7 +509,7 @@ def main() -> int:
             result, detail = check_frame(frame)
             if result == 'bad':
                 if len(bad) < 8:
-                    bad.append('%s | 帧内容: %s' % (detail, frame[:24].hex(' ')))
+                    bad.append('%s | frame bytes: %s' % (detail, frame[:24].hex(' ')))
                 continue
             if result == 'loose':
                 loose_count += 1
@@ -523,26 +527,27 @@ def main() -> int:
                 client.send(brand_plugin_message())
                 sent_play = True
 
-        print('包统计(前 12 个): %s' % ', '.join(first_names))
-        print('严格校验通过 %d 个, 只查 id %d 个, 可疑 %d 个'
+        print('packet sequence (first 12): %s' % ', '.join(first_names))
+        print('strictly valid %d, id-only %d, suspicious %d'
               % (ok_count, loose_count, len(bad)))
-        print('各包数量: %s' % ', '.join('%s×%d' % (name, count)
-                                        for name, count in names.most_common(20)))
+        print('per-packet counts: %s' % ', '.join('%s x %d' % (name, count)
+                                                  for name, count in names.most_common(20)))
         if 'SetCompression' in names:
-            print('!! 游戏阶段出现了 Set Compression, 客户端不支持压缩, 这是错的')
+            print('!! Set Compression appeared during the play phase; the client does not support compression, this is wrong')
         if bad:
-            print('\n可疑帧:')
+            print('\nsuspicious frames:')
             for line in bad:
                 print('  - %s' % line)
         if client.closed is not None:
             code, reason = client.closed
-            print('\n连接被关闭: code=%d %s' % (code, reason))
+            print('\nconnection closed: code=%d %s' % (code, reason))
         if ok_count == 0:
-            print('\n一个包都没收到 —— 目标服务器可能没发游戏数据, 或者代理还没进游戏阶段')
+            print('\nno packets received at all -- the target server may not be sending play data, '
+                  'or the proxy has not reached the play phase yet')
         if bad or 'SetCompression' in names:
-            print('\n结论: 封帧仍然有问题(客户端会卡在加载界面)')
+            print('\nverdict: framing is still broken (the client will hang on the loading screen)')
             return 1
-        print('\n结论: 回程数据都是"一个帧一个裸包", 客户端能正常解析')
+        print('\nverdict: all return data is "one frame, one bare packet"; the client can parse it')
         return 0
     finally:
         client.close()

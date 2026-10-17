@@ -1,11 +1,14 @@
-"""极简 DER(ASN.1 Distinguished Encoding Rules) 编码器。
+"""A minimal DER (ASN.1 Distinguished Encoding Rules) encoder.
 
-只包含生成 X.509 证书所需要的结构, 不依赖任何第三方库。
+Only the structures needed to build an X.509 certificate are implemented,
+with no third-party dependencies.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+
+from .i18n import tr
 
 TAG_BOOLEAN = 0x01
 TAG_INTEGER = 0x02
@@ -23,7 +26,7 @@ TAG_SET = 0x31
 
 
 def encode_length(length: int) -> bytes:
-    """DER 长度: 短格式(<128) 或长格式(首字节高位 1 + 字节数 + 大端字节)。"""
+    """DER length: short form (< 128) or long form (first byte with the high bit set, then the big-endian bytes)."""
     if length < 0x80:
         return bytes((length,))
     raw = length.to_bytes((length.bit_length() + 7) // 8, 'big')
@@ -31,7 +34,7 @@ def encode_length(length: int) -> bytes:
 
 
 def tlv(tag: int, value: bytes) -> bytes:
-    """构造一个 TLV: 标签 + 长度 + 内容。"""
+    """Build one TLV: tag + length + contents."""
     return bytes((tag,)) + encode_length(len(value)) + value
 
 
@@ -40,12 +43,12 @@ def boolean(value: bool) -> bytes:
 
 
 def integer(value: int | bytes) -> bytes:
-    """INTEGER。整数按最短形式编码并保证是正数(最高位不是 1 时不补 0)。"""
+    """INTEGER. Encoded in the shortest form that stays positive (a leading 0 byte is added only when the top bit would otherwise make it negative)."""
     if isinstance(value, int):
         if value == 0:
             raw = b'\x00'
         else:
-            # 多留一个字节, 保证最高位为 0 时不会被误认为负数
+            # leave room for an extra byte so a value with the top bit set cannot be read as negative
             raw = value.to_bytes((value.bit_length() + 8) // 8, 'big')
     else:
         raw = bytes(value).lstrip(b'\x00') or b'\x00'
@@ -55,10 +58,10 @@ def integer(value: int | bytes) -> bytes:
 
 
 def oid(dotted: str) -> bytes:
-    """OBJECT IDENTIFIER, 例如 '1.2.840.113549.1.1.11'。"""
+    """OBJECT IDENTIFIER, e.g. '1.2.840.113549.1.1.11'."""
     parts = [int(p) for p in dotted.split('.')]
     if len(parts) < 2:
-        raise ValueError('非法的 OID: %s' % dotted)
+        raise ValueError(tr('der.bad_oid', oid=dotted))
     data = bytearray([parts[0] * 40 + parts[1]])
     for value in parts[2:]:
         chunk = [value & 0x7F]
@@ -71,7 +74,7 @@ def oid(dotted: str) -> bytes:
 
 
 def bit_string(data: bytes, unused_bits: int = 0) -> bytes:
-    """BIT STRING, unused_bits 为末尾未使用位数。"""
+    """BIT STRING; unused_bits is the number of unused trailing bits."""
     return tlv(TAG_BIT_STRING, bytes((unused_bits,)) + data)
 
 
@@ -104,7 +107,7 @@ def set_of(*items: bytes) -> bytes:
 
 
 def context(number: int, data: bytes, constructed: bool = True) -> bytes:
-    """上下文标签 [n]: 构造类型(EXPLICIT) 或基本类型(IMPLICIT)。"""
+    """Context-specific tag [n]: constructed (EXPLICIT) or primitive (IMPLICIT)."""
     return tlv((0xA0 if constructed else 0x80) | number, data)
 
 
@@ -115,7 +118,7 @@ def generalized_time(value: dt.datetime) -> bytes:
 
 
 def utc_time(value: dt.datetime) -> bytes:
-    """1950~2049 年用 UTCTime, 其余年份用 GeneralizedTime。"""
+    """UTCTime for the years 1950-2049, GeneralizedTime otherwise."""
     if 1950 <= value.year < 2050:
         text = '%02d%02d%02d%02d%02d%02dZ' % (
             value.year % 100, value.month, value.day, value.hour, value.minute, value.second)

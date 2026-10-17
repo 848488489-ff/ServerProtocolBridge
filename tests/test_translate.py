@@ -1,4 +1,5 @@
-"""协议翻译层的测试: 原版封包编解码 / EaglercraftX 握手 / 状态机 / 端到端。
+"""Tests for the protocol translation layer: vanilla packet codec / EaglercraftX
+handshake / state machine / end-to-end.
 
     python -m unittest discover -s tests -v
 """
@@ -16,20 +17,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mcjs_proxy import crypto, eagler, vanilla, x509  # noqa: E402
+from mcjs_proxy import crypto, eagler, vanilla, wsproto, x509  # noqa: E402
 from mcjs_proxy.config import Config  # noqa: E402
+from mcjs_proxy.i18n import tr  # noqa: E402
 from mcjs_proxy.logger import NullLogger  # noqa: E402
 from mcjs_proxy.proxy import ProxyServer  # noqa: E402
-from mcjs_proxy.translator import EaglerTranslator, PREFIX  # noqa: E402
+from mcjs_proxy.translator import EaglerTranslator  # noqa: E402
 from test_all import WsClient, connect_ws, free_port  # noqa: E402
 
-# MCJS 实测发出的首个数据包(37 字节), 用来当回归样本
+# First data packet observed from a real MCJS client (37 bytes), kept as a regression sample
 REAL_FIRST_PACKET = bytes.fromhex(
     '010200030003000400050001002f0c') + b'EaglercraftX' + bytes.fromhex('03753533') + bytes.fromhex(
     '00') + bytes.fromhex('04') + b'nopp'
 
 
-# ---------------------------------------------------------------- 构造握手包
+# ---------------------------------------------------------------- Building handshake packets
 
 
 def build_client_version(handshake_protocols=(3, 4, 5), mc_protocols=(47,),
@@ -60,7 +62,7 @@ def build_request_login(username='Tester', server='wss://127.0.0.1:1000',
         out += bytes([len(data)]) + data
     if version >= 5:
         out += eagler._varint(caps)
-        for _ in range(bin(caps).count('1')):     # 每个支持的能力位后面跟一个版本号
+        for _ in range(bin(caps).count('1')):     # every supported capability bit is followed by a version number
             out += eagler._varint(1)
         out.append(0)
     return bytes(out)
@@ -87,23 +89,23 @@ def read_eagler_string(data: bytes, pos: int):
 
 
 def unframed(frame: bytes) -> bytes:
-    """去掉长度前缀, 取出"包 id + 内容"(即 Packet.payload)。"""
+    """Strip the length prefix, yielding "packet id + body" (i.e. Packet.payload)."""
     _, pos = vanilla.read_varint(frame, 0)
     return frame[pos:]
 
 
 def rsa_decrypt(key: dict, data: bytes) -> bytes:
-    """测试用: 用私钥解开 PKCS#1 v1.5 密文, 取出明文。"""
+    """Test helper: decrypt a PKCS#1 v1.5 ciphertext with the private key."""
     size = (key['n'].bit_length() + 7) // 8
     block = pow(int.from_bytes(data, 'big'), key['d'], key['n']).to_bytes(size, 'big')
     if block[:2] != b'\x00\x02':
-        raise AssertionError('PKCS#1 v1.5 填充头不对: %s' % block[:2].hex())
+        raise AssertionError('bad PKCS#1 v1.5 padding header: %s' % block[:2].hex())
     return block[block.index(b'\x00', 2) + 1:]
 
 
 def build_encryption_request(key: dict, token=b'\x11\x22\x33\x44',
                              server_id='serverid') -> bytes:
-    """按原版格式拼一个加密请求包。"""
+    """Build an encryption request packet in vanilla wire format."""
     spki = x509.subject_public_key_info(key)
     body = (vanilla.write_varint(len(server_id)) + server_id.encode()
             + vanilla.write_varint(len(spki)) + spki
@@ -112,7 +114,7 @@ def build_encryption_request(key: dict, token=b'\x11\x22\x33\x44',
 
 
 class FakeVanillaServer:
-    """一个说原版 1.8 协议的假服务器。"""
+    """A fake server that speaks the vanilla 1.8 protocol."""
 
     def __init__(self, threshold=None, encryption=False, kick=None,
                  play_packets=(), greet_delay=0.0):
@@ -183,8 +185,9 @@ class FakeVanillaServer:
                                       vanilla.write_varint(7) + b'serverid'))
             return
         if self.threshold:
-            # 真实服务器常常把握手阶段剩下的包塞进同一个 TCP 段, 一起发:
-            # Set Compression 之后的包必须按新阈值解析
+            # Real servers often squeeze the remaining handshake packets into one
+            # TCP segment; packets after Set Compression must be parsed with the
+            # new threshold already active.
             head = vanilla.pack(vanilla.LOGIN_SET_COMPRESSION, vanilla.write_varint(self.threshold))
         else:
             head = b''
@@ -200,7 +203,8 @@ class FakeVanillaServer:
         self._conn.sendall(vanilla.Encoder(self.threshold or 0).frame(payload))
 
     def read_packets(self, count: int, timeout: float = 5.0):
-        """按协商好的压缩规则读 count 个包(不管数量, 读满即返回)。"""
+        """Read count packets under the negotiated compression rules (returns
+        as soon as that many have arrived, regardless of TCP chunking)."""
         assert self._conn is not None
         self._conn.settimeout(timeout)
         decoder = vanilla.Decoder(self.threshold or 0)
@@ -230,7 +234,7 @@ class FakeVanillaServer:
                 pass
 
 
-# ---------------------------------------------------------------- 封包编解码
+# ---------------------------------------------------------------- Packet codec
 
 
 class VanillaCodecTests(unittest.TestCase):
@@ -264,7 +268,7 @@ class VanillaCodecTests(unittest.TestCase):
         self.assertEqual(len(packets), 2)
         self.assertEqual(packets[0].payload, small)
         self.assertEqual(packets[1].payload, big)
-        # 小包不压缩(标记 0), 大包压缩(标记是未压缩长度)
+        # small packets stay uncompressed (marker 0); big ones get compressed (marker = uncompressed length)
         small_frame = encoder.frame(small)
         _, pos = vanilla.read_varint(small_frame, 0)
         marker, _ = vanilla.read_varint(small_frame, pos)
@@ -277,10 +281,10 @@ class VanillaCodecTests(unittest.TestCase):
     def test_garbage_raises(self):
         decoder = vanilla.Decoder(0)
         with self.assertRaises(vanilla.ProtocolError):
-            decoder.feed(vanilla.write_varint(0))       # 空包明显不合法
+            decoder.feed(vanilla.write_varint(0))       # an empty packet is clearly invalid
 
 
-# ---------------------------------------------------------------- 握手协议
+# ---------------------------------------------------------------- Handshake protocol
 
 
 class EaglerProtocolTests(unittest.TestCase):
@@ -313,9 +317,9 @@ class EaglerProtocolTests(unittest.TestCase):
         self.assertEqual(v3[0], eagler.PROTOCOL_SERVER_VERSION)
         self.assertEqual(int.from_bytes(v3[1:3], 'big'), 3)
         self.assertEqual(int.from_bytes(v3[3:5], 'big'), 47)
-        self.assertEqual(v3[-3:], b'\x00\x00\x00')      # authMethod + salt 长度
+        self.assertEqual(v3[-3:], b'\x00\x00\x00')      # authMethod + salt length
         v5 = eagler.pack_server_version(5, 47, 'MCJS-Proxy', '1.0')
-        self.assertEqual(v5[-4:], b'\x00\x00\x00\x00')  # 多一个 nicknameSelection
+        self.assertEqual(v5[-4:], b'\x00\x00\x00\x00')  # one extra nicknameSelection
 
     def test_request_login_variants(self):
         v3 = eagler.parse_request_login(build_request_login(version=3), 3)
@@ -331,8 +335,8 @@ class EaglerProtocolTests(unittest.TestCase):
     def test_offline_uuid_shape(self):
         value = eagler.offline_uuid('Notch')
         self.assertEqual(len(value), 16)
-        self.assertEqual(value[6] >> 4, 3)          # 版本 3
-        self.assertEqual(value[8] >> 6, 0b10)       # IETF 变体
+        self.assertEqual(value[6] >> 4, 3)          # version 3
+        self.assertEqual(value[8] >> 6, 0b10)       # IETF variant
         self.assertNotEqual(value, eagler.offline_uuid('Herobrine'))
 
     def test_sanitize_username(self):
@@ -342,19 +346,19 @@ class EaglerProtocolTests(unittest.TestCase):
         self.assertTrue(eagler.USERNAME_PATTERN.match(eagler.sanitize_username('名字123')))
 
 
-# ---------------------------------------------------------------- 状态机
+# ---------------------------------------------------------------- State machine
 
 
 class TranslatorUnitTests(unittest.TestCase):
     def make(self, **kwargs):
-        sent: list[bytes] = []            # 发给浏览器的
-        to_backend: list[bytes] = []      # 代理直接写给目标服务器的(加密握手响应用这个)
+        sent: list[bytes] = []            # sent to the browser
+        to_backend: list[bytes] = []      # proxy-written straight to the target server (encryption response)
         closed: list[str] = []
         translator = EaglerTranslator(
             target_host='mc244.com', target_port=25565,
             log=kwargs.pop('log', None) or NullLogger(),
             tag='#1', send_client=sent.append, send_backend=to_backend.append,
-            request_close=closed.append)
+            request_close=closed.append, **kwargs)
         return translator, sent, closed, to_backend
 
     def test_full_offline_flow(self):
@@ -364,7 +368,7 @@ class TranslatorUnitTests(unittest.TestCase):
         self.assertEqual(int.from_bytes(sent[0][1:3], 'big'), 5)
 
         to_server = translator.feed_client(build_request_login(username='Tester'))
-        # 原版握手包 + 登录开始包
+        # vanilla handshake packet + login start packet
         decoder = vanilla.Decoder(0)
         packets = decoder.feed(to_server)
         self.assertEqual(len(packets), 2)
@@ -375,20 +379,23 @@ class TranslatorUnitTests(unittest.TestCase):
         username, _ = vanilla.read_string(packets[1].body, 0)
         self.assertEqual(username, 'Tester')
 
-        # 服务器启用压缩 + 登录成功: 压缩生效之后的包要按压缩格式封帧
-        # (真实服务器会把这两个包塞进同一个段, 阈值必须在解析途中就生效)
+        # Set Compression + login success from the server: packets after the
+        # threshold takes effect must be framed in the compressed format (real
+        # servers put these two packets in one segment, so the threshold must
+        # apply mid-parse).
         uuid_text = '1' * 8 + '-' + '2' * 4 + '-' + '3' * 4 + '-' + '4' * 4 + '-' + '5' * 12
         payload = (vanilla.pack(vanilla.LOGIN_SET_COMPRESSION, vanilla.write_varint(256))
                    + vanilla.Encoder(256).frame(
                        unframed(build_login_success('Tester', uuid_text=uuid_text))))
         out = translator.feed_server(payload)
-        self.assertEqual(out, [])                # 登录阶段的包不直接转发给客户端
+        self.assertEqual(out, [])                # login-phase packets are not forwarded to the client directly
         self.assertEqual(len(sent), 2)
         self.assertEqual(sent[1][0], eagler.PROTOCOL_SERVER_ALLOW_LOGIN)
         self.assertEqual(translator.server_encoder.threshold, 256)
 
-        # 握手完成前的游戏数据要缓存, 完成登录之后才发;
-        # 发给客户端的一律是"一个帧一个裸包": 没有长度前缀, 也没有压缩
+        # Play data arriving before the handshake completes is buffered and only
+        # sent after login finishes; everything sent to the client is "one frame
+        # per bare packet": no length prefix, no compression.
         play = unframed(vanilla.pack(vanilla.PLAY_JOIN_GAME, b'\x01\x02\x03'))
         self.assertEqual(translator.feed_server(vanilla.Encoder(256).frame(play)), [])
         self.assertEqual(translator.feed_client(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN])), b'')
@@ -404,25 +411,25 @@ class TranslatorUnitTests(unittest.TestCase):
         translator.feed_server(build_login_success('Tester'))
         translator.feed_client(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
 
-        # 客户端上行: 一个裸包 -> 原版流里一个带长度前缀的包
+        # client upstream: one bare packet -> one length-prefixed packet in the vanilla stream
         keep_alive = unframed(vanilla.pack(vanilla.PLAY_KEEP_ALIVE, b'\x00\x00\x00\x01'))
         moved = translator.feed_client(keep_alive)
         packets = vanilla.Decoder(0).feed(moved)
         self.assertEqual([p.payload for p in packets], [keep_alive])
 
-        # 客户端特有的 EAG| 插件消息丢掉
+        # client-specific EAG| plugin messages are dropped
         channel = b'EAG|Skins-1.8'
         plugin = unframed(vanilla.pack(vanilla.CLIENT_PLUGIN_MESSAGE,
                                        vanilla.write_varint(len(channel)) + channel + b'\x01\x02'))
         self.assertEqual(translator.feed_client(plugin), b'')
 
-        # 服务端下行: 一个包 -> 一个裸帧(不是一整块字节流)
+        # server downstream: one packet -> one bare frame (not a single byte-stream frame)
         big = unframed(vanilla.pack(0x21, b'z' * 400))
         out = translator.feed_server(vanilla.Encoder(0).frame(big))
         self.assertEqual(out, [big])
 
     def test_server_packets_become_one_frame_each(self):
-        """服务器一段数据里有几个包, 就要发几个帧, 而且每个帧都是裸包。"""
+        """A server chunk with N packets must yield N frames, each holding one bare packet."""
         translator, sent, _closed, _backend = self.make()
         translator.feed_client(REAL_FIRST_PACKET)
         translator.feed_client(build_request_login())
@@ -437,11 +444,12 @@ class TranslatorUnitTests(unittest.TestCase):
             vanilla.Encoder(0).frame(first) + vanilla.Encoder(0).frame(second)
             + vanilla.Encoder(0).frame(chunk))
         self.assertEqual(out, [first, second, chunk])
-        # 帧里没有长度前缀: 第一个字节直接就是包 id
+        # no length prefix inside the frame: the first byte is the packet id itself
         self.assertEqual(out[0][0], vanilla.PLAY_JOIN_GAME)
 
     def test_client_injected_frames_are_dropped(self):
-        """v5 客户端的注入消息帧(0xEE 开头)不是原版包, 不能转给服务器。"""
+        """v5 client injected-message frames (starting with 0xEE) are not
+        vanilla packets and must not reach the server."""
         translator, _sent, _closed, _backend = self.make()
         translator.feed_client(REAL_FIRST_PACKET)
         translator.feed_client(build_request_login())
@@ -451,7 +459,9 @@ class TranslatorUnitTests(unittest.TestCase):
         self.assertEqual(translator.feed_client(bytes([0xEE, 0xFF, 0x00])), b'')
 
     def test_encryption_request_is_completed(self):
-        """加密请求要代做: 用服务器公钥把共享密钥/令牌加密回去, 之后全程 AES-128-CFB8。"""
+        """The encryption request is answered on the client's behalf: shared
+        secret and token encrypted back with the server's public key, then
+        AES-128-CFB8 for the rest of the session."""
         translator, sent, closed, to_backend = self.make()
         translator.feed_client(REAL_FIRST_PACKET)
         translator.feed_client(build_request_login(username='Tester'))
@@ -460,7 +470,7 @@ class TranslatorUnitTests(unittest.TestCase):
         token = b'\x11\x22\x33\x44'
         self.assertEqual(translator.feed_server(build_encryption_request(key, token)), [])
 
-        # 1) 代理直接给目标服务器写了加密响应
+        # 1) the proxy wrote the encryption response straight to the target server
         self.assertEqual(closed, [])
         self.assertEqual(len(to_backend), 1)
         packets = vanilla.Decoder(0).feed(to_backend[0])
@@ -476,7 +486,7 @@ class TranslatorUnitTests(unittest.TestCase):
         self.assertEqual(len(secret), 16)
         self.assertEqual(rsa_decrypt(key, enc_token), token)
 
-        # 2) 从此服务器发来的数据都是 AES-128-CFB8 密文, 代理必须解开才能继续
+        # 2) from here on all server data is AES-128-CFB8 ciphertext; the proxy must decrypt it to carry on
         server_side = crypto.AesCfb8(secret, secret)
         out = translator.feed_server(server_side.encrypt(build_login_success('Tester')))
         self.assertEqual(out, [])
@@ -484,7 +494,7 @@ class TranslatorUnitTests(unittest.TestCase):
         translator.feed_client(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
         self.assertEqual(translator.phase, 'play')
 
-        # 3) 客户端上行也要变成密文
+        # 3) client upstream traffic must be encrypted too
         keep_alive = vanilla.pack(vanilla.PLAY_KEEP_ALIVE, b'\x00\x00\x00\x01')
         moved = translator.feed_client(unframed(keep_alive))
         self.assertNotEqual(moved, keep_alive)
@@ -500,23 +510,25 @@ class TranslatorUnitTests(unittest.TestCase):
             self.assertEqual(translator.feed_server(build_encryption_request(key)), [])
         self.assertEqual(to_backend, [])
         self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_ERROR)
-        length = int.from_bytes(sent[-1][2:4], 'big')          # 0xFF + 错误码 + u16 长度
-        text = sent[-1][4:4 + length].decode('utf-8')
-        self.assertTrue(text.startswith(PREFIX), text)
+        length = int.from_bytes(sent[-1][2:4], 'big')          # 0xFF + error code + u16 length
+        # Since v3 the body must be valid JSON (the client runs it through
+        # jsonToComponent); the message text lives in "text".
+        text = json.loads(sent[-1][4:4 + length].decode('utf-8'))['text']
+        self.assertTrue(text.startswith(tr('translator.prefix')), text)
         self.assertIn('cryptography', text)
         self.assertEqual(translator.phase, 'closed')
         self.assertTrue(closed)
 
     def test_our_messages_are_marked(self):
-        """本代理自己发的报错要带 [协议转换器] 标识, 服务器说的话不加。"""
+        """Errors raised by the proxy itself carry the adapter prefix; server text does not."""
         translator, sent, _closed, _backend = self.make()
         translator.feed_client(REAL_FIRST_PACKET)
         translator.feed_client(build_request_login(username='Tester'))
-        translator.feed_server(b'\x00')                        # 长度 0 的残包 -> 代理报错
+        translator.feed_server(b'\x00')                        # truncated frame, length 0 -> proxy-side error
         self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_ERROR)
         length = int.from_bytes(sent[-1][2:4], 'big')
-        text = sent[-1][4:4 + length].decode('utf-8')
-        self.assertTrue(text.startswith(PREFIX), text)
+        text = json.loads(sent[-1][4:4 + length].decode('utf-8'))['text']
+        self.assertTrue(text.startswith(tr('translator.prefix')), text)
 
     def test_kick_message_is_forwarded(self):
         translator, sent, _closed, _backend = self.make()
@@ -524,8 +536,61 @@ class TranslatorUnitTests(unittest.TestCase):
         translator.feed_client(build_request_login())
         translator.feed_server(build_disconnect('服务器已满'))
         self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_DENY_LOGIN)
-        length = int.from_bytes(sent[-1][1:3], 'big')      # v3 起是 u16 长度
-        self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), '服务器已满')
+        length = int.from_bytes(sent[-1][1:3], 'big')      # u16 length since v3
+        # the kick reason is forwarded verbatim (the client parses it as JSON), so read it as JSON here too
+        self.assertEqual(json.loads(sent[-1][3:3 + length].decode('utf-8'))['text'], '服务器已满')
+
+    def test_plain_kick_reason_is_wrapped_as_json(self):
+        """When the target server's reason is not JSON it must be wrapped in {'text': ...} before sending, or the client reports Invalid packet."""
+        translator, sent, _closed, _backend = self.make()
+        translator.feed_client(REAL_FIRST_PACKET)
+        translator.feed_client(build_request_login())
+        reason = '你被管理员踢出了游戏'
+        body = vanilla.write_varint(len(reason.encode())) + reason.encode()
+        translator.feed_server(vanilla.pack(vanilla.LOGIN_DISCONNECT, body))
+        self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_DENY_LOGIN)
+        length = int.from_bytes(sent[-1][1:3], 'big')
+        body = sent[-1][3:3 + length].decode('utf-8')
+        self.assertEqual(json.loads(body), {'text': reason})
+
+    def test_server_brand_and_version_are_configurable(self):
+        """The server brand/version the browser client sees must come from
+        config and land in the server version packet."""
+        translator, sent, _closed, _backend = self.make(brand='Paper', brand_version='1.8.8-R0.1')
+        translator.feed_client(REAL_FIRST_PACKET)
+        self.assertEqual(sent[0][0], eagler.PROTOCOL_SERVER_VERSION)
+        # the brand string starts only after packet id (1) + handshake protocol (2) + game protocol (2)
+        brand, pos = read_eagler_string(sent[0], 5)
+        version, _ = read_eagler_string(sent[0], pos)
+        self.assertEqual(brand, 'Paper')
+        self.assertEqual(version, '1.8.8-R0.1')
+
+    def test_spoof_brand_is_injected_and_client_brand_is_dropped(self):
+        """Client-brand spoofing: inject an MC|Brand from config after login and drop the client's own.
+
+        Clients (especially the EaglercraftX family) send an MC|Brand of their
+        own after login, with a value like "EaglercraftX"; that is what plugins
+        on the target server see as the "client brand" -- so verbatim forwarding
+        is replaced with a config-driven declaration.
+        """
+        translator, _sent, _closed, to_backend = self.make(spoof_brand='forge/1.8.8')
+        translator.feed_client(REAL_FIRST_PACKET)
+        translator.feed_client(build_request_login(username='Tester'))
+        translator.feed_server(build_login_success('Tester'))
+        to_backend.clear()
+        translator.feed_client(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
+        self.assertEqual(translator.phase, 'play')
+        blob = b''.join(to_backend)
+        self.assertIn(b'MC|Brand', blob)
+        self.assertIn(b'forge/1.8.8', blob)
+
+        channel = b'MC|Brand'
+        plugin = unframed(vanilla.pack(vanilla.CLIENT_PLUGIN_MESSAGE,
+                                       vanilla.write_varint(len(channel)) + channel
+                                       + vanilla.write_varint(11) + b'EaglercraftX'))
+        to_backend.clear()
+        self.assertEqual(translator.feed_client(plugin), b'')
+        self.assertEqual(to_backend, [])
 
     def test_version_mismatch(self):
         translator, sent, _closed, _backend = self.make()
@@ -542,7 +607,7 @@ class TranslatorUnitTests(unittest.TestCase):
         self.assertEqual(translator.uuid, eagler.offline_uuid(translator.username))
 
     def test_empty_username_uses_handshake_name(self):
-        """MCJS 实测发的登录请求里名字是空的, 这时用握手包里的 authUsername。"""
+        """Real MCJS login requests carry an empty name; fall back to authUsername from the handshake packet."""
         translator, _sent, _closed, _backend = self.make()
         self.assertEqual(translator.feed_client(REAL_FIRST_PACKET), b'')
         translator.feed_client(build_request_login(username=''))
@@ -550,7 +615,7 @@ class TranslatorUnitTests(unittest.TestCase):
         self.assertEqual(translator.uuid, eagler.offline_uuid('nopp'))
 
 
-# ---------------------------------------------------------------- 端到端
+# ---------------------------------------------------------------- End-to-end
 
 
 class TranslateEndToEndTests(unittest.TestCase):
@@ -594,17 +659,24 @@ class TranslateEndToEndTests(unittest.TestCase):
             client.send(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
             finish = client.recv(timeout=5.0)
             self.assertEqual(finish, bytes([eagler.PROTOCOL_SERVER_FINISH_LOGIN]))
-            # 握手期间缓存下来的游戏包: 一帧一个裸包(无长度前缀、无压缩)
+            # Play packets buffered during the handshake: one bare packet per frame (no length prefix, no compression)
             buffered = client.recv(timeout=5.0)
             self.assertEqual(buffered, join_game)
 
-            # 游戏数据: 客户端发的也是裸包, 代理要按服务器的压缩阈值装回原版流
+            # Play data: the client sends bare packets too; the proxy has to reframe
+            # them into the vanilla stream using the server's compression threshold.
+            # After login the proxy first injects an MC|Brand from config (client
+            # brand spoofing), then the play data.
             keep_alive = vanilla.pack(vanilla.PLAY_KEEP_ALIVE, b'\x00\x00\x00\x07')
             client.send(unframed(keep_alive))
-            got = backend.read_packets(1)
-            self.assertEqual([p.payload for p in got], [unframed(keep_alive)])
+            got = backend.read_packets(2)
+            self.assertEqual(len(got), 2)
+            self.assertEqual(got[0].packet_id, vanilla.CLIENT_PLUGIN_MESSAGE)
+            self.assertIn(b'MC|Brand', got[0].payload)
+            self.assertTrue(got[0].payload.endswith(b'vanilla'), got[0].payload)   # the default spoof value
+            self.assertEqual([p.payload for p in got[1:]], [unframed(keep_alive)])
 
-            # Eaglercraft 私有通道的插件消息和 0xEE 注入消息帧都要被丢掉
+            # Plugin messages on Eaglercraft private channels and 0xEE injected-message frames are dropped
             channel = b'EAG|Skins-1.8'
             plugin = unframed(vanilla.pack(vanilla.CLIENT_PLUGIN_MESSAGE,
                                            vanilla.write_varint(len(channel)) + channel + b'\xaa'))
@@ -612,7 +684,7 @@ class TranslateEndToEndTests(unittest.TestCase):
             client.send(bytes([0xEE, 0x01, 0x02, 0x03]))
             self.assertEqual(backend.read_packets(1, timeout=0.6), [])
 
-            # 服务器 -> 客户端: 大包(压缩过)要还原成一个裸帧
+            # server -> client: a compressed big packet must be restored as one bare frame
             chunk = unframed(vanilla.pack(0x21, b'q' * 900))
             backend.send_play(chunk)
             raw = client.recv(timeout=5.0)
@@ -622,6 +694,45 @@ class TranslateEndToEndTests(unittest.TestCase):
                 client.close()
             server.stop()
             backend.close()
+
+    def test_server_list_query_is_answered_locally(self):
+        """Server-list queries (Accept: MOTD) are answered locally, without
+        connecting to the target; the details carry the "current server address".
+
+        The client's ServerQueryImpl sends one text frame on connect and waits
+        for one JSON text frame; the "details" shown on hover in the server list
+        are data.players.
+        """
+        config = Config()
+        config.tls_enabled = False
+        config.wss_port = 0
+        config.ws_port = free_port()
+        config.listen_host = '127.0.0.1'
+        config.target = '127.0.0.1:1'          # deliberately unreachable port: a list query must not connect to it
+        config.use_srv = False
+        config.server_brand = 'Paper'
+        config.server_brand_version = '1.8.8'
+        server = ProxyServer(config)
+        server.start()
+        client = None
+        try:
+            client, _headers = connect_ws(config.ws_port, tls=False)
+            client.send(b'Accept: MOTD', opcode=wsproto.OP_TEXT)
+            frame = client.recv(timeout=5.0)
+            self.assertIsNotNone(frame)
+            data = json.loads(frame.decode('utf-8'))
+            self.assertEqual(data['type'], 'MOTD')
+            self.assertEqual(data['brand'], 'Paper')
+            self.assertEqual(data['name'], 'Paper')
+            self.assertEqual(data['vers'], '1.8.8')
+            self.assertEqual(data['data']['players'][0],
+                             tr('proxy.query.target', address='127.0.0.1:1'))
+            self.assertFalse(data['data']['icon'])
+            self.assertEqual(data['data']['online'], 0)
+        finally:
+            if client is not None:
+                client.close()
+            server.stop()
 
 
 if __name__ == '__main__':

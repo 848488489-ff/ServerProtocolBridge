@@ -1,21 +1,26 @@
-"""原版 Minecraft 协议 (1.8, 协议版本 47) 的封包分帧与压缩 —— 只做搬运需要的部分。
+"""Framing and compression of the vanilla Minecraft protocol (1.8, protocol
+version 47) -- only the parts needed to relay packets.
 
-**原版 TCP 侧**的分帧规则 (本模块的 Decoder/Encoder):
-* 未启用压缩: [VarInt 包长][VarInt 包 id][内容]
-* 启用压缩后: [VarInt 包长][VarInt 未压缩长度][内容]
-    - 未压缩长度 == 0: 内容是原始的 (包 id + 数据)
-    - 未压缩长度 > 0 : 内容是 zlib 压缩后的 (包 id + 数据)
+**Vanilla TCP side** (the Decoder/Encoder of this module):
+* compression off: [VarInt length][VarInt packet id][content]
+* compression on : [VarInt length][VarInt uncompressed length][content]
+    - uncompressed length == 0: the content is raw (packet id + data)
+    - uncompressed length > 0 : the content is zlib-compressed (packet id + data)
 
-**浏览器客户端 (EaglercraftX) 的 WebSocket 侧**用的是另一套约定, 和 TCP 完全不同:
-一个 WebSocket 帧 = 一个完整的包 (包 id + 内容), 既没有长度前缀, 也没有压缩。
-客户端读帧时直接拿帧的开头当包 id (WebSocketNetworkManager 里
-`input.readVarIntFromBuffer()`), 发帧时直接 `writeVarInt(包 id) + writePacketData()`
-整包塞进一帧; 服务端参考实现 WebSocketEaglerFrameCodec 也是收到
-BinaryWebSocketFrame 就把帧内容当包丢进管线、发的时候把包整个塞进一帧。
-所以: 原版流里一个包 -> 一个裸帧; 反过来一个裸帧 -> 原版流里一个包。
+**Browser clients (EaglercraftX) use a different convention on the WebSocket
+side**, completely unlike TCP: one WebSocket frame = one complete packet
+(packet id + content), with neither a length prefix nor compression. When
+reading, the client takes the start of the frame as the packet id
+(`input.readVarIntFromBuffer()` in WebSocketNetworkManager); when writing, it
+puts `writeVarInt(packet id) + writePacketData()` into a single frame. The
+reference server implementation WebSocketEaglerFrameCodec likewise pushes the
+content of a BinaryWebSocketFrame into the pipeline as one packet and stuffs a
+whole packet into one frame when sending.
+So: one packet in the vanilla stream -> one bare frame; and one bare frame ->
+one packet in the vanilla stream.
 
-素材来源: EaglercraftX 服务端 (lax1dude/eaglerxserver) 的 VanillaInitializer /
-WebSocketEaglerFrameCodec, 以及客户端 u53 的 WebSocketNetworkManager。
+Sources: VanillaInitializer / WebSocketEaglerFrameCodec of the EaglercraftX
+server (lax1dude/eaglerxserver), and WebSocketNetworkManager of the client u53.
 """
 
 from __future__ import annotations
@@ -23,39 +28,45 @@ from __future__ import annotations
 import zlib
 from dataclasses import dataclass
 
+from .i18n import tr
+
 MAX_PACKET_BYTES = 8 * 1024 * 1024
 
-# 登录阶段的包 id
+# Login-phase packet ids
 LOGIN_DISCONNECT = 0x00
 LOGIN_ENCRYPTION_REQUEST = 0x01
 LOGIN_ENCRYPTION_RESPONSE = 0x01
 LOGIN_SUCCESS = 0x02
 LOGIN_SET_COMPRESSION = 0x03
 
-# 游戏阶段 (Play) 里和我们相关的包 id (1.8.8)
+# Play-phase packet ids that matter to us (1.8.8)
 PLAY_KEEP_ALIVE = 0x00
 PLAY_JOIN_GAME = 0x01
-PLAY_PLUGIN_MESSAGE = 0x3F      # 服务端 -> 客户端
+PLAY_PLUGIN_MESSAGE = 0x3F      # server -> client
 PLAY_DISCONNECT = 0x40
 
-CLIENT_PLUGIN_MESSAGE = 0x17    # 客户端 -> 服务端
+CLIENT_PLUGIN_MESSAGE = 0x17    # client -> server
 
-# 客户端发来的"注入消息"帧(v5 起皮肤/扩展消息走这条路)以 0xEE 开头, 不是原版包
+# "Injected message" frames from the client (the path skins/extension messages
+# take since v5) start with 0xEE and are not vanilla packets
 INJECTED_FRAME_MARKER = 0xEE
 
-# Eaglercraft 自己的扩展全部走插件消息通道, 前缀是这两个
+# All of Eaglercraft's own extensions travel over plugin-message channels; these
+# are the two prefixes
 EAGLER_CHANNEL_PREFIXES = ('EAG|', 'eagler:')
 
 
 class ProtocolError(Exception):
-    """数据流不符合原版封包格式。"""
+    """The byte stream does not follow the vanilla packet format."""
 
 
 class NeedMoreData(ProtocolError):
-    """数据还不完整, 需要继续收。
+    """Not enough data yet; keep receiving.
 
-    是 ProtocolError 的子类: 解析"已经完整的一个包"时遇到字节不够, 说明包本身就是
-    残缺的(格式错), 调用方按协议错误处理即可; 只有流式解析才需要区分这两种情况。
+    A subclass of ProtocolError on purpose: when parsing an "already complete
+    packet" and running out of bytes, the packet itself is truncated (malformed),
+    so callers may handle it as a protocol error; only streaming parsers need to
+    tell the two situations apart.
     """
 
 
@@ -74,7 +85,7 @@ def write_varint(value: int) -> bytes:
 
 
 def read_varint(data: bytes, pos: int = 0) -> tuple[int, int]:
-    """读一个 VarInt, 返回 (值, 新位置)。数据不够时抛 NeedMoreData。"""
+    """Read a VarInt, returning (value, new position). Raises NeedMoreData when the data is short."""
     value = 0
     for index in range(5):
         if pos >= len(data):
@@ -84,11 +95,11 @@ def read_varint(data: bytes, pos: int = 0) -> tuple[int, int]:
         value |= (byte & 0x7F) << (7 * index)
         if not byte & 0x80:
             return value, pos
-    raise ProtocolError('VarInt 超过 5 字节')
+    raise ProtocolError(tr('vanilla.error.varint_too_long'))
 
 
 def read_string(data: bytes, pos: int = 0) -> tuple[str, int]:
-    """读一个 VarInt 长度前缀的 UTF-8 字符串。"""
+    """Read a UTF-8 string prefixed with a VarInt length."""
     length, pos = read_varint(data, pos)
     if length < 0 or pos + length > len(data):
         raise NeedMoreData()
@@ -102,26 +113,28 @@ def read_u16(data: bytes, pos: int = 0) -> tuple[int, int]:
 
 
 def pack(packet_id: int, body: bytes = b'') -> bytes:
-    """拼出一个完整的未压缩封帧(长度前缀 + 包 id + 内容)。"""
+    """Build one complete uncompressed frame (length prefix + packet id + body)."""
     payload = write_varint(packet_id) + body
     return write_varint(len(payload)) + payload
 
 
 @dataclass
 class Packet:
-    """一个解析出来的原版数据包。"""
+    """A decoded vanilla packet."""
 
     packet_id: int
-    body: bytes        # 包 id 之后的内容
-    payload: bytes     # 包 id + 内容(未压缩形式)
+    body: bytes        # content after the packet id
+    payload: bytes     # packet id + content (uncompressed form)
 
 
 class Decoder:
-    """增量解析一个方向的字节流。
+    """Incrementally parse one direction of a byte stream.
 
-    注意: 压缩阈值可能在数据流中间变化(服务器发来 Set Compression 之后), 所以
-    要把 ``feed`` 当成"批量"用法并不安全 —— 只要可能遇到阈值变化, 就应该用
-    ``push`` + ``next_packet`` 一个一个取, 这样阈值改完立刻对新包生效。
+    Note: the compression threshold can change in the middle of the stream (after
+    the server sends Set Compression), so treating ``feed`` as a batch helper is
+    not safe -- whenever a threshold change is possible, use ``push`` +
+    ``next_packet`` one packet at a time so that an updated threshold applies to
+    new packets immediately.
     """
 
     def __init__(self, threshold: int = 0):
@@ -141,14 +154,15 @@ class Decoder:
             packets.append(packet)
 
     def next_packet(self) -> Packet | None:
-        """取出下一个完整的包; 数据不够就返回 None(留在缓冲区里等下次)。"""
+        """Take the next complete packet; return None when more data is needed
+        (it stays in the buffer for the next call)."""
         buffer = self.buffer
         try:
             length, pos = read_varint(buffer, 0)
         except NeedMoreData:
             return None
         if length <= 0 or length > MAX_PACKET_BYTES:
-            raise ProtocolError('包长度异常: %d' % length)
+            raise ProtocolError(tr('vanilla.error.bad_packet_length', length=length))
         if len(buffer) < pos + length:
             return None
         body = buffer[pos:pos + length]
@@ -157,27 +171,27 @@ class Decoder:
             try:
                 uncompressed, offset = read_varint(body, 0)
             except NeedMoreData:
-                raise ProtocolError('压缩包缺少未压缩长度字段')
+                raise ProtocolError(tr('vanilla.error.missing_uncompressed_length'))
             payload = body[offset:]
             if uncompressed > 0:
                 try:
                     payload = zlib.decompress(payload)
                 except zlib.error as exc:
-                    raise ProtocolError('zlib 解压失败: %s' % exc)
+                    raise ProtocolError(tr('vanilla.error.zlib_failed', error=exc))
                 if len(payload) != uncompressed:
-                    raise ProtocolError('解压后长度 %d 与声明 %d 不符'
-                                        % (len(payload), uncompressed))
+                    raise ProtocolError(tr('vanilla.error.decompressed_length_mismatch',
+                                           actual=len(payload), declared=uncompressed))
         else:
             payload = body
         try:
             packet_id, at = read_varint(payload, 0)
         except NeedMoreData:
-            raise ProtocolError('包内容里没有包 id')
+            raise ProtocolError(tr('vanilla.error.missing_packet_id'))
         return Packet(packet_id, payload[at:], payload)
 
 
 class Encoder:
-    """按协商好的压缩阈值把包重新封帧。"""
+    """Reframe packets with the negotiated compression threshold."""
 
     def __init__(self, threshold: int = 0):
         self.threshold = threshold

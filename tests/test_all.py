@@ -1,11 +1,12 @@
-"""自检测试: 标准库 unittest, 不需要第三方依赖。
+"""Self-check suite: stdlib unittest only, no third-party dependencies.
 
     python -m unittest discover -s tests -v
     python tests/test_all.py
 
-覆盖: DER 编码 / 自签名证书(含真实 TLS 握手校验) / WebSocket 帧编解码 /
-地址与配置解析 / SRV 回退 / wss 与 ws 的端到端转发 / base64 兼容模式 /
-路径映射 / 目标不可达 / 大流量数据完整性。
+Covers: DER encoding / self-signed certificates (including a real TLS handshake
+check) / WebSocket frame codec / address and config parsing / SRV fallback /
+end-to-end forwarding over wss and ws / base64 compatibility mode / path
+mapping / unreachable target / large-volume data integrity.
 """
 
 from __future__ import annotations
@@ -28,11 +29,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from mcjs_proxy import certs, config as config_module, der, resolver, wsproto, x509  # noqa: E402
 from mcjs_proxy.config import Config  # noqa: E402
+from mcjs_proxy.i18n import tr  # noqa: E402
 from mcjs_proxy.logger import Logger  # noqa: E402
 from mcjs_proxy.proxy import ProxyServer  # noqa: E402
 
 
-# ---------------------------------------------------------------- 工具
+# ---------------------------------------------------------------- Helpers
 
 
 def free_port() -> int:
@@ -42,7 +44,7 @@ def free_port() -> int:
 
 
 def _read_tlv(data: bytes, offset: int = 0):
-    """极简 DER 读取: 返回 (标签, 内容, 下一个偏移)。"""
+    """Minimal DER reader: returns (tag, value, next offset)."""
     tag = data[offset]
     length = data[offset + 1]
     offset += 2
@@ -63,7 +65,7 @@ def _children(data: bytes):
 
 
 class EchoServer:
-    """模拟 Minecraft 服务器: 连上先发一段欢迎数据, 之后原样回显。"""
+    """Fake Minecraft server: sends a greeting right after connect, then echoes bytes back verbatim."""
 
     def __init__(self, greeting: bytes = b''):
         self.greeting = greeting
@@ -119,17 +121,30 @@ class EchoServer:
 
 
 class WsClient:
-    """极简 WebSocket 客户端, 用来测试服务端实现。"""
+    """Minimal WebSocket client used to exercise the server-side implementation."""
 
-    def __init__(self, sock: socket.socket):
+    def __init__(self, sock: socket.socket, initial: bytes = b''):
         self.sock = sock
         self.decoder = wsproto.FrameDecoder()
         self.inbox: list[wsproto.Frame] = []
         self.closed: tuple[int, str] | None = None
         self.eof = False
         self._lock = threading.Lock()
+        # The first server frame may arrive right behind the handshake response
+        # (within the same TCP segment); it must be fed into the decoder before
+        # the reader thread starts -- two threads feeding the same decoder would
+        # tear frames apart.
+        if initial:
+            self._ingest(initial)
         self._thread = threading.Thread(target=self._reader, daemon=True)
         self._thread.start()
+
+    def _ingest(self, chunk: bytes) -> None:
+        for frame in self.decoder.feed(chunk):
+            if frame.opcode == wsproto.OP_CLOSE:
+                self.closed = wsproto.parse_close_payload(frame.payload)
+            else:
+                self.inbox.append(frame)
 
     def _reader(self) -> None:
         try:
@@ -138,12 +153,8 @@ class WsClient:
                 if not chunk:
                     self.eof = True
                     return
-                for frame in self.decoder.feed(chunk):
-                    with self._lock:
-                        if frame.opcode == wsproto.OP_CLOSE:
-                            self.closed = wsproto.parse_close_payload(frame.payload)
-                        else:
-                            self.inbox.append(frame)
+                with self._lock:
+                    self._ingest(chunk)
         except (OSError, ssl.SSLError):
             self.eof = True
 
@@ -173,10 +184,11 @@ class WsClient:
         return None
 
     def recv_exactly(self, size: int, timeout: float = 30.0) -> bytes:
-        """收满 size 字节。
+        """Receive exactly size bytes.
 
-        服务端是把 TCP 读到的每段数据各自发成一个 WebSocket 帧的, 所以回程数据可能
-        分成好几帧; 客户端本来就要把它们拼回字节流, 这里照做。
+        The server wraps each chunk read from TCP into its own WebSocket frame,
+        so the return traffic may be split across several frames; a real client
+        has to reassemble them into a byte stream anyway, so do the same here.
         """
         buffer = bytearray()
         deadline = time.time() + timeout
@@ -189,6 +201,25 @@ class WsClient:
                         break
             if frame is None:
                 time.sleep(0.01)
+            else:
+                buffer.extend(frame.payload)
+        return bytes(buffer)
+
+    def recv_text_decoded(self, size: int, timeout: float = 30.0) -> bytes:
+        """Receive exactly size bytes in base64 text-frame mode (decode each frame first, then append)."""
+        buffer = bytearray()
+        deadline = time.time() + timeout
+        while len(buffer) < size and time.time() < deadline:
+            frame = None
+            with self._lock:
+                for index, item in enumerate(self.inbox):
+                    if item.opcode in (wsproto.OP_BINARY, wsproto.OP_TEXT):
+                        frame = self.inbox.pop(index)
+                        break
+            if frame is None:
+                time.sleep(0.01)
+            elif frame.opcode == wsproto.OP_TEXT:
+                buffer.extend(base64.b64decode(frame.payload.decode('ascii')))
             else:
                 buffer.extend(frame.payload)
         return bytes(buffer)
@@ -236,26 +267,19 @@ def connect_ws(port: int, host: str = '127.0.0.1', tls: bool = False,
     while b'\r\n\r\n' not in data:
         chunk = sock.recv(4096)
         if not chunk:
-            raise AssertionError('握手响应为空')
+            raise AssertionError('empty handshake response')
         data += chunk
     head, rest = data.split(b'\r\n\r\n', 1)
     lines = head.decode('latin-1').split('\r\n')
     if not lines[0].startswith('HTTP/1.1 101'):
-        raise AssertionError('握手失败: %s (body=%r)' % (lines[0], rest[:200]))
+        raise AssertionError('handshake failed: %s (body=%r)' % (lines[0], rest[:200]))
     headers = {}
     for line in lines[1:]:
         if ':' in line:
             name, _, value = line.partition(':')
             headers[name.strip().lower()] = value.strip()
     headers['_request_key'] = key
-    client = WsClient(sock)
-    if rest:
-        for frame in client.decoder.feed(rest):
-            if frame.opcode == wsproto.OP_CLOSE:
-                client.closed = wsproto.parse_close_payload(frame.payload)
-            else:
-                client.inbox.append(frame)
-    return client, headers
+    return WsClient(sock, initial=rest), headers
 
 
 def http_get(port: int, path: str = '/', host: str = '127.0.0.1', timeout: float = 5.0) -> dict:
@@ -279,7 +303,7 @@ class DerTests(unittest.TestCase):
         self.assertEqual(der.integer(2), b'\x02\x01\x02')
         self.assertEqual(der.integer(0), b'\x02\x01\x00')
         self.assertEqual(der.integer(0x80), b'\x02\x02\x00\x80')
-        self.assertEqual(der.integer(b'\x00\x00\xff'), b'\x02\x02\x00\xff')  # 最高位为 1 需补 0x00
+        self.assertEqual(der.integer(b'\x00\x00\xff'), b'\x02\x02\x00\xff')  # a leading 1 bit needs a 0x00 pad
 
     def test_oid_encoding(self):
         self.assertEqual(der.oid('1.2.840.113549.1.1.11'),
@@ -326,7 +350,7 @@ class CertificateTests(unittest.TestCase):
         self.assertEqual(x509.pem_to_der(self.certificate['cert_pem']), self.certificate['cert_der'])
 
     def test_openssl_can_load_certificate(self):
-        """标准库 SSLContext 能加载, 说明 DER 结构合法且私钥匹配。"""
+        """The stdlib SSLContext can load it, proving the DER structure is valid and the private key matches."""
         cert_path, key_path = self._write()
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(str(cert_path), str(key_path))
@@ -337,29 +361,29 @@ class CertificateTests(unittest.TestCase):
         self.assertEqual(expected, actual)
 
     def test_signature_verifies_against_public_key(self):
-        """从证书 DER 里取出公钥, 验证自签名确实是这把私钥签的。"""
+        """Extract the public key from the certificate DER and verify the self-signature really came from that key."""
         _tag, certificate, _end = _read_tlv(self.certificate['cert_der'])
         items = _children(certificate)
         tbs_value = items[0][1]
-        signature = items[2][1][1:]  # BIT STRING: 去掉未使用位字节
+        signature = items[2][1][1:]  # BIT STRING: drop the unused-bits byte
         tbs_der = der.tlv(0x30, tbs_value)
 
         fields = _children(tbs_value)
-        spki_children = _children(fields[6][1])          # 第 7 项: subjectPublicKeyInfo
-        rsa_key = _children(spki_children[1][1][1:])[0][1]  # BIT STRING 去掉未使用位字节
-        rsa_fields = _children(rsa_key)                  # RSAPublicKey 序列的内容
+        spki_children = _children(fields[6][1])          # field 7: subjectPublicKeyInfo
+        rsa_key = _children(spki_children[1][1][1:])[0][1]  # BIT STRING with the unused-bits byte stripped
+        rsa_fields = _children(rsa_key)                  # contents of the RSAPublicKey sequence
         modulus = int.from_bytes(rsa_fields[0][1], 'big')
         exponent = int.from_bytes(rsa_fields[1][1], 'big')
 
         recovered = pow(int.from_bytes(signature, 'big'), exponent, modulus).to_bytes(
             (modulus.bit_length() + 7) // 8, 'big')
         digest_info = bytes.fromhex('3031300d060960864801650304020105000420')
-        self.assertTrue(recovered.startswith(b'\x00\x01\xff\xff'), 'PKCS#1 v1.5 填充不正确')
+        self.assertTrue(recovered.startswith(b'\x00\x01\xff\xff'), 'bad PKCS#1 v1.5 padding')
         self.assertEqual(recovered[-len(digest_info) - 32:-32], digest_info)
         self.assertEqual(recovered[-32:], hashlib.sha256(tbs_der).digest())
 
     def test_tls_handshake_with_hostname_and_ip(self):
-        """真实握手: 证书链与 SAN 都必须正确, 否则 check_hostname 会失败。"""
+        """Real handshake: both the certificate chain and the SANs must be right, or check_hostname fails."""
         cert_path, key_path = self._write()
         server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         server_context.load_cert_chain(str(cert_path), str(key_path))
@@ -393,7 +417,7 @@ class CertificateTests(unittest.TestCase):
                         self.assertEqual(tls_sock.recv(16), b'ok')
             finally:
                 thread.join(timeout=10)
-            self.assertEqual(error, [], '服务端握手出错: %s' % error)
+            self.assertEqual(error, [], 'server-side handshake error: %s' % error)
 
     def test_ensure_certificate_creates_files(self):
         directory = self.cert_dir / 'generated'
@@ -404,16 +428,16 @@ class CertificateTests(unittest.TestCase):
         self.assertTrue(Path(info['key_path']).exists())
         self.assertTrue(info['thumbprint'])
         again = certs.ensure_certificate(directory, common_name='localhost', generator='python')
-        self.assertEqual(again['thumbprint'], info['thumbprint'], '已存在时应复用证书')
+        self.assertEqual(again['thumbprint'], info['thumbprint'], 'an existing certificate must be reused')
 
     def test_default_alt_names(self):
         names = certs.default_alt_names('localhost', ['extra.example', '10.0.0.5'])
         for expected in ('localhost', '127.0.0.1', '::1', 'extra.example', '10.0.0.5'):
             self.assertIn(expected, names)
-        self.assertEqual(len(names), len(set(names)), '名称不应重复')
+        self.assertEqual(len(names), len(set(names)), 'names must not be duplicated')
 
 
-# ---------------------------------------------------------------- WebSocket 帧
+# ---------------------------------------------------------------- WebSocket frames
 
 
 class FrameTests(unittest.TestCase):
@@ -464,11 +488,11 @@ class FrameTests(unittest.TestCase):
 
     def test_protocol_errors(self):
         cases = {
-            'RSV 位': bytes([0xC0, 0x00]),
-            '未知 opcode': wsproto.encode_frame(0x3, b'x'),
-            '控制帧分片': wsproto.encode_frame(wsproto.OP_PING, b'x', fin=False),
-            '控制帧过长': bytes([0x89, 126, 0x01, 0x00]),
-            '续帧无起点': wsproto.encode_frame(wsproto.OP_CONTINUATION, b'x'),
+            'RSV bit set': bytes([0xC0, 0x00]),
+            'unknown opcode': wsproto.encode_frame(0x3, b'x'),
+            'fragmented control frame': wsproto.encode_frame(wsproto.OP_PING, b'x', fin=False),
+            'oversized control frame': bytes([0x89, 126, 0x01, 0x00]),
+            'continuation without start': wsproto.encode_frame(wsproto.OP_CONTINUATION, b'x'),
         }
         for name, raw in cases.items():
             with self.assertRaises(wsproto.ProtocolError, msg=name):
@@ -484,7 +508,7 @@ class FrameTests(unittest.TestCase):
         self.assertEqual(wsproto.parse_close_payload(b''), (1005, ''))
 
     def test_handshake_accept_key(self):
-        # RFC 6455 示例
+        # RFC 6455 example
         self.assertEqual(wsproto.compute_accept_key('dGhlIHNhbXBsZSBub25jZQ=='), 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=')
 
     def test_first_subprotocol(self):
@@ -493,7 +517,7 @@ class FrameTests(unittest.TestCase):
         self.assertIsNone(wsproto.first_subprotocol(' , '))
 
 
-# ---------------------------------------------------------------- 配置
+# ---------------------------------------------------------------- Configuration
 
 
 class ConfigTests(unittest.TestCase):
@@ -537,15 +561,21 @@ class ConfigTests(unittest.TestCase):
         config = Config()
         self.assertEqual(config.validate(), [])
         config.wss_port = 70000
-        self.assertTrue(any('wss 端口' in item for item in config.validate()))
+        expected = tr('core.config.port_range', name=tr('core.config.port_wss'))
+        self.assertTrue(any(expected in item for item in config.validate()))
         config = Config()
         config.target = '  '
-        self.assertTrue(any('转发目标' in item for item in config.validate()))
+        expected = tr('core.config.target_invalid', error=tr('core.config.address_empty'))
+        self.assertTrue(any(expected in item for item in config.validate()))
+        config = Config()
+        config.language = 'fr'
+        self.assertTrue(any(tr('core.config.language_invalid') in item
+                            for item in config.validate()))
 
     def test_describe_and_urls(self):
         config = Config()
         self.assertEqual(config.target, 'mc244.com')
-        self.assertIn('SRV', config.describe_target())      # 默认目标不带端口, 走 SRV
+        self.assertIn('SRV', config.describe_target())      # the default target has no port, so SRV is used
         config.target = '127.0.0.1:25565'
         self.assertEqual(config.describe_target(), '127.0.0.1:25565')
         self.assertEqual(config.wss_url(), 'wss://127.0.0.1:8443')
@@ -563,7 +593,7 @@ class ResolverTests(unittest.TestCase):
 
     def test_fallback_when_dns_unreachable(self):
         original = resolver.system_nameservers
-        resolver.system_nameservers = lambda: ['127.0.0.1']  # 一定连不通, 保证离线可测
+        resolver.system_nameservers = lambda: ['127.0.0.1']  # guaranteed unreachable, keeps the test offline-capable
         try:
             logger = Logger('error', echo=False)
             self.assertEqual(resolver.resolve_target('example.test', None, logger=logger, timeout=0.2),
@@ -586,7 +616,7 @@ class ResolverTests(unittest.TestCase):
             self.assertRegex(item, r'^\d{1,3}(\.\d{1,3}){3}$')
 
 
-# ---------------------------------------------------------------- 端到端转发
+# ---------------------------------------------------------------- End-to-end forwarding
 
 
 class ProxyEndToEndTests(unittest.TestCase):
@@ -631,15 +661,17 @@ class ProxyEndToEndTests(unittest.TestCase):
             self.assertEqual(headers.get('sec-websocket-accept'),
                              wsproto.compute_accept_key(headers['_request_key']))
             self.assertEqual(headers.get('sec-websocket-protocol'), 'binary')
-            self.assertNotIn('sec-websocket-extensions', headers)  # 不启用压缩
-            self.assertEqual(client.recv(5), b'HELLO-FROM-SERVER')
+            self.assertNotIn('sec-websocket-extensions', headers)  # compression stays off
+            self.assertEqual(client.recv_exactly(len(b'HELLO-FROM-SERVER')),
+                             b'HELLO-FROM-SERVER')
         finally:
             client.close()
 
     def test_plain_websocket(self):
         client, _headers = connect_ws(self.config.ws_port)
         try:
-            self.assertEqual(client.recv(5), b'HELLO-FROM-SERVER')
+            self.assertEqual(client.recv_exactly(len(b'HELLO-FROM-SERVER')),
+                             b'HELLO-FROM-SERVER')
             payload = os.urandom(2048)
             client.send(payload)
             self.assertEqual(client.recv_exactly(len(payload)), payload)
@@ -649,7 +681,7 @@ class ProxyEndToEndTests(unittest.TestCase):
     def test_large_payload_integrity(self):
         client, _headers = connect_ws(self.config.ws_port)
         try:
-            client.recv(5)
+            client.recv_exactly(len(b'HELLO-FROM-SERVER'))
             payload = os.urandom(1024 * 1024)
             client.send(payload)
             received = client.recv_exactly(len(payload))
@@ -661,7 +693,7 @@ class ProxyEndToEndTests(unittest.TestCase):
     def test_fragmented_client_frames(self):
         client, _headers = connect_ws(self.config.ws_port)
         try:
-            client.recv(5)
+            client.recv_exactly(len(b'HELLO-FROM-SERVER'))
             payload = os.urandom(200000)
             client.send_fragmented(payload, pieces=5)
             self.assertEqual(client.recv_exactly(len(payload)), payload)
@@ -672,46 +704,62 @@ class ProxyEndToEndTests(unittest.TestCase):
         first, _ = connect_ws(self.config.ws_port)
         second, _ = connect_ws(self.config.ws_port)
         try:
-            self.assertEqual(first.recv(5), b'HELLO-FROM-SERVER')
-            self.assertEqual(second.recv(5), b'HELLO-FROM-SERVER')
+            self.assertEqual(first.recv_exactly(len(b'HELLO-FROM-SERVER')),
+                             b'HELLO-FROM-SERVER')
+            self.assertEqual(second.recv_exactly(len(b'HELLO-FROM-SERVER')),
+                             b'HELLO-FROM-SERVER')
             first.send(b'ping-from-first')
             second.send(b'ping-from-second')
-            self.assertEqual(first.recv(5), b'ping-from-first')
-            self.assertEqual(second.recv(5), b'ping-from-second')
+            self.assertEqual(first.recv_exactly(len(b'ping-from-first')), b'ping-from-first')
+            self.assertEqual(second.recv_exactly(len(b'ping-from-second')), b'ping-from-second')
         finally:
             first.close()
             second.close()
 
     def test_status_page(self):
-        result = http_get(self.config.ws_port, '/')
+        # /status is JSON for programs; / is the human-readable status page
+        result = http_get(self.config.ws_port, '/status')
         self.assertIn('200 OK', result['head'])
         data = json.loads(result['body'].decode('utf-8'))
         self.assertTrue(data['running'])
         self.assertEqual(data['service'], 'mcjs-wss-proxy')
         self.assertEqual(data['target'], '127.0.0.1:%d' % self.backend.port)
         self.assertIn('listeners', data)
+        self.assertEqual(data['target_source'], '127.0.0.1:%d' % self.backend.port)
+
+        page = http_get(self.config.ws_port, '/')
+        self.assertIn('200 OK', page['head'])
+        self.assertIn('text/html', page['head'])
+        text = page['body'].decode('utf-8')
+        self.assertIn(tr('proxy.page.address'), text)
+        self.assertIn('127.0.0.1:%d' % self.backend.port, text)
+        # Hard requirement: the status page must never show the old hardcoded
+        # "服务器不在线" ("server is offline") wording; the literal is kept
+        # verbatim in this guard on purpose.
+        self.assertNotIn('服务器不在线', text)
 
     def test_base64_subprotocol_mode(self):
         client, headers = connect_ws(self.config.ws_port, subprotocol='base64')
         try:
             self.assertEqual(headers.get('sec-websocket-protocol'), 'base64')
-            greeting = client.recv(5)
-            self.assertIsNotNone(greeting)
-            self.assertEqual(base64.b64decode(greeting), b'HELLO-FROM-SERVER')
+            self.assertEqual(client.recv_text_decoded(len(b'HELLO-FROM-SERVER')),
+                             b'HELLO-FROM-SERVER')
             payload = b'base64-mode-payload'
             client.send(base64.b64encode(payload), opcode=wsproto.OP_TEXT)
-            self.assertEqual(base64.b64decode(client.recv(10)), payload)
+            self.assertEqual(client.recv_text_decoded(len(payload)), payload)
         finally:
             client.close()
 
     def test_text_frame_auto_switch(self):
         client, _headers = connect_ws(self.config.ws_port)
         try:
-            client.recv(5)
             payload = b'text-frame-payload'
             client.send(base64.b64encode(payload), opcode=wsproto.OP_TEXT)
-            received = client.recv(10)
-            self.assertEqual(base64.b64decode(received), payload)
+            # No subprotocol was declared, so receiving a text frame auto-switches
+            # to base64 mode; the server greeting and the echo may land in the
+            # same frame, hence the byte-stream read.
+            stream = client.recv_text_decoded(len(b'HELLO-FROM-SERVER') + len(payload))
+            self.assertEqual(stream, b'HELLO-FROM-SERVER' + payload)
         finally:
             client.close()
 
@@ -721,7 +769,8 @@ class ProxyEndToEndTests(unittest.TestCase):
             self.config.routes = {'/second': '127.0.0.1:%d' % other.port}
             client, _headers = connect_ws(self.config.ws_port, path='/second')
             try:
-                self.assertEqual(client.recv(5), b'SECOND-SERVER')
+                self.assertEqual(client.recv_exactly(len(b'SECOND-SERVER')), b'SECOND-SERVER')
+                self.assertEqual(other.connections, 1)
             finally:
                 client.close()
         finally:
@@ -744,7 +793,7 @@ class ProxyEndToEndTests(unittest.TestCase):
             client, _headers = connect_ws(config.ws_port)
             try:
                 closed = client.wait_close(10)
-                self.assertIsNotNone(closed, '目标不可达时应收到关闭帧')
+                self.assertIsNotNone(closed, 'a close frame is expected when the target is unreachable')
                 self.assertEqual(closed[0], 1011)
             finally:
                 client.close()
@@ -752,12 +801,13 @@ class ProxyEndToEndTests(unittest.TestCase):
             server.stop()
 
     def test_stats_and_route_resolution(self):
-        # 路径映射属于运行期可变配置, 这里自己准备好再断言, 不依赖别的用例留下什么
+        # Routes are mutable runtime config: set them up here and assert, without relying on state left by other tests
         original = self.config.routes
         self.config.routes = {'/second': '127.0.0.1:%d' % self.backend.port}
         try:
-            self.assertEqual(self.server.resolve_route('/second')['label'], '路径 /second')
-            self.assertEqual(self.server.resolve_route('/')['label'], '默认目标')
+            self.assertEqual(self.server.resolve_route('/second')['label'],
+                             tr('proxy.route.path', path='/second'))
+            self.assertEqual(self.server.resolve_route('/')['label'], tr('proxy.route.default'))
         finally:
             self.config.routes = original
         status = self.server.status('/')
@@ -775,22 +825,22 @@ class ProxyEndToEndTests(unittest.TestCase):
         server = ProxyServer(config, Logger('error', echo=False))
         server.start()
         client, _headers = connect_ws(config.ws_port)
-        client.recv(5)
+        client.recv_exactly(len(b'HELLO-FROM-SERVER'))
         server.stop()
         closed = client.wait_close(5)
         client.close()
         self.assertFalse(server.running)
-        self.assertIsNotNone(closed, '停止服务时应主动关闭客户端连接')
+        self.assertIsNotNone(closed, 'stopping the server should actively close client connections')
         self.assertIn(closed[0], (1001, 1000))
 
     def test_openssl_generator(self):
         if not shutil.which('openssl'):
-            self.skipTest('系统中没有 openssl, 跳过')
+            self.skipTest('openssl not found on this system, skipping')
         directory = Path(self.tmp.name) / 'openssl-cert'
         info = certs.ensure_certificate(directory, common_name='localhost', generator='openssl')
         self.assertEqual(info['generator'], 'openssl')
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        context.load_cert_chain(info['cert_path'], info['key_path'])  # 能加载即合法
+        context.load_cert_chain(info['cert_path'], info['key_path'])  # loading cleanly means it is valid
 
 
 if __name__ == '__main__':

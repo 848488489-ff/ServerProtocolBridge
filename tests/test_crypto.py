@@ -1,9 +1,11 @@
-"""加密模块的测试: RSA 公钥加密 / AES-128-CFB8 流加密。
+"""Tests for the crypto module: RSA public-key encryption / AES-128-CFB8 stream cipher.
 
     python -m unittest discover -s tests -v
 
-CFB8 的对照实现直接照 NIST SP 800-38A 对 CFB 的定义逐字节写(每字节做一次分组加密,
-移位寄存器里进的是密文字节), 用来验证我们调库的参数(段长度 = 1 字节)没配错。
+The CFB8 reference implementation is written byte by byte straight from the
+NIST SP 800-38A definition of CFB (one block encryption per byte, ciphertext
+bytes moving into the shift register); it verifies that our library call is
+configured correctly (segment size = 1 byte).
 """
 
 from __future__ import annotations
@@ -19,7 +21,7 @@ from mcjs_proxy import crypto, x509  # noqa: E402
 
 
 def _aes_block(key: bytes, block: bytes) -> bytes:
-    """单次 AES 分组加密(只给对照实现用)。"""
+    """One AES block encryption (used only by the reference implementation)."""
     from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
     encryptor = Cipher(algorithms.AES(key), modes.ECB()).encryptor()
@@ -27,11 +29,14 @@ def _aes_block(key: bytes, block: bytes) -> bytes:
 
 
 def cfb8_by_spec(key: bytes, iv: bytes, data: bytes, decrypt: bool = False) -> bytes:
-    """按定义逐字节算 CFB8。
+    """Compute CFB8 byte by byte, straight from the definition.
 
-    加密: 密文字节 = 明文字节 ^ AES(寄存器)[0], 寄存器左移一位并补入**密文**字节;
-    解密: 明文字节 = 密文字节 ^ AES(寄存器)[0], 寄存器左移一位并补入**密文**字节。
-    两者都补密文, 区别只在密文是自己算的还是输入给的。
+    Encryption: cipher byte = plaintext byte ^ AES(register)[0]; the register
+    shifts left and the **ciphertext** byte moves in.
+    Decryption: plaintext byte = cipher byte ^ AES(register)[0]; the register
+    shifts left and the **ciphertext** byte moves in.
+    Both feed ciphertext back; the only difference is whether the byte was just
+    computed or came from the input.
     """
     register = bytearray(iv)
     out = bytearray()
@@ -45,7 +50,7 @@ def cfb8_by_spec(key: bytes, iv: bytes, data: bytes, decrypt: bool = False) -> b
 
 class AvailabilityTests(unittest.TestCase):
     def test_available_here(self):
-        # 开发机/打包机上都装了 cryptography, 这里应该可用
+        # cryptography is installed on dev and build machines alike, so this should be available here
         self.assertTrue(crypto.available())
         self.assertIn(crypto.backend_name(), ('cryptography', 'pycryptodome'))
 
@@ -81,7 +86,7 @@ class RsaEncryptTests(unittest.TestCase):
         self.assertEqual(block[block.index(b'\x00', 2) + 1:], data)
 
 
-@unittest.skipUnless(crypto.available(), '缺少 AES 库')
+@unittest.skipUnless(crypto.available(), 'AES library missing')
 class AesCfb8Tests(unittest.TestCase):
     KEY = bytes.fromhex('2b7e151628aed2a6abf7158809cf4f3c')
     IV = bytes.fromhex('000102030405060708090a0b0c0d0e0f')
@@ -99,13 +104,13 @@ class AesCfb8Tests(unittest.TestCase):
         self.assertEqual(expected, self.PLAIN)
 
     def test_roundtrip(self):
-        # 两个方向的流各自独立: 加密用一条, 解密用另一条
+        # The two directions have independent streams: one encrypts, the other decrypts.
         sender = crypto.AesCfb8(self.KEY, self.IV)
         receiver = crypto.AesCfb8(self.KEY, self.IV)
         self.assertEqual(receiver.decrypt(sender.encrypt(self.PLAIN)), self.PLAIN)
 
     def test_streaming_split_matches_one_shot(self):
-        """分多次喂进来的结果必须和一次喂完完全一样(CFB8 是流模式)。"""
+        """Data fed in several chunks must match one shot exactly (CFB8 is a stream mode)."""
         chunks = [self.PLAIN[:1], self.PLAIN[1:7], b'', self.PLAIN[7:33], self.PLAIN[33:]]
         split = crypto.AesCfb8(self.KEY, self.IV)
         joined = b''.join(split.encrypt(chunk) for chunk in chunks)

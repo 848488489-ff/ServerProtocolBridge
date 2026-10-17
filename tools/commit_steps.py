@@ -1,4 +1,4 @@
-"""分步提交脚本: 每个模块一个 commit, 便于回溯。
+"""Step-by-step commit script: one commit per module, so the history is easy to trace.
 
     py -3.14 tools\\commit_steps.py
 """
@@ -12,15 +12,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 STEPS = [
-    ('feat: 实现 RFC6455 WebSocket 帧编解码与握手', ['mcjs_proxy/wsproto.py']),
-    ('feat: 实现 SRV 解析与目标服务器连通性探测', ['mcjs_proxy/resolver.py']),
-    ('feat: 实现配置读写、地址解析与校验', ['mcjs_proxy/config.py']),
-    ('feat: 实现 WebSocket 到 TCP 转发核心', ['mcjs_proxy/proxy.py']),
-    ('feat: 实现 tkinter 图形界面', ['mcjs_proxy/gui.py']),
-    ('feat: 实现命令行模式与程序入口', ['mcjs_proxy/cli.py', 'main.py']),
-    ('test: 添加自检测试(证书握手 / 帧编解码 / 端到端转发)', ['tests/test_all.py']),
-    ('build: 添加 PyInstaller + UPX + MPRESS 打包脚本', ['tools/build.py', 'tools/build.bat', 'start.bat']),
-    ('docs: 编写 README、配置示例与依赖说明', ['README.md', 'config.example.json', 'requirements.txt']),
+    ('feat: implement RFC6455 WebSocket framing and handshake', ['mcjs_proxy/wsproto.py']),
+    ('feat: implement SRV lookup and target server reachability probe', ['mcjs_proxy/resolver.py']),
+    ('feat: implement config load/save, address parsing and validation', ['mcjs_proxy/config.py']),
+    ('feat: implement the WebSocket-to-TCP forwarding core', ['mcjs_proxy/proxy.py']),
+    ('feat: implement the tkinter GUI', ['mcjs_proxy/gui.py']),
+    ('feat: implement CLI mode and the program entry point', ['mcjs_proxy/cli.py', 'main.py']),
+    ('test: add self-tests (certificate handshake / frame codec / end-to-end relay)', ['tests/test_all.py']),
+    ('build: add PyInstaller + UPX + MPRESS packaging scripts', ['tools/build.py', 'tools/build.bat', 'start.bat']),
+    ('docs: write README, config example and dependency notes', ['README.md', 'config.example.json', 'requirements.txt']),
 ]
 
 
@@ -32,23 +32,23 @@ def main() -> int:
     for message, files in STEPS:
         existing = [item for item in files if (ROOT / item).exists()]
         if not existing:
-            print('[跳过] 文件不存在: %s' % ', '.join(files))
+            print('[skip] files do not exist: %s' % ', '.join(files))
             continue
         if git('add', '--', *existing) != 0:
-            print('[失败] git add: %s' % ', '.join(existing))
+            print('[failed] git add: %s' % ', '.join(existing))
             return 1
         staged = subprocess.run(['git', 'diff', '--cached', '--quiet'], cwd=str(ROOT)).returncode
         if staged == 0:
-            print('[跳过] 无改动: %s' % message)
+            print('[skip] no changes: %s' % message)
             continue
         if git('commit', '-q', '-m', message) != 0:
-            print('[失败] git commit: %s' % message)
+            print('[failed] git commit: %s' % message)
             return 1
-        print('[提交] %s' % message)
+        print('[commit] %s' % message)
 
-    print('\n--- 提交历史 ---')
+    print('\n--- commit history ---')
     subprocess.run(['git', 'log', '--oneline'], cwd=str(ROOT))
-    print('--- 未跟踪/未提交 ---')
+    print('--- untracked / unstaged ---')
     subprocess.run(['git', 'status', '--short'], cwd=str(ROOT))
     return 0
 

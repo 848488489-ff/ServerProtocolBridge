@@ -1,8 +1,23 @@
-"""程序名称与版本信息。"""
+"""Program name and version information."""
 
-APP_NAME = 'MCJS 服务器协议转换'
+from __future__ import annotations
+
+from .i18n import tr
+
+# Internal identity of the program: used as the EXE name, the FastAPI title and
+# in other machine-facing places, so it is always English and never translated.
+APP_NAME = 'MCJS Server Protocol Bridge'
 VERSION = '1.0.0'
-TAGLINE = '把普通 Minecraft 服务器转换为本地 wss:// 端点, 供 MCJS 等浏览器端客户端连接。'
 
-# 状态页 / 握手中出现的服务标识
+# Service identifier that shows up in the status page / handshake
 SERVICE_NAME = 'mcjs-wss-proxy'
+
+
+def app_name() -> str:
+    """Display name of the program in the active language."""
+    return tr('core.app_name')
+
+
+def tagline() -> str:
+    """One-line description of the program in the active language."""
+    return tr('core.tagline')
