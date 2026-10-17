@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .i18n import LANGUAGES, tr
-from .update import DEFAULT_UPDATE_URL
+from .update import DEFAULT_UPDATE_URL, split_urls
 from .utils import app_dir, resolve_path
 
 CONFIG_FILENAME = 'config.json'
@@ -117,8 +117,9 @@ class Config:
     max_payload_mb: int = 16      # Max size of a single frame
     log_level: str = 'info'
 
-    # Cloud version check: on startup the program asks the endpoint below for the
-    # newest release and says so when a newer one exists; empty URL = disabled
+    # Cloud version check: on startup the program asks the endpoint(s) below for
+    # the newest release and says so when a newer one exists; several URLs may be
+    # listed (comma/space separated) and are tried in order, empty = disabled
     update_check: bool = True
     update_url: str = DEFAULT_UPDATE_URL
 
@@ -259,9 +260,11 @@ class Config:
             problems.append(tr('core.config.log_level_invalid'))
         if (self.language or '').strip().lower() not in LANGUAGES:
             problems.append(tr('core.config.language_invalid'))
-        if self.update_check and (self.update_url or '').strip() \
-                and not self.update_url.strip().lower().startswith(('https://', 'http://')):
-            problems.append(tr('core.config.update_url_invalid'))
+        if self.update_check:
+            for url in split_urls(self.update_url):
+                if not url.lower().startswith(('https://', 'http://')):
+                    problems.append(tr('core.config.update_url_invalid'))
+                    break
         return problems
 
     # ---------- Display ----------

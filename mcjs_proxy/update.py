@@ -27,9 +27,17 @@ import urllib.request
 from .i18n import tr
 from .version import VERSION
 
-# Public endpoint that announces the newest release (a Cloudflare Worker; see
-# the "云端版本检查" section of the README for the expected document).
-DEFAULT_UPDATE_URL = 'https://misty-salad-1657.15923383477.workers.dev/'
+# Public endpoints that announce the newest release (see the "云端版本检查"
+# section of the README for the expected document).
+#   * the Pages copy is a plain static file, and *.pages.dev is reachable from
+#     mainland China, where *.workers.dev is DNS-poisoned;
+#   * the Worker takes over for everyone else and as a backup if the Pages
+#     project ever goes away.
+# Both are tried in order (see check()), so a user can put whichever host works
+# on their network first.
+PAGES_UPDATE_URL = 'https://banbengengxinjiancha.pages.dev/version.json'
+WORKER_UPDATE_URL = 'https://misty-salad-1657.15923383477.workers.dev/'
+DEFAULT_UPDATE_URL = '%s, %s' % (PAGES_UPDATE_URL, WORKER_UPDATE_URL)
 
 # The endpoint may sit on the other side of the planet, so give it room: the
 # check runs in the background everywhere, waiting a few extra seconds costs
@@ -84,6 +92,20 @@ def _first_string(payload: dict, keys) -> str:
     return ''
 
 
+def split_urls(text) -> list[str]:
+    """Split a configured endpoint list (commas, spaces or newlines separate).
+
+    Several endpoints are useful because one host can be blocked for some users
+    and reachable for others (``*.workers.dev`` is a good example), so the list
+    is tried in order and the first one that answers wins.
+    """
+    if isinstance(text, (list, tuple)):
+        items = [str(item) for item in text]
+    else:
+        items = re.split(r'[\s,]+', str(text or ''))
+    return [item.strip() for item in items if item.strip()]
+
+
 def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
     """Fetch and parse the endpoint.
 
@@ -128,22 +150,36 @@ def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
     return {'version': version, 'page': page, 'notes': notes}
 
 
-def check(url: str = DEFAULT_UPDATE_URL, current: str = VERSION,
+def check(urls: str = DEFAULT_UPDATE_URL, current: str = VERSION,
           timeout: float = TIMEOUT_SEC) -> dict:
-    """Ask the endpoint and compare the answer with the running version.
+    """Ask the endpoint(s) and compare the answer with the running version.
 
-    Returns ``{'version', 'page', 'notes', 'current', 'newer'}``.  Raises
-    UpdateError when the endpoint cannot be reached or understood -- callers
-    decide how loud to be about that (a failed check is not an error of the
-    program itself).
+    *urls* may name several endpoints (separated by commas or whitespace); they
+    are tried in order and the first one that answers wins, so a mirror that is
+    reachable locally can be put in front of a host that is blocked there.
+
+    Returns ``{'version', 'page', 'notes', 'current', 'newer', 'url'}``, where
+    ``url`` is the endpoint that answered.  Raises UpdateError when none of them
+    can be reached or understood -- callers decide how loud to be about that (a
+    failed check is not an error of the program itself).
     """
-    url = (url or '').strip()
-    if not url:
+    candidates = split_urls(urls)
+    if not candidates:
         raise UpdateError(tr('update.error.no_url'))
-    latest = fetch_latest(url, timeout)
-    latest['current'] = current
-    latest['newer'] = is_newer(latest['version'], current)
-    return latest
+    last_error: UpdateError | None = None
+    for url in candidates:
+        try:
+            latest = fetch_latest(url, timeout)
+        except UpdateError as exc:
+            last_error = exc
+            continue
+        latest['url'] = url
+        latest['current'] = current
+        latest['newer'] = is_newer(latest['version'], current)
+        return latest
+    if len(candidates) == 1:
+        raise last_error
+    raise UpdateError(tr('update.error.all_failed', count=len(candidates), error=last_error))
 
 
 def check_async(url: str = DEFAULT_UPDATE_URL, current: str = VERSION, timeout: float = TIMEOUT_SEC,
