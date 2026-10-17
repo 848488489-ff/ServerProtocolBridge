@@ -82,6 +82,8 @@ class Config:
     use_srv: bool = True
     # 把上行握手包里的服务器地址改写成真实目标域名(默认关闭: 只在确实需要时才动数据)
     rewrite_handshake_host: bool = False
+    # 浏览器端客户端(EaglercraftX 系, 例如 MCJS)的协议翻译: 自动识别, 代答其私有握手
+    eagler_translate: bool = True
 
     # 证书
     tls_enabled: bool = True

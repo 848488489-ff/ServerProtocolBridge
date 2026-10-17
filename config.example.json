@@ -8,6 +8,7 @@
   },
   "use_srv": true,
   "rewrite_handshake_host": false,
+  "eagler_translate": true,
   "tls_enabled": true,
   "cert_dir": "certs",
   "cert_common_name": "localhost",

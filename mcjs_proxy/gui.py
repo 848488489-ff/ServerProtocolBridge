@@ -146,6 +146,7 @@ class BridgeApp(tk.Tk):
         self.var_target = tk.StringVar()
         self.var_use_srv = tk.BooleanVar()
         self.var_rewrite_host = tk.BooleanVar()
+        self.var_eagler_translate = tk.BooleanVar(value=True)
         self.var_routes = tk.StringVar()
         self.var_cert_dir = tk.StringVar()
         self.var_cert_common_name = tk.StringVar()
@@ -321,6 +322,9 @@ class BridgeApp(tk.Tk):
         ttk.Checkbutton(frame, text='按目标域名改写握手地址(服务器按地址校验/分流时勾选)',
                         variable=self.var_rewrite_host).grid(row=1, column=0, columnspan=8,
                                                              sticky='w', pady=(6, 0))
+        ttk.Checkbutton(frame, text='浏览器客户端协议翻译(EaglercraftX/MCJS 系客户端必需)',
+                        variable=self.var_eagler_translate).grid(
+                            row=2, column=0, columnspan=8, sticky='w', pady=(2, 0))
 
     def _build_actions(self, parent: ttk.Frame) -> None:
         frame = ttk.Frame(parent)
@@ -357,6 +361,7 @@ class BridgeApp(tk.Tk):
         self.var_target.set(config.target)
         self.var_use_srv.set(bool(config.use_srv))
         self.var_rewrite_host.set(bool(getattr(config, 'rewrite_handshake_host', False)))
+        self.var_eagler_translate.set(bool(getattr(config, 'eagler_translate', True)))
         self.var_cert_dir.set(config.cert_dir)
         self.var_cert_common_name.set(config.cert_common_name)
         self.var_cert_extra.set(', '.join(config.cert_extra_names or []))
@@ -411,6 +416,7 @@ class BridgeApp(tk.Tk):
         self.config.target = self.var_target.get().strip() or 'mc244.com'
         self.config.use_srv = bool(self.var_use_srv.get())
         self.config.rewrite_handshake_host = bool(self.var_rewrite_host.get())
+        self.config.eagler_translate = bool(self.var_eagler_translate.get())
         self.config.routes = routes
         self.config.tls_enabled = True  # wss:// 是本工具的用途, 始终启用
         self.config.cert_dir = self.var_cert_dir.get().strip() or 'certs'
