@@ -1,0 +1,3 @@
+# 运行时依赖: 无 —— 只使用 Python 标准库(socket / ssl / tkinter / hashlib 等)
+# 打包成 EXE 时才需要 PyInstaller:
+pyinstaller>=6.0
