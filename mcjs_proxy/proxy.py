@@ -388,10 +388,11 @@ class Bridge:
                 self.server.stats.add_bytes(to_client=len(data))
                 translator = self.translator
                 if translator is not None:
-                    data = translator.feed_server(data)
+                    frames = translator.feed_server(data)
                     if translator.close_reason and not self.close_reason:
                         self.close_reason = translator.close_reason
-                if data:
+                    self._send_payloads(frames)
+                elif data:
                     self._send_payload(data)
         except (OSError, ssl.SSLError) as exc:
             if not self.closing.is_set():
@@ -406,6 +407,32 @@ class Bridge:
             self._send_frame(wsproto.OP_TEXT, base64.b64encode(data))
         else:
             self._send_frame(wsproto.OP_BINARY, data)
+
+    def _send_payloads(self, frames: list[bytes]) -> None:
+        """发一串来自协议翻译层的载荷: 每个包必须独占一个 WebSocket 帧。
+
+        客户端是按"一个帧一个包"读的, 所以不能把几个包拼进同一帧; 但可以把
+        编好的一串帧拼进一次 sendall, 免得每个包都来一次系统调用。
+        """
+        if not frames:
+            return
+        if self.base64_mode:
+            for frame in frames:
+                self._send_payload(frame)
+            return
+        if not self.handshake_done or self.close_sent or self.ws_closed:
+            return
+        data = b''.join(wsproto.encode_frame(wsproto.OP_BINARY, frame) for frame in frames)
+        with self._send_lock:
+            sock = self.sock
+            if sock is None:
+                return
+            try:
+                sock.sendall(data)
+            except (OSError, ssl.SSLError) as exc:
+                if not self.closing.is_set():
+                    self.log.debug('#%d 发送到客户端失败: %s' % (self.id, exc))
+                self.closing.set()
 
     # ---------- WebSocket 发送 ----------
     def _send_frame(self, opcode: int, payload: bytes) -> None:
