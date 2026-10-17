@@ -55,7 +55,7 @@ def parse_routes_text(text: str) -> dict:
         if not line or line.startswith('#'):
             continue
         if '=' not in line:
-            raise ValueError('路径映射格式应为 "路径=目标", 例如: /hypixel=mc.hypixel.net:25565')
+            raise ValueError('路径映射格式应为 "路径=目标", 例如: /mc244=mc244.com')
         path, _, target = line.partition('=')
         path = path.strip()
         target = target.strip()
@@ -77,9 +77,11 @@ class Config:
     ws_port: int = 8080           # ws://(明文, 备用) 监听端口, 0 = 不监听
 
     # 转发目标
-    target: str = 'mc.hypixel.net:25565'
+    target: str = 'mc244.com'
     routes: dict = field(default_factory=dict)   # {'/路径': 'host:port'}
     use_srv: bool = True
+    # 把上行握手包里的服务器地址改写成真实目标域名(默认关闭: 只在确实需要时才动数据)
+    rewrite_handshake_host: bool = False
 
     # 证书
     tls_enabled: bool = True

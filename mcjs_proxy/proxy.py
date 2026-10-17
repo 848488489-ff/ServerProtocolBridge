@@ -13,7 +13,7 @@ import ssl
 import threading
 import time
 
-from . import certs, resolver, wsproto
+from . import certs, handshake, resolver, wsproto
 from .config import Config, parse_address
 from .logger import NullLogger
 from .utils import human_bytes
@@ -23,6 +23,7 @@ RECV_SIZE = 65536
 HANDSHAKE_TIMEOUT = 15.0
 HTTP_HEAD_TIMEOUT = 15.0
 HTTP_HEAD_MAX = 16384
+HANDSHAKE_MAX_BUFFER = 4096
 SRV_CACHE_SECONDS = 300.0
 
 
@@ -92,6 +93,11 @@ class Bridge:
         self.route_label = ''
         self.endpoint: tuple[str, int] | None = None
         self._pending = b''
+        self._handshake_buffer = b''
+        self.frames_in = 0
+        self.handshake_seen = False          # 上行开头的握手包是否已解析过
+        self.handshake_info: dict | None = None
+        self.target_sent_any = False         # 目标服务器是否回过数据
 
     # ---------- 生命周期 ----------
     def run(self) -> None:
@@ -215,6 +221,12 @@ class Bridge:
 
     def _handle_frame(self, frame: wsproto.Frame) -> bool:
         if frame.opcode in (wsproto.OP_BINARY, wsproto.OP_TEXT):
+            self.frames_in += 1
+            if self.frames_in <= 4:      # 前几帧的内容对排查很关键, 只写 debug 日志
+                self.log.debug('#%d 上行帧 #%d %s 长度 %d, 内容: %s'
+                               % (self.id, self.frames_in,
+                                  '文本帧' if frame.opcode == wsproto.OP_TEXT else '二进制帧',
+                                  len(frame.payload), handshake.hex_preview(frame.payload)))
             self._forward_to_server(self._decode_payload(frame))
             return not self.closing.is_set()
         if frame.opcode == wsproto.OP_PING:
@@ -233,29 +245,75 @@ class Bridge:
         return True
 
     def _decode_payload(self, frame: wsproto.Frame) -> bytes:
-        if frame.opcode == wsproto.OP_TEXT:
-            if not self.base64_mode:
-                self.base64_mode = True
-                self.log.warn('#%d 收到文本帧, 自动切换为 base64 传输模式' % self.id)
-            text = frame.payload.decode('utf-8', 'ignore')
-            try:
-                return base64.b64decode(''.join(text.split()), validate=False)
-            except Exception:
-                return b''
-        return frame.payload
+        if frame.opcode != wsproto.OP_TEXT:
+            return frame.payload
+        if not self.base64_mode:
+            self.base64_mode = True
+            self.log.warn('#%d 收到文本帧, 自动切换为 base64 传输模式' % self.id)
+        data = wsproto.decode_base64_text(frame.payload)
+        if data is None:
+            preview = frame.payload[:100].decode('utf-8', 'replace')
+            self.log.warn('#%d 文本帧不是有效的 base64, 已丢弃 %d 字节 (开头: %r)'
+                          % (self.id, len(frame.payload), preview))
+            return b''
+        self.log.debug('#%d 文本帧 %d 字节 -> base64 解码出 %d 字节'
+                       % (self.id, len(frame.payload), len(data)))
+        return data
 
     def _forward_to_server(self, data: bytes) -> None:
-        if not data or self.tcp is None or self.closing.is_set():
+        if not data or self.closing.is_set():
+            return
+        data = self._inspect_handshake(data)
+        # 注意: self.tcp 可能刚被服务端线程关掉并置空, 所以这里用局部变量并且判空
+        tcp = self.tcp
+        if not data or tcp is None or self.closing.is_set():
             return
         try:
-            self.tcp.sendall(data)
+            tcp.sendall(data)
         except OSError as exc:
-            self.log.warn('#%d 发送到目标服务器失败: %s' % (self.id, exc))
-            self.close_reason = '发送到目标服务器失败: %s' % exc
+            if not self.closing.is_set():
+                self.log.warn('#%d 发送到目标服务器失败: %s' % (self.id, exc))
+                self.close_reason = '发送到目标服务器失败: %s' % exc
             self.closing.set()
             return
         self.bytes_to_server += len(data)
         self.server.stats.add_bytes(to_server=len(data))
+
+    def _inspect_handshake(self, data: bytes) -> bytes:
+        """只对上行开头的握手包做一次解析(写日志), 必要时按配置改写其中的地址。
+
+        客户端有可能把握手包拆成几次发送, 这里会先攒齐再转发;
+        其余所有字节一律原样转发, 不改任何游戏数据。
+        """
+        if self.handshake_seen:
+            return data
+        buffer = self._handshake_buffer + data
+        size = handshake.packet_size(buffer)
+        if (size is not None and size <= HANDSHAKE_MAX_BUFFER and len(buffer) < size
+                and handshake.looks_like_handshake(buffer)):
+            self._handshake_buffer = buffer
+            self.log.debug('#%d 握手包还差 %d 字节, 先缓存等收齐' % (self.id, size - len(buffer)))
+            return b''
+        self.handshake_seen = True
+        self._handshake_buffer = b''
+        info = handshake.parse_handshake(buffer)
+        if info is None:
+            self.log.debug('#%d 上行首包不是握手包, 原样转发; 前 64 字节: %s'
+                           % (self.id, handshake.hex_preview(buffer)))
+            return buffer
+        self.handshake_info = info
+        self.log.info('#%d 握手包: %s' % (self.id, handshake.describe_handshake(info)))
+        if not getattr(self.config, 'rewrite_handshake_host', False) or not self.endpoint:
+            return buffer
+        host, port = self.endpoint
+        rewritten = handshake.rewrite_handshake(buffer, host, port)
+        if rewritten is None:
+            self.log.warn('#%d 握手地址改写失败, 已按原样转发' % self.id)
+            return buffer
+        if rewritten == buffer:
+            return buffer
+        self.log.info('#%d 已把握手地址改写为 %s:%d' % (self.id, host, port))
+        return rewritten
 
     # ---------- TCP 侧读取(目标服务器 -> 客户端) ----------
     def _pump_from_server(self) -> None:
@@ -266,6 +324,7 @@ class Bridge:
                 if not data:
                     self.close_reason = self.close_reason or '目标服务器关闭了连接'
                     break
+                self.target_sent_any = True
                 self._send_payload(data)
                 self.bytes_to_client += len(data)
                 self.server.stats.add_bytes(to_client=len(data))
@@ -394,7 +453,30 @@ class Bridge:
                       % (self.id, time.time() - self.started_at,
                          self.close_reason or '正常关闭',
                          human_bytes(self.bytes_to_server), human_bytes(self.bytes_to_client)))
+        for hint in self._diagnose():
+            self.log.warn('#%d %s' % (self.id, hint))
         self.server.forget(self)
+
+    def _diagnose(self) -> list[str]:
+        """连接异常结束时给出一句可能原因, 免得只能看到"连接结束"四个字。"""
+        hints: list[str] = []
+        if self.target_sent_any:
+            return hints
+        info = self.handshake_info
+        if info is None:
+            return hints
+        if info['next_state'] == 2:      # 登录
+            hints.append('目标服务器收到登录请求后一个字节都没回就把连接关了, 常见原因:')
+            if info['address'] not in ('',) and self.endpoint:
+                host = self.endpoint[0]
+                if info['address'] not in host and ':' not in info['address']:
+                    hints.append('  · 握手里的地址 "%s" 和服务器的真实域名 "%s" 不一致, '
+                                 '部分服务器会按地址校验/分流 —— 可以试试打开"握手地址改写"'
+                                 % (info['address'], host))
+            hints.append('  · 客户端协议版本 %d 不被该服务器支持(服务端有时直接断开而不发提示)'
+                         % info['protocol'])
+            hints.append('  · 该服务器要求正版/白名单/特定端口, 或按访问来源做了拦截')
+        return hints
 
 
 def _set_nodelay(sock: socket.socket) -> None:
