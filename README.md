@@ -167,6 +167,7 @@ python main.py --install-cert   :: 生成并导入证书
 ```
 
 `version` 也接受 `v1.1` 这类写法, 比较时只看数字部分(`1.1` = `1.1.0`); 应答是纯文本(`1.1` 一行)也能识别。
+请求头带 `User-Agent: wss-proxy (ServerProtocolBridge/<版本号>)`, 公开端点可以据此过滤掉扫描器(UA 里带 `wss-proxy` 的请求通过)。
 地址随时可以换成别处: `*.workers.dev` 在国内多数网络下解析不出来(连不上时程序只会记一行日志, 不影响使用),
 这时把这份 JSON(或纯文本)放到能访问的地方 —— 比如自己的域名、网盘直链、Gitee —— 再把 `update_url` 指过去即可。
 命令行:

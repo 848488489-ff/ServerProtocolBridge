@@ -24,10 +24,14 @@ from mcjs_proxy.logger import NullLogger  # noqa: E402
 
 # path -> (status, body); the handler answers 404 for anything not listed
 REPLIES: dict[str, tuple[int, str]] = {}
+# headers of the most recent request, lower-cased, for assertions
+LAST_HEADERS: dict[str, str] = {}
 
 
 class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):  # noqa: N802 -- the name is fixed by http.server
+        LAST_HEADERS.clear()
+        LAST_HEADERS.update({key.lower(): value for key, value in self.headers.items()})
         status, body = REPLIES.get(self.path, (404, '{"error": "not found"}'))
         payload = body.encode('utf-8')
         self.send_response(status)
@@ -59,6 +63,7 @@ class _Server:
 class _ServerTest(unittest.TestCase):
     def setUp(self):
         REPLIES.clear()
+        LAST_HEADERS.clear()
         self.addCleanup(REPLIES.clear)
 
 
@@ -139,6 +144,16 @@ class FetchTests(_ServerTest):
         REPLIES['/latest.txt'] = (200, '1.1\n')
         with _Server() as base:
             self.assertTrue(update.check(base + '/latest.txt', '1.0.0')['newer'])
+
+    def test_request_identifies_itself(self):
+        # The public endpoint only answers requests whose user agent mentions
+        # "wss-proxy", so the check has to send it.
+        REPLIES['/v.json'] = (200, '{"version": "1.1"}')
+        with _Server() as base:
+            update.check(base + '/v.json', '1.0.0')
+        user_agent = LAST_HEADERS.get('user-agent', '')
+        self.assertIn('wss-proxy', user_agent)
+        self.assertIn('ServerProtocolBridge', user_agent)
 
     def test_http_error_is_reported(self):
         with _Server() as base:
