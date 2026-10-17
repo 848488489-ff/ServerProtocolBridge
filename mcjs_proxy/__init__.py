@@ -1,4 +1,4 @@
-"""MCJS Server Protocol Bridge.
+"""Server Protocol Bridge.
 
 Turns an ordinary Minecraft server (plain TCP, e.g. Hypixel) into a local
 wss:// endpoint for browser clients such as MCJS: browsers only accept wss://

@@ -14,7 +14,7 @@ import argparse
 import sys
 import threading
 
-from . import certs, resolver
+from . import certs, resolver, update
 from .config import Config, parse_address
 from .i18n import LANGUAGES, set_language, tr
 from .logger import Logger
@@ -28,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     # before the configured language is known, so --help and --version always
     # render in the default language.
     parser = argparse.ArgumentParser(
-        prog='mcjs-proxy',
+        prog='server-protocol-bridge',
         description=tr('core.cli.description', app=app_name(), version=VERSION))
     parser.add_argument('-c', '--config', help=tr('core.cli.config_help'))
     parser.add_argument('--no-gui', action='store_true', help=tr('core.cli.no_gui_help'))
@@ -51,6 +51,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--install-cert', action='store_true', help=tr('core.cli.install_cert_help'))
     parser.add_argument('--check', action='store_true', help=tr('core.cli.check_help'))
     parser.add_argument('--selftest', action='store_true', help=tr('core.cli.selftest_help'))
+    parser.add_argument('--check-update', action='store_true', help=tr('core.cli.check_update_help'))
+    parser.add_argument('--update-url', help=tr('core.cli.update_url_help'))
+    parser.add_argument('--no-update-check', action='store_true',
+                        help=tr('core.cli.no_update_check_help'))
     parser.add_argument('--log-level', choices=('debug', 'info', 'warn', 'error'),
                         help=tr('core.cli.log_level_help'))
     parser.add_argument('--heartbeat', type=int, help=tr('core.cli.heartbeat_help'))
@@ -94,6 +98,10 @@ def apply_arguments(config: Config, args: argparse.Namespace) -> Config:
         config.max_payload_mb = args.max_payload
     if args.language:
         config.language = args.language
+    if args.update_url:
+        config.update_url = args.update_url
+    if args.no_update_check:
+        config.update_check = False
     return config
 
 
@@ -185,6 +193,39 @@ def run_install_certificate(config: Config, logger: Logger, regenerate: bool) ->
     return 0
 
 
+def run_update_check(config: Config, logger: Logger) -> int:
+    """Ask the update endpoint for the newest release and print the outcome.
+
+    Exit codes: 0 = the running version is the newest one, 1 = a newer release
+    exists, 2 = the check itself failed (offline, bad answer, ...).
+    """
+    try:
+        result = update.check(config.update_url, VERSION)
+    except update.UpdateError as exc:
+        logger.error(tr('core.cli.update_failed', error=exc))
+        return 2
+    log_update_outcome(logger, result, announce_current=True)
+    return 1 if result['newer'] else 0
+
+
+def log_update_outcome(logger: Logger, outcome, announce_current: bool = False) -> None:
+    """Log a finished version check.
+
+    A newer release is worth a warning; being up to date, or a check that never
+    reached the endpoint, is ordinary background noise.
+    """
+    if isinstance(outcome, update.UpdateError):
+        logger.debug(tr('core.cli.update_failed', error=outcome))
+    elif outcome['newer']:
+        logger.warn(tr('core.cli.update_available', version=outcome['version'],
+                       current=outcome['current']))
+        page = (outcome.get('page') or '').strip()
+        if page:
+            logger.info(tr('core.cli.update_page', url=page))
+    elif announce_current:
+        logger.info(tr('core.cli.update_latest', version=outcome['current']))
+
+
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     config = apply_arguments(Config.load(args.config), args)
@@ -198,6 +239,14 @@ def main(argv=None) -> int:
         return run_selftest(config, logger)
     if args.install_cert:
         return run_install_certificate(config, logger, args.regen_cert)
+    if args.check_update:
+        return run_update_check(config, logger)
+
+    if config.update_check:
+        # Fire and forget: the answer only ever produces a log line, so it must
+        # not delay the listeners coming up.
+        update.check_async(config.update_url, VERSION,
+                           lambda outcome: log_update_outcome(logger, outcome))
 
     try:
         server = ProxyServer(config, logger)

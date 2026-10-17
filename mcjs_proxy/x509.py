@@ -240,7 +240,7 @@ def create_self_signed_certificate(common_name: str = 'localhost',
                                    alt_names: list[str] | None = None,
                                    days: int = 3650,
                                    key_bits: int = 2048,
-                                   organization: str = 'MCJS Protocol Bridge') -> dict:
+                                   organization: str = 'Server Protocol Bridge') -> dict:
     """Generate a self-signed certificate; returns the PEM text and the raw DER."""
     names = list(alt_names) if alt_names else ['localhost', '127.0.0.1', '::1']
     if common_name and common_name not in names:

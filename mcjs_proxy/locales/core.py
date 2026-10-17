@@ -8,7 +8,7 @@ from __future__ import annotations
 
 EN = {
     # ---------- identity (version.py) ----------
-    'core.app_name': 'MCJS Server Protocol Bridge',
+    'core.app_name': 'Server Protocol Bridge',
     'core.tagline': 'Turns a plain Minecraft server into a local wss:// endpoint '
                     'for browser clients such as MCJS.',
 
@@ -42,6 +42,7 @@ EN = {
     'core.config.heartbeat_non_negative': 'Heartbeat interval must not be negative',
     'core.config.log_level_invalid': 'Log level must be one of debug / info / warn / error',
     'core.config.language_invalid': 'Language must be "en" or "zh"',
+    'core.config.update_url_invalid': 'The update endpoint must be an http:// or https:// URL',
 
     # ---------- logger.py ----------
     'core.log.debug': 'DEBUG',
@@ -83,6 +84,10 @@ EN = {
     'core.cli.heartbeat_help': 'WebSocket heartbeat interval in seconds; 0 disables it',
     'core.cli.max_payload_help': 'Max size of a single frame (MB)',
     'core.cli.language_help': 'UI language: en (English) or zh (Chinese)',
+    'core.cli.check_update_help': 'Ask the cloud endpoint for the newest release, print the '
+                                  'result and exit (exit code 1 = a newer release exists)',
+    'core.cli.update_url_help': 'Cloud version-check endpoint (empty = no check)',
+    'core.cli.no_update_check_help': 'Do not check for a newer release on startup',
     'core.cli.config_problem': 'Configuration: %(problem)s',
     'core.cli.work_dir': 'Working directory: %(path)s',
     'core.cli.target_line': 'Forward target: %(target)s',
@@ -115,6 +120,10 @@ EN = {
     'core.cli.fallback_ws_line': 'Fallback plaintext address: %(url)s',
     'core.cli.stop_hint': 'Press Ctrl+C to stop the service',
     'core.cli.ctrl_c': 'Received Ctrl+C, stopping ...',
+    'core.cli.update_failed': 'Version check failed: %(error)s',
+    'core.cli.update_available': 'A newer release is available: %(version)s (running %(current)s)',
+    'core.cli.update_page': 'Download page: %(url)s',
+    'core.cli.update_latest': 'Version check: %(version)s is the newest release',
 
     # ---------- main.py ----------
     'core.main.gui_fallback': 'Could not load the GUI (%(error)s); falling back to '
@@ -125,7 +134,7 @@ EN = {
 
 ZH = {
     # ---------- identity (version.py) ----------
-    'core.app_name': 'MCJS 服务器协议转换',
+    'core.app_name': '服务器协议转换',
     'core.tagline': '把普通 Minecraft 服务器转换为本地 wss:// 端点, '
                     '供 MCJS 等浏览器端客户端连接。',
 
@@ -156,6 +165,7 @@ ZH = {
     'core.config.heartbeat_non_negative': '心跳间隔不能为负数',
     'core.config.log_level_invalid': '日志级别只能是 debug / info / warn / error',
     'core.config.language_invalid': '语言只能是 "en" 或 "zh"',
+    'core.config.update_url_invalid': '版本检查地址必须是 http:// 或 https:// 开头的网址',
 
     # ---------- logger.py ----------
     'core.log.debug': '调试',
@@ -188,6 +198,9 @@ ZH = {
     'core.cli.heartbeat_help': 'WebSocket 心跳间隔秒数, 0 关闭',
     'core.cli.max_payload_help': '单帧上限(MB)',
     'core.cli.language_help': '界面语言: en(英文) 或 zh(中文)',
+    'core.cli.check_update_help': '向云端查询最新版本并退出(退出码 1 = 有新版本)',
+    'core.cli.update_url_help': '云端版本检查地址(留空 = 不做检查)',
+    'core.cli.no_update_check_help': '启动时不自动检查新版本',
     'core.cli.config_problem': '配置: %(problem)s',
     'core.cli.work_dir': '工作目录: %(path)s',
     'core.cli.target_line': '转发目标: %(target)s',
@@ -217,6 +230,10 @@ ZH = {
     'core.cli.fallback_ws_line': '备用明文地址: %(url)s',
     'core.cli.stop_hint': '按 Ctrl+C 停止服务',
     'core.cli.ctrl_c': '收到 Ctrl+C, 正在停止...',
+    'core.cli.update_failed': '版本检查失败: %(error)s',
+    'core.cli.update_available': '有新版本可用: %(version)s (当前 %(current)s)',
+    'core.cli.update_page': '下载页面: %(url)s',
+    'core.cli.update_latest': '版本检查: 当前 %(version)s 已是最新版本',
 
     # ---------- main.py ----------
     'core.main.gui_fallback': '无法加载图形界面(%(error)s), 已切换到命令行模式。',

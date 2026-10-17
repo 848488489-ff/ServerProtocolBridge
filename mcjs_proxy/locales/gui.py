@@ -18,6 +18,7 @@ EN = {
     'gui.menu.copy_endpoint': 'Copy wss Address',
     'gui.menu.status_page': 'Open Status Page',
     'gui.menu.install_cert': 'Install Certificate into Trust Store',
+    'gui.menu.check_update': 'Check for Updates',
 
     # Log panel
     'gui.log_frame': 'Runtime Log',
@@ -36,8 +37,6 @@ EN = {
     'gui.label.ws_port': 'ws port (0 = off)',
     'gui.label.target': 'Forward Target',
     'gui.label.use_srv': 'Resolve via SRV when no port is given',
-    'gui.label.routes': 'Path Routes',
-    'gui.label.routes_hint': 'One per line, path=target, e.g. /mc244=mc244.com',
 
     # Certificate
     'gui.label.cert_dir': 'Certificate Directory',
@@ -176,6 +175,18 @@ When a connection fails, check the "Runtime Log": every connection logs its
 handshake details (protocol version / the address the client sent), the
 up/down byte counts and the reason it closed.
 """,
+    # ---------- Cloud version check ----------
+    'gui.update.title': 'Version Check',
+    'gui.update.checking': 'Checking for the newest release ...',
+    'gui.update.disabled': 'The version check is switched off (no endpoint configured).',
+    'gui.update.failed': 'Version check failed: %(error)s',
+    'gui.update.up_to_date': 'Version check: %(version)s is the newest release',
+    'gui.update.available': 'Newer release %(version)s is available (running %(current)s)',
+    'gui.update.banner': 'Newer release %(version)s is available (running %(current)s)',
+    'gui.update.banner_page': '-- click to open the download page',
+    'gui.update.ask': 'Newer release %(version)s is available (running %(current)s).\n\n'
+                      'Open the download page?\n%(url)s',
+
     'gui.about.title': 'About',
     'gui.about.text': """%(name)s v%(version)s
 
@@ -201,6 +212,7 @@ ZH = {
     'gui.menu.copy_endpoint': '复制 wss 地址',
     'gui.menu.status_page': '打开状态页',
     'gui.menu.install_cert': '安装证书到系统信任库',
+    'gui.menu.check_update': '检查更新',
 
     # 日志面板
     'gui.log_frame': '运行日志',
@@ -219,8 +231,6 @@ ZH = {
     'gui.label.ws_port': 'ws 端口(0=关闭)',
     'gui.label.target': '转发目标',
     'gui.label.use_srv': '不带端口时按 SRV 解析',
-    'gui.label.routes': '路径映射',
-    'gui.label.routes_hint': '每行一条, 格式: 路径=目标, 例如 /mc244=mc244.com',
 
     # 证书
     'gui.label.cert_dir': '证书目录',
@@ -343,6 +353,17 @@ ZH = {
 连不上时看"运行日志": 每条连接的握手信息(协议版本/客户端填写的地址)、
 上下行字节数、断开原因都会打出来。
 """,
+    # ---------- 云端版本检查 ----------
+    'gui.update.title': '版本检查',
+    'gui.update.checking': '正在检查最新版本...',
+    'gui.update.disabled': '版本检查已关闭(没有配置检查地址)',
+    'gui.update.failed': '版本检查失败: %(error)s',
+    'gui.update.up_to_date': '版本检查: 当前 %(version)s 已是最新版本',
+    'gui.update.available': '有新版本可用: %(version)s (当前 %(current)s)',
+    'gui.update.banner': '有新版本 %(version)s (当前 %(current)s)',
+    'gui.update.banner_page': '—— 点击打开下载页面',
+    'gui.update.ask': '有新版本 %(version)s (当前 %(current)s)。\n\n现在打开下载页面吗？\n%(url)s',
+
     'gui.about.title': '关于',
     'gui.about.text': """%(name)s v%(version)s
 

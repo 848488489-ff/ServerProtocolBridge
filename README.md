@@ -1,4 +1,4 @@
-# MCJS 服务器协议转换
+# 服务器协议转换
 
 把**普通 Minecraft 服务器**(例如 mc244.com, 原生 TCP 协议)转换为**本地 `wss://` 端点**,
 让 MCJS 这类浏览器端客户端可以直接连上去。
@@ -11,7 +11,7 @@
 MCJS (浏览器)
     │  wss://127.0.0.1:8443        ← WebSocket(已 TLS 加密)
     ▼
-MCJS 服务器协议转换(本工具, 仅监听 127.0.0.1)
+服务器协议转换(本工具, 仅监听 127.0.0.1)
     │  TCP mc244.com(:SRV 解析)    ← 原样转发的字节流
     ▼
 mc244.com / 任意普通 Minecraft 服务器
@@ -65,7 +65,7 @@ AES-128-CFB8) —— 很多服务器开着加密握手但并不真的去 Mojang 
 
 ### 方式一: 用打包好的 EXE(推荐)
 
-1. 双击 `dist\MCJS-Bridge.exe`(若只有源码, 先按第 6 节打包)。
+1. 双击 `dist\服务器协议转换.exe`(若只有源码, 先按第 6 节打包)。
 2. 界面里确认 **转发目标**(默认 `mc244.com`, 不带端口时按 SRV 记录找服务器), 点 **启动服务**。
 3. 点 **安装到系统信任库**(见下面第 4 节), 然后**重启浏览器**。
 4. 在 MCJS 客户端的服务器地址栏填:
@@ -92,6 +92,7 @@ python main.py
 python main.py --no-gui --target mc244.com --port 8443
 python main.py --no-gui --language zh           :: 中文界面/日志(默认 English)
 python main.py --check          :: 检查证书 + 目标服务器连通性
+python main.py --check-update   :: 查一次云端最新版本(退出码 1 = 有新版本)
 python main.py --install-cert   :: 生成并导入证书
 ```
 
@@ -101,11 +102,12 @@ python main.py --install-cert   :: 生成并导入证书
 
 | 区域 | 说明 |
 | --- | --- |
-| 基本设置 | 界面语言(English / 中文, 默认 English)、监听地址、wss 端口(默认 8443)、ws 端口(默认 8080, 备用明文)、转发目标、路径映射 |
+| 基本设置 | 界面语言(English / 中文, 默认 English)、监听地址、wss 端口(默认 8443)、ws 端口(默认 8080, 备用明文)、转发目标 |
 | 证书 | 首次运行自动签发自签名证书; 可查看指纹、重新生成、一键导入系统信任库 |
 | 高级 | 日志级别、WebSocket 心跳间隔、连接超时、WebSocket 单帧上限、握手地址改写、浏览器客户端协议翻译 |
 | 运行日志 | 每条连接的上行/下行字节数、持续时间、关闭原因都在这里 |
 | 状态栏 | 活动连接、累计连接、上行/下行字节、运行时长 |
+| 菜单栏 | 文件(保存配置 / 打开工作目录 / 退出)、工具(复制 wss 地址 / 打开状态页 / 安装证书)、帮助(检查更新 / 使用说明 / 关于) |
 
 **在 MCJS 中填写**: `wss://127.0.0.1:8443`(界面底部会实时显示这个地址, 可一键复制)。
 
@@ -127,7 +129,7 @@ python main.py --install-cert   :: 生成并导入证书
 | `wss_port` | `8443` | `wss://`(TLS)端口 |
 | `ws_port` | `8080` | `ws://`(明文)备用端口, `0` 表示关闭。仅当 MCJS 页面本身是 `http://` 时才可能用到 |
 | `target` | `mc244.com` | 转发目标。支持 `host`(按 SRV 解析)、`host:port`、`mc://host:port`、`[IPv6]:port` |
-| `routes` | `{}` | 路径映射, 例如 `{"/mc244": "mc244.com", "/本地": "127.0.0.1:25565"}` |
+| `routes` | `{}` | 路径映射, 例如 `{"/mc244": "mc244.com", "/本地": "127.0.0.1:25565"}`。界面里不提供输入框, 需要就改这里 |
 | `use_srv` | `true` | 目标**不带端口**时先查 `_minecraft._tcp.<域名>` 的 SRV 记录(与原版客户端一致), 查不到回落 25565 |
 | `rewrite_handshake_host` | `false` | 把握手包里的服务器地址改写成真实目标域名。客户端填的是 `127.0.0.1:8443` 时, 部分服务器会按地址校验或分流从而拒绝连接, 这时打开它 |
 | `eagler_translate` | `true` | 浏览器端客户端(EaglercraftX/MCJS 系)协议翻译: 自动识别对面是不是这种客户端, 认出后由本工具代答握手。关掉就退化成纯字节转发 |
@@ -145,6 +147,35 @@ python main.py --install-cert   :: 生成并导入证书
 | `max_payload_mb` | `16` | WebSocket 单帧上限 |
 | `log_level` | `info` | `debug` / `info` / `warn` / `error` |
 | `language` | `en` | 界面/日志/玩家提示语言: `en`(English) 或 `zh`(中文)。命令行 `--language` |
+| `update_check` | `true` | 启动时向 `update_url` 查一次最新版本(见下面"云端版本检查")。命令行 `--no-update-check` |
+| `update_url` | `https://misty-salad-1657.15923383477.workers.dev/` | 版本检查地址, 留空 = 不做检查。命令行 `--update-url` |
+
+### 云端版本检查
+
+启动时本工具会用一次普通的 HTTPS GET 向 `update_url` 查询最新版本(超时 20 秒, 失败只在日志里记一行, 不影响使用)。
+发现比当前版本新时, 窗口标题下方会出现一行提示, 点它用浏览器打开下载页面; **帮助 → 检查更新** 可以随时手动查一次。
+程序自己不会下载文件, 只把页面交给浏览器。
+
+端点只要返回这样一份文档就行(Cloudflare Worker / 静态文件都可以), 下载页字段可有可无,
+多出来的字段(比如以后加 `sha256`)会被旧版本直接忽略; 字段名 `download_page` / `page` / `url` / `download_url` 都认:
+
+```json
+{
+  "version": "1.1",
+  "download_page": "https://example.com/download"
+}
+```
+
+`version` 也接受 `v1.1` 这类写法, 比较时只看数字部分(`1.1` = `1.1.0`); 应答是纯文本(`1.1` 一行)也能识别。
+地址随时可以换成别处: `*.workers.dev` 在国内多数网络下解析不出来(连不上时程序只会记一行日志, 不影响使用),
+这时把这份 JSON(或纯文本)放到能访问的地方 —— 比如自己的域名、网盘直链、Gitee —— 再把 `update_url` 指过去即可。
+命令行:
+
+```bat
+python main.py --check-update                    :: 查一次并退出(退出码 1 = 有新版本, 2 = 检查失败)
+python main.py --no-gui --update-url https://... :: 换一个检查地址(也可以直接改 config.json)
+python main.py --no-gui --no-update-check        :: 启动时不做检查
+```
 
 ---
 
@@ -255,7 +286,7 @@ python main.py --install-cert   :: 生成并导入证书
 翻译层只处理连接开头的握手与封包长度/压缩, 游戏内容不落盘。
 
 **Q: 能同时连多个服务器吗**
-可以。用 `routes` 做路径映射即可, 例如:
+可以。在 `config.json` 里用 `routes` 做路径映射(界面里没有输入框, 需要就手动改配置), 例如:
 
 ```json
 "routes": {
@@ -278,8 +309,8 @@ python tools\build.py
 
 | 产物 | 说明 |
 | --- | --- |
-| `dist\MCJS-Bridge.exe` | 主程序(带控制台: 可以用 `--no-gui` / `--check` 等命令行参数) |
-| `dist\MPRESS-folder\MCJS-Bridge.exe` | MPRESS 压缩版(体积更小, 备选) |
+| `dist\服务器协议转换.exe` | 主程序(带控制台: 可以用 `--no-gui` / `--check` 等命令行参数) |
+| `dist\MPRESS-folder\服务器协议转换.exe` | MPRESS 压缩版(体积更小, 备选) |
 | `dist\build-report.txt` | 各阶段体积与 SHA256 |
 
 打包脚本会把桥接层的动态依赖一并收进去(`--collect-all uvicorn` / `--collect-all websockets` /
@@ -297,7 +328,7 @@ python tools\build.py
 ## 7. 目录结构
 
 ```
-MCJS-服务器协议转换/
+服务器协议转换/
 ├── main.py                 入口(默认 GUI, --no-gui 走命令行)
 ├── mcjs_proxy/
 │   ├── proxy.py            转发核心: 监听 -> WebSocket 握手 -> TCP 桥接 + 翻译层挂载
