@@ -12,12 +12,18 @@
 * 同时在服务器面前扮演一个原版 1.8.8 客户端 (发原版握手包 + 登录包, 离线模式即可);
 * 把服务器发来的登录结果翻译成客户端的"允许登录/完成登录";
 * 之后双向搬运游戏数据, 顺便把两边不一致的地方补齐:
-    - 压缩: 服务器可以启用压缩, 客户端这边始终不压缩(不能给它发 Set Compression),
-      所以代理负责解压/再压缩;
+    - 封帧: 原版 TCP 是 [VarInt 包长][包体] 的字节流, 浏览器客户端却是
+      "一个 WebSocket 帧 = 一个裸包(包 id + 内容)", 既没有长度前缀也没有压缩,
+      所以每个包都要单独拆成一帧发过去、每个帧单独装回一个包;
+    - 压缩: 服务器可以启用压缩, 客户端这边永远不压缩(它的
+      setCompressionTreshold 直接抛 CompressionNotSupportedException),
+      代理负责解压/再压缩, 并且绝不把 Set Compression 转发给客户端;
     - 握手完成前服务器已经发来的游戏数据要缓存到"完成登录"之后再发给客户端;
-    - 客户端特有的 "EAG|..." 插件消息丢掉, 原版服务器不认识这些通道。
+    - 客户端特有的 "EAG|..." 插件消息和 0xEE 开头的注入消息帧丢掉,
+      原版服务器不认识这些。
 
-协议格式全部来自 EaglercraftX 服务端实现 (lax1dude/eaglerxserver)。
+协议格式全部来自 EaglercraftX 服务端实现 (lax1dude/eaglerxserver) 和客户端 u53
+的 socket 层源码。
 """
 
 from __future__ import annotations
@@ -28,9 +34,6 @@ import threading
 
 from . import crypto, eagler, vanilla
 from .logger import NullLogger
-
-# 客户端方向永远不压缩(我们不会给客户端发 Set Compression)
-CLIENT_THRESHOLD = 0
 
 # 本代理自己说的话都带这个前缀, 好和服务器说的话区分开
 PREFIX = '[协议转换器] '
@@ -120,13 +123,12 @@ class EaglerTranslator:
         self.login_done = False           # 后端是否已登录成功
         self.close_reason = ''
 
-        self.client_decoder = vanilla.Decoder(CLIENT_THRESHOLD)
-        self.client_encoder = vanilla.Encoder(CLIENT_THRESHOLD)
+        # 客户端方向不用 Decoder/Encoder: 那边是"一个帧一个裸包", 见 feed_client/feed_server
         self.server_decoder = vanilla.Decoder(0)
         self.server_encoder = vanilla.Encoder(0)
         self.server_decrypt: crypto.AesCfb8 | None = None   # 目标服务器 -> 本代理(AES)
         self.server_encrypt: crypto.AesCfb8 | None = None   # 本代理 -> 目标服务器(AES)
-        self.pending_to_client = bytearray()
+        self.pending_to_client: list[bytes] = []            # 握手期间攒下的游戏帧(一帧一个包)
         self._lock = threading.Lock()
 
         self.packets_to_server = 0
@@ -136,7 +138,11 @@ class EaglerTranslator:
 
     # ---------- 对外: 两个方向 ----------
     def feed_client(self, data: bytes) -> bytes:
-        """喂入客户端发来的数据(WS 帧内容), 返回要发给后端服务器的字节。"""
+        """喂入客户端发来的一个 WebSocket 帧, 返回要写给后端服务器的字节。
+
+        注意: 客户端那边是"一个帧 = 一个裸包(包 id + 内容)", 帧里既没有长度前缀
+        也没有压缩, 所以这里按"整帧就是一个包"处理。
+        """
         if not data or self.phase == 'closed':
             return b''
         with self._lock:
@@ -148,30 +154,34 @@ class EaglerTranslator:
                 out = self._handle_handshake_packet(data)
             return self._encode_for_backend(out)
 
-    def feed_server(self, data: bytes) -> bytes:
-        """喂入后端服务器发来的数据, 返回要发给客户端的字节。"""
+    def feed_server(self, data: bytes) -> list[bytes]:
+        """喂入后端服务器发来的字节流, 返回要发给客户端的一串 WebSocket 帧。
+
+        返回的是"帧的列表"而不是一整块字节: 客户端要求一个帧里只有一个包, 所以
+        每个包必须单独发一帧, 调用方要逐个发出去。
+        """
         if not data or self.phase == 'closed':
-            return b''
+            return []
         with self._lock:
             if self.server_decrypt is not None:
                 data = self.server_decrypt.decrypt(data)
             self.server_decoder.push(data)
-            out = bytearray()
+            frames: list[bytes] = []
             while True:
                 try:
                     packet = self.server_decoder.next_packet()
                 except vanilla.ProtocolError as exc:
                     self._fail('解析目标服务器数据失败: %s' % exc)
-                    return bytes(out)
+                    return frames
                 if packet is None:
-                    return bytes(out)
+                    return frames
                 self.packets_to_client += 1
                 if not self.login_done:
-                    self._handle_login_packet(packet, out)
+                    self._handle_login_packet(packet, frames)
                 else:
-                    self._handle_play_packet(packet, out)
+                    self._handle_play_packet(packet, frames)
                 if self.phase == 'closed':
-                    return bytes(out)
+                    return frames
 
     def _encode_for_backend(self, data: bytes) -> bytes:
         """发给后端服务器之前: 如果已经启用加密, 在这里套上 AES。"""
@@ -272,7 +282,7 @@ class EaglerTranslator:
         return handshake + login_start
 
     # ---------- 后端: 登录阶段 ----------
-    def _handle_login_packet(self, packet: vanilla.Packet, out: bytearray) -> None:
+    def _handle_login_packet(self, packet: vanilla.Packet, frames: list[bytes]) -> None:
         packet_id = packet.packet_id
         if packet_id == vanilla.LOGIN_SET_COMPRESSION:
             threshold = 256
@@ -295,7 +305,7 @@ class EaglerTranslator:
             self._handle_encryption_request(packet)
             return
         if packet_id == vanilla.LOGIN_SUCCESS:
-            self._handle_login_success(packet, out)
+            self._handle_login_success(packet, frames)
             return
         self.log.warn('%s 登录阶段收到意外包 %s' % (self.tag, packet_name(packet_id, 'login')))
 
@@ -350,7 +360,7 @@ class EaglerTranslator:
         self.log.info('%s 已代做加密握手 (服务器 ID %r, 共享密钥 %s..., 用 %s), 之后全程 AES-128-CFB8'
                       % (self.tag, server_id, secret.hex()[:8], crypto.backend_name()))
 
-    def _handle_login_success(self, packet: vanilla.Packet, out: bytearray) -> None:
+    def _handle_login_success(self, packet: vanilla.Packet, frames: list[bytes]) -> None:
         try:
             uuid_text, pos = vanilla.read_string(packet.body, 0)
             name, _ = vanilla.read_string(packet.body, pos)
@@ -371,40 +381,42 @@ class EaglerTranslator:
         self._maybe_finish_login()
 
     # ---------- 后端: 游戏阶段 ----------
-    def _handle_play_packet(self, packet: vanilla.Packet, out: bytearray) -> None:
+    def _handle_play_packet(self, packet: vanilla.Packet, frames: list[bytes]) -> None:
         if packet.packet_id == vanilla.PLAY_DISCONNECT:
             reason = self._chat_text(packet.body)
             if reason:
                 self.log.warn('%s 目标服务器断开连接: %s' % (self.tag, reason))
             self.close_reason = reason or self.close_reason
         self._note_packet(packet.packet_id, 'play', to_client=True)
+        # 客户端要的是"一个帧一个裸包", 所以直接把 包 id + 内容 当成一帧发过去
         if self.phase == 'play':
-            out += self.client_encoder.frame(packet.payload)
+            frames.append(packet.payload)
         else:
-            # 客户端还没完成握手, 先把游戏数据攒着
-            self.pending_to_client += self.client_encoder.frame(packet.payload)
+            # 客户端还没完成握手, 先把游戏数据攒着(同样一帧一个包)
+            self.pending_to_client.append(packet.payload)
 
     def _client_play(self, data: bytes) -> bytes:
+        """客户端发来的一个帧就是一个完整的裸包(没有长度前缀, 也没有压缩)。"""
+        if len(data) > 1 and data[0] == vanilla.INJECTED_FRAME_MARKER:
+            # v5 起皮肤之类的扩展走"注入消息"帧, 它不是原版包, 原版服务器不认识
+            self.log.debug('%s 丢弃客户端注入消息帧 %d 字节' % (self.tag, len(data)))
+            return b''
         try:
-            packets = self.client_decoder.feed(data)
+            packet_id, at = vanilla.read_varint(data, 0)
         except vanilla.ProtocolError as exc:
             self._fail('解析客户端数据失败: %s' % exc)
             return b''
-        out = bytearray()
-        for packet in packets:
-            self.packets_to_server += 1
-            self._note_packet(packet.packet_id, 'play', to_client=False)
-            if self._is_eagler_extension(packet):
-                continue
-            out += self.server_encoder.frame(packet.payload)
-        return bytes(out)
+        self.packets_to_server += 1
+        self._note_packet(packet_id, 'play', to_client=False)
+        if packet_id == vanilla.CLIENT_PLUGIN_MESSAGE and self._is_eagler_extension(data[at:]):
+            return b''
+        # 装回原版字节流: [包长][包 id + 内容]; 服务器开了压缩就按它的阈值压
+        return self.server_encoder.frame(data)
 
-    def _is_eagler_extension(self, packet: vanilla.Packet) -> bool:
+    def _is_eagler_extension(self, body: bytes) -> bool:
         """Eaglercraft 私有插件消息 —— 原版服务器不认识, 丢掉。"""
-        if packet.packet_id != vanilla.CLIENT_PLUGIN_MESSAGE:
-            return False
         try:
-            channel, _ = vanilla.read_string(packet.body, 0)
+            channel, _ = vanilla.read_string(body, 0)
         except vanilla.ProtocolError:
             return False
         if channel.startswith(vanilla.EAGLER_CHANNEL_PREFIXES):
@@ -419,9 +431,11 @@ class EaglerTranslator:
         self.phase = 'play'
         self._send(eagler.pack_finish_login())
         if self.pending_to_client:
-            self.log.debug('%s 把握手期间缓存的 %d 字节游戏数据发给客户端'
-                           % (self.tag, len(self.pending_to_client)))
-            self._send(bytes(self.pending_to_client))
+            total = sum(len(frame) for frame in self.pending_to_client)
+            self.log.debug('%s 把握手期间缓存的 %d 个游戏包(共 %d 字节)发给客户端'
+                           % (self.tag, len(self.pending_to_client), total))
+            for frame in self.pending_to_client:      # 一帧一个包, 必须分开发
+                self._send(frame)
             self.pending_to_client.clear()
         self.log.info('%s 协议翻译完成, 进入游戏数据直通' % self.tag)
 

@@ -382,14 +382,15 @@ class TranslatorUnitTests(unittest.TestCase):
                    + vanilla.Encoder(256).frame(
                        unframed(build_login_success('Tester', uuid_text=uuid_text))))
         out = translator.feed_server(payload)
-        self.assertEqual(out, b'')
+        self.assertEqual(out, [])                # 登录阶段的包不直接转发给客户端
         self.assertEqual(len(sent), 2)
         self.assertEqual(sent[1][0], eagler.PROTOCOL_SERVER_ALLOW_LOGIN)
         self.assertEqual(translator.server_encoder.threshold, 256)
 
-        # 握手完成前的游戏数据要缓存, 完成登录之后才发
-        play = vanilla.pack(vanilla.PLAY_JOIN_GAME, b'\x01\x02\x03')
-        self.assertEqual(translator.feed_server(vanilla.Encoder(256).frame(unframed(play))), b'')
+        # 握手完成前的游戏数据要缓存, 完成登录之后才发;
+        # 发给客户端的一律是"一个帧一个裸包": 没有长度前缀, 也没有压缩
+        play = unframed(vanilla.pack(vanilla.PLAY_JOIN_GAME, b'\x01\x02\x03'))
+        self.assertEqual(translator.feed_server(vanilla.Encoder(256).frame(play)), [])
         self.assertEqual(translator.feed_client(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN])), b'')
         self.assertEqual(sent[2][0], eagler.PROTOCOL_SERVER_FINISH_LOGIN)
         self.assertEqual(sent[3], play)
@@ -403,19 +404,51 @@ class TranslatorUnitTests(unittest.TestCase):
         translator.feed_server(build_login_success('Tester'))
         translator.feed_client(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
 
-        keep_alive = vanilla.pack(vanilla.PLAY_KEEP_ALIVE, b'\x00\x00\x00\x01')
+        # 客户端上行: 一个裸包 -> 原版流里一个带长度前缀的包
+        keep_alive = unframed(vanilla.pack(vanilla.PLAY_KEEP_ALIVE, b'\x00\x00\x00\x01'))
         moved = translator.feed_client(keep_alive)
         packets = vanilla.Decoder(0).feed(moved)
-        self.assertEqual([p.payload for p in packets], [unframed(keep_alive)])
+        self.assertEqual([p.payload for p in packets], [keep_alive])
 
+        # 客户端特有的 EAG| 插件消息丢掉
         channel = b'EAG|Skins-1.8'
-        plugin = vanilla.pack(vanilla.CLIENT_PLUGIN_MESSAGE,
-                              vanilla.write_varint(len(channel)) + channel + b'\x01\x02')
+        plugin = unframed(vanilla.pack(vanilla.CLIENT_PLUGIN_MESSAGE,
+                                       vanilla.write_varint(len(channel)) + channel + b'\x01\x02'))
         self.assertEqual(translator.feed_client(plugin), b'')
 
-        big = vanilla.pack(0x21, b'z' * 400)
-        out = translator.feed_server(vanilla.Encoder(0).frame(unframed(big)))
-        self.assertEqual(out, big)
+        # 服务端下行: 一个包 -> 一个裸帧(不是一整块字节流)
+        big = unframed(vanilla.pack(0x21, b'z' * 400))
+        out = translator.feed_server(vanilla.Encoder(0).frame(big))
+        self.assertEqual(out, [big])
+
+    def test_server_packets_become_one_frame_each(self):
+        """服务器一段数据里有几个包, 就要发几个帧, 而且每个帧都是裸包。"""
+        translator, sent, _closed, _backend = self.make()
+        translator.feed_client(REAL_FIRST_PACKET)
+        translator.feed_client(build_request_login())
+        translator.feed_server(build_login_success('Tester'))
+        translator.feed_client(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
+        sent.clear()
+
+        first = unframed(vanilla.pack(vanilla.PLAY_JOIN_GAME, b'\x01\x02'))
+        second = unframed(vanilla.pack(vanilla.PLAY_KEEP_ALIVE, b'\x00\x00\x00\x09'))
+        chunk = unframed(vanilla.pack(0x21, b'q' * 500))
+        out = translator.feed_server(
+            vanilla.Encoder(0).frame(first) + vanilla.Encoder(0).frame(second)
+            + vanilla.Encoder(0).frame(chunk))
+        self.assertEqual(out, [first, second, chunk])
+        # 帧里没有长度前缀: 第一个字节直接就是包 id
+        self.assertEqual(out[0][0], vanilla.PLAY_JOIN_GAME)
+
+    def test_client_injected_frames_are_dropped(self):
+        """v5 客户端的注入消息帧(0xEE 开头)不是原版包, 不能转给服务器。"""
+        translator, _sent, _closed, _backend = self.make()
+        translator.feed_client(REAL_FIRST_PACKET)
+        translator.feed_client(build_request_login())
+        translator.feed_server(build_login_success('Tester'))
+        translator.feed_client(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
+        self.assertEqual(translator.feed_client(bytes([0xEE, 0x01, 0x02, 0x03])), b'')
+        self.assertEqual(translator.feed_client(bytes([0xEE, 0xFF, 0x00])), b'')
 
     def test_encryption_request_is_completed(self):
         """加密请求要代做: 用服务器公钥把共享密钥/令牌加密回去, 之后全程 AES-128-CFB8。"""
@@ -425,7 +458,7 @@ class TranslatorUnitTests(unittest.TestCase):
 
         key = x509.generate_rsa_key(1024)
         token = b'\x11\x22\x33\x44'
-        self.assertEqual(translator.feed_server(build_encryption_request(key, token)), b'')
+        self.assertEqual(translator.feed_server(build_encryption_request(key, token)), [])
 
         # 1) 代理直接给目标服务器写了加密响应
         self.assertEqual(closed, [])
@@ -446,14 +479,14 @@ class TranslatorUnitTests(unittest.TestCase):
         # 2) 从此服务器发来的数据都是 AES-128-CFB8 密文, 代理必须解开才能继续
         server_side = crypto.AesCfb8(secret, secret)
         out = translator.feed_server(server_side.encrypt(build_login_success('Tester')))
-        self.assertEqual(out, b'')
+        self.assertEqual(out, [])
         self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_ALLOW_LOGIN)
         translator.feed_client(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
         self.assertEqual(translator.phase, 'play')
 
         # 3) 客户端上行也要变成密文
         keep_alive = vanilla.pack(vanilla.PLAY_KEEP_ALIVE, b'\x00\x00\x00\x01')
-        moved = translator.feed_client(keep_alive)
+        moved = translator.feed_client(unframed(keep_alive))
         self.assertNotEqual(moved, keep_alive)
         self.assertEqual(crypto.AesCfb8(secret, secret).decrypt(moved), keep_alive)
         self.assertEqual(closed, [])
@@ -464,7 +497,7 @@ class TranslatorUnitTests(unittest.TestCase):
         translator.feed_client(build_request_login(username='Tester'))
         key = x509.generate_rsa_key(1024)
         with unittest.mock.patch.object(crypto, '_BACKEND', ''):
-            self.assertEqual(translator.feed_server(build_encryption_request(key)), b'')
+            self.assertEqual(translator.feed_server(build_encryption_request(key)), [])
         self.assertEqual(to_backend, [])
         self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_ERROR)
         length = int.from_bytes(sent[-1][2:4], 'big')          # 0xFF + 错误码 + u16 长度
@@ -561,31 +594,29 @@ class TranslateEndToEndTests(unittest.TestCase):
             client.send(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
             finish = client.recv(timeout=5.0)
             self.assertEqual(finish, bytes([eagler.PROTOCOL_SERVER_FINISH_LOGIN]))
-            buffered = client.recv_exactly(len(join_game) + 1, timeout=5.0)
-            decoder = vanilla.Decoder(0)
-            packets = decoder.feed(buffered)
-            self.assertEqual(packets[0].payload, join_game)
+            # 握手期间缓存下来的游戏包: 一帧一个裸包(无长度前缀、无压缩)
+            buffered = client.recv(timeout=5.0)
+            self.assertEqual(buffered, join_game)
 
-            # 游戏数据: 客户端 -> 服务器(要按服务器的压缩阈值重新封帧)
+            # 游戏数据: 客户端发的也是裸包, 代理要按服务器的压缩阈值装回原版流
             keep_alive = vanilla.pack(vanilla.PLAY_KEEP_ALIVE, b'\x00\x00\x00\x07')
-            client.send(keep_alive)
+            client.send(unframed(keep_alive))
             got = backend.read_packets(1)
             self.assertEqual([p.payload for p in got], [unframed(keep_alive)])
 
-            # Eaglercraft 私有通道的插件消息要被丢掉
+            # Eaglercraft 私有通道的插件消息和 0xEE 注入消息帧都要被丢掉
             channel = b'EAG|Skins-1.8'
-            plugin = vanilla.pack(vanilla.CLIENT_PLUGIN_MESSAGE,
-                                  vanilla.write_varint(len(channel)) + channel + b'\xaa')
+            plugin = unframed(vanilla.pack(vanilla.CLIENT_PLUGIN_MESSAGE,
+                                           vanilla.write_varint(len(channel)) + channel + b'\xaa'))
             client.send(plugin)
+            client.send(bytes([0xEE, 0x01, 0x02, 0x03]))
             self.assertEqual(backend.read_packets(1, timeout=0.6), [])
 
-            # 服务器 -> 客户端: 大包(压缩过)要原样还原
+            # 服务器 -> 客户端: 大包(压缩过)要还原成一个裸帧
             chunk = unframed(vanilla.pack(0x21, b'q' * 900))
             backend.send_play(chunk)
-            raw = client.recv_exactly(len(chunk) + 2, timeout=5.0)
-            packets = vanilla.Decoder(0).feed(raw)
-            self.assertTrue(packets)
-            self.assertEqual(packets[0].payload, chunk)
+            raw = client.recv(timeout=5.0)
+            self.assertEqual(raw, chunk)
         finally:
             if client is not None:
                 client.close()

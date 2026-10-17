@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import sys
 
-CLI_FLAGS = ('--no-gui', '--cli', '--check', '--install-cert', '--version', '--help', '-h')
+CLI_FLAGS = ('--no-gui', '--cli', '--check', '--selftest', '--install-cert', '--version', '--help', '-h')
 
 
 def _use_cli(argv) -> bool:

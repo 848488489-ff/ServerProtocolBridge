@@ -27,6 +27,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='mcjs-proxy', description='%s v%s —— 把普通 Minecraft 服务器转换为本地 wss:// 端点' % (APP_NAME, VERSION))
     parser.add_argument('-c', '--config', help='配置文件路径(默认程序目录下的 config.json)')
+    parser.add_argument('--no-gui', action='store_true',
+                        help='以命令行方式运行(这里本来就是命令行模式, 这个参数只是为了和 main.py 的用法保持一致)')
     parser.add_argument('-t', '--target', help='转发目标, 例如 mc244.com(按 SRV 解析) 或 127.0.0.1:25565')
     parser.add_argument('-l', '--listen', help='监听地址(默认 127.0.0.1)')
     parser.add_argument('-p', '--port', type=int, help='wss:// 监听端口(默认 8443)')
@@ -40,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--regen-cert', action='store_true', help='重新生成证书')
     parser.add_argument('--install-cert', action='store_true', help='把证书导入系统信任库后退出')
     parser.add_argument('--check', action='store_true', help='检查证书与目标服务器连通性后退出')
+    parser.add_argument('--selftest', action='store_true',
+                        help='打印运行环境自检(加密库/图形界面/配置), 打包后用来确认依赖齐全')
     parser.add_argument('--log-level', choices=('debug', 'info', 'warn', 'error'), help='日志级别')
     parser.add_argument('--heartbeat', type=int, help='WebSocket 心跳间隔秒数, 0 关闭')
     parser.add_argument('--max-payload', type=int, help='单帧上限(MB)')
@@ -113,6 +117,32 @@ def run_check(config: Config, logger: Logger) -> int:
     return 0 if (ok and not problems) else 1
 
 
+def run_selftest(config: Config, logger: Logger) -> int:
+    """打印运行环境自检。加密握手那一步依赖 cryptography, 打包后最容易漏的就是它。"""
+    import platform
+
+    from . import crypto
+
+    frozen = getattr(sys, 'frozen', False)
+    logger.info('%s v%s' % (APP_NAME, VERSION))
+    logger.info('Python: %s (%s)' % (platform.python_version(), platform.machine()))
+    logger.info('运行方式: %s' % ('打包的 EXE' if frozen else '源码'))
+    logger.info('工作目录: %s' % app_dir())
+    if crypto.available():
+        logger.info('加密握手: 可用 (后端 %s) —— 目标服务器要求加密时可以代做' % crypto.backend_name())
+    else:
+        logger.error('加密握手: 不可用 —— 需要 cryptography (pip install cryptography)')
+    try:
+        import tkinter  # noqa: F401
+
+        logger.info('图形界面: 可用 (tkinter)')
+    except Exception as exc:                       # 打包漏了 tcl/tk 时最直观的提示
+        logger.error('图形界面: 不可用 (%s)' % exc)
+    for problem in config.validate():
+        logger.warn('配置: %s' % problem)
+    return 0 if crypto.available() else 1
+
+
 def run_install_certificate(config: Config, logger: Logger, regenerate: bool) -> int:
     if regenerate:
         logger.info('将重新签发证书...')
@@ -139,6 +169,8 @@ def main(argv=None) -> int:
 
     if args.check:
         return run_check(config, logger)
+    if args.selftest:
+        return run_selftest(config, logger)
     if args.install_cert:
         return run_install_certificate(config, logger, args.regen_cert)
 

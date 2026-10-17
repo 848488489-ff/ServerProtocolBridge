@@ -1,13 +1,21 @@
 """原版 Minecraft 协议 (1.8, 协议版本 47) 的封包分帧与压缩 —— 只做搬运需要的部分。
 
-分帧规则:
+**原版 TCP 侧**的分帧规则 (本模块的 Decoder/Encoder):
 * 未启用压缩: [VarInt 包长][VarInt 包 id][内容]
 * 启用压缩后: [VarInt 包长][VarInt 未压缩长度][内容]
     - 未压缩长度 == 0: 内容是原始的 (包 id + 数据)
     - 未压缩长度 > 0 : 内容是 zlib 压缩后的 (包 id + 数据)
 
-素材来源: EaglercraftX 服务端 (lax1dude/eaglerxserver) 的 VanillaInitializer 与
-Netty 管线, 它的做法是替 Eaglercraft 客户端收发原版封包, 这里照同样的规则实现。
+**浏览器客户端 (EaglercraftX) 的 WebSocket 侧**用的是另一套约定, 和 TCP 完全不同:
+一个 WebSocket 帧 = 一个完整的包 (包 id + 内容), 既没有长度前缀, 也没有压缩。
+客户端读帧时直接拿帧的开头当包 id (WebSocketNetworkManager 里
+`input.readVarIntFromBuffer()`), 发帧时直接 `writeVarInt(包 id) + writePacketData()`
+整包塞进一帧; 服务端参考实现 WebSocketEaglerFrameCodec 也是收到
+BinaryWebSocketFrame 就把帧内容当包丢进管线、发的时候把包整个塞进一帧。
+所以: 原版流里一个包 -> 一个裸帧; 反过来一个裸帧 -> 原版流里一个包。
+
+素材来源: EaglercraftX 服务端 (lax1dude/eaglerxserver) 的 VanillaInitializer /
+WebSocketEaglerFrameCodec, 以及客户端 u53 的 WebSocketNetworkManager。
 """
 
 from __future__ import annotations
@@ -31,6 +39,9 @@ PLAY_PLUGIN_MESSAGE = 0x3F      # 服务端 -> 客户端
 PLAY_DISCONNECT = 0x40
 
 CLIENT_PLUGIN_MESSAGE = 0x17    # 客户端 -> 服务端
+
+# 客户端发来的"注入消息"帧(v5 起皮肤/扩展消息走这条路)以 0xEE 开头, 不是原版包
+INJECTED_FRAME_MARKER = 0xEE
 
 # Eaglercraft 自己的扩展全部走插件消息通道, 前缀是这两个
 EAGLER_CHANNEL_PREFIXES = ('EAG|', 'eagler:')

@@ -29,10 +29,12 @@ DIST = ROOT / 'dist'
 BUILD = ROOT / 'build'
 
 # 打包时用不到的模块, 去掉可以明显减小体积
+# 注意: 不要排除 distutils —— PyInstaller 的 hook-distutils 会把它别名到 setuptools._distutils,
+# 目标名已在图里(被排除)就会直接报 ValueError 打包失败。
 EXCLUDES = [
     'unittest', 'pydoc', 'difflib', 'idlelib', 'ensurepip', 'sqlite3',
     'tkinter.test', 'turtledemo', 'lib2to3', 'pip', 'setuptools', 'pkg_resources',
-    'test', 'distutils', 'numpy', 'PIL', 'PyQt5', 'PySide6',
+    'test', 'numpy', 'PIL', 'PyQt5', 'PySide6',
 ]
 
 UPX_CANDIDATES = [
@@ -313,6 +315,13 @@ def main() -> int:
     final_ok = smoke_test(exe)
     if not final_ok:
         print('[失败] 最终产物无法启动')
+        return 1
+    selftest = run_capture([str(exe), '--selftest'], timeout=120)
+    print('  --- 自检 ---')
+    print('  ' + (selftest.stdout or '').strip().replace('\n', '\n  '))
+    if selftest.returncode != 0:
+        print('[失败] 自检没通过: 加密库(cryptography)或图形界面没打进包里')
+        print('  ' + (selftest.stderr or '').strip())
         return 1
     check = run_capture([str(exe), '--check', '--log-level', 'warn'], timeout=240)
     print('  --check 返回码 %d (1 表示目标服务器不可达, 不影响程序本身)' % check.returncode)
