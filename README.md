@@ -44,7 +44,7 @@ EaglercraftX 握手  ────────→  代答握手, 挑协议版本
 AES-128-CFB8) —— 很多服务器开着加密握手但并不真的去 Mojang 校验会话, 离线名字照样放行;
 如果服务器确实要正版, 它给的踢出原因会**原文**转给客户端, 不会干巴巴地断开。
 
-翻译层自己说的话都带 `[协议转换器] ` 前缀, 服务器说的话不带 —— 一眼就能分清是谁在说话。
+翻译层自己说的话都带前缀(中文界面 `[协议转换器] `, 英文界面 `[Protocol Adapter] `), 服务器说的话不带 —— 一眼就能分清是谁在说话。
 
 **封帧差异(最容易踩的坑)**: 原版 TCP 是 `[VarInt 包长][包体]` 的字节流, 一个 TCP 段里可以塞很多包;
 浏览器客户端却是**一个 WebSocket 帧 = 一个完整的裸包(包 id + 内容)**, 既没有长度前缀, 也没有压缩
@@ -65,7 +65,7 @@ AES-128-CFB8) —— 很多服务器开着加密握手但并不真的去 Mojang 
 
 ### 方式一: 用打包好的 EXE(推荐)
 
-1. 双击 `dist\MCJS-服务器协议转换.exe`(若只有源码, 先按第 3 节打包)。
+1. 双击 `dist\MCJS-Bridge.exe`(若只有源码, 先按第 6 节打包)。
 2. 界面里确认 **转发目标**(默认 `mc244.com`, 不带端口时按 SRV 记录找服务器), 点 **启动服务**。
 3. 点 **安装到系统信任库**(见下面第 4 节), 然后**重启浏览器**。
 4. 在 MCJS 客户端的服务器地址栏填:
@@ -78,9 +78,11 @@ AES-128-CFB8) —— 很多服务器开着加密握手但并不真的去 Mojang 
 
 ### 方式二: 从源码运行
 
-需要 Python 3.8+(Windows 官方安装包自带 tkinter 即可), 无任何第三方依赖:
+需要 Python 3.8+(Windows 官方安装包自带 tkinter):
 
 ```bat
+python -m pip install fastapi uvicorn        :: 桥接层(WebSocket 监听 + HTTP 状态页)
+python -m pip install cryptography           :: 可选: 目标服务器要求加密握手时才会用到
 python main.py
 ```
 
@@ -88,6 +90,7 @@ python main.py
 
 ```bat
 python main.py --no-gui --target mc244.com --port 8443
+python main.py --no-gui --language zh           :: 中文界面/日志(默认 English)
 python main.py --check          :: 检查证书 + 目标服务器连通性
 python main.py --install-cert   :: 生成并导入证书
 ```
@@ -98,13 +101,19 @@ python main.py --install-cert   :: 生成并导入证书
 
 | 区域 | 说明 |
 | --- | --- |
-| 基本设置 | 监听地址、wss 端口(默认 8443)、ws 端口(默认 8080, 备用明文)、转发目标、路径映射 |
+| 基本设置 | 界面语言(English / 中文, 默认 English)、监听地址、wss 端口(默认 8443)、ws 端口(默认 8080, 备用明文)、转发目标、路径映射 |
 | 证书 | 首次运行自动签发自签名证书; 可查看指纹、重新生成、一键导入系统信任库 |
 | 高级 | 日志级别、WebSocket 心跳间隔、连接超时、WebSocket 单帧上限、握手地址改写、浏览器客户端协议翻译 |
 | 运行日志 | 每条连接的上行/下行字节数、持续时间、关闭原因都在这里 |
 | 状态栏 | 活动连接、累计连接、上行/下行字节、运行时长 |
 
 **在 MCJS 中填写**: `wss://127.0.0.1:8443`(界面底部会实时显示这个地址, 可一键复制)。
+
+**状态页**: 服务运行期间浏览器打开 `http://127.0.0.1:8080/`(明文端口, 端口号按配置) 可以看到运行状态、
+连接数、流量与目标服务器状态; `http://127.0.0.1:8080/status` 是给程序读的 JSON。`GET /` 是 HTML、JSON 在 `/status`。
+
+**语言**: 基本设置里的"界面语言"下拉框可随时切换中/英, 立即生效(界面重建, 日志保留); 选择会写进 `config.json` 的 `language`。
+代码注释一律英文, 界面/日志/玩家提示走 `mcjs_proxy/locales/` 里的中英对照表。
 
 ---
 
@@ -122,6 +131,9 @@ python main.py --install-cert   :: 生成并导入证书
 | `use_srv` | `true` | 目标**不带端口**时先查 `_minecraft._tcp.<域名>` 的 SRV 记录(与原版客户端一致), 查不到回落 25565 |
 | `rewrite_handshake_host` | `false` | 把握手包里的服务器地址改写成真实目标域名。客户端填的是 `127.0.0.1:8443` 时, 部分服务器会按地址校验或分流从而拒绝连接, 这时打开它 |
 | `eagler_translate` | `true` | 浏览器端客户端(EaglercraftX/MCJS 系)协议翻译: 自动识别对面是不是这种客户端, 认出后由本工具代答握手。关掉就退化成纯字节转发 |
+| `server_brand` | `MCJS-Proxy` | 浏览器客户端(及其服务器列表)看到的**服务器品牌**。界面里不提供输入框, 需要就改这里或命令行 `--server-brand` |
+| `server_brand_version` | (空) | 同上, 服务器版本; 留空 = 用程序版本号。命令行 `--server-version` |
+| `spoof_brand` | `vanilla` | 登录完成后向目标服务器声明的**客户端标识**(`MC\|Brand`)。原版 1.8.8 客户端发的就是 `vanilla`; 留空 = 不发。命令行 `--spoof-brand` / `--no-spoof-brand` |
 | `tls_enabled` | `true` | 是否启用 wss |
 | `cert_dir` | `certs` | 证书目录(相对程序目录) |
 | `cert_common_name` | `localhost` | 证书 CN |
@@ -132,6 +144,7 @@ python main.py --install-cert   :: 生成并导入证书
 | `heartbeat_sec` | `30` | WebSocket 心跳间隔, `0` 关闭 |
 | `max_payload_mb` | `16` | WebSocket 单帧上限 |
 | `log_level` | `info` | `debug` / `info` / `warn` / `error` |
+| `language` | `en` | 界面/日志/玩家提示语言: `en`(English) 或 `zh`(中文)。命令行 `--language` |
 
 ---
 
@@ -213,7 +226,20 @@ python main.py --install-cert   :: 生成并导入证书
 才算通过。全绿就说明客户端能正常解析这些数据; 有可疑帧时它会把帧内容打出来, 一眼能看出问题在哪。
 (需要代理正在运行; 默认读 `config.json` 里的监听地址, 也可以 `--url wss://127.0.0.1:1000` 指定。)
 
-**Q: 客户端发送文本帧(base64)时数据丢了**
+**Q: 想改目标服务器看到的"客户端标识", 或客户端列表里显示的"服务器品牌"**
+`config.json` 里: `spoof_brand`(发给目标服务器的 `MC|Brand`, 默认 `vanilla`, 留空 = 不发; 代理会在登录完成后
+按原版客户端习惯补发这一条, 并丢弃浏览器客户端自己发的那条, 免得被反作弊/统计插件一眼认出)、
+`server_brand` / `server_brand_version`(浏览器客户端及其服务器列表看到的服务器身份)。
+命令行等价参数: `--spoof-brand` / `--no-spoof-brand` / `--server-brand` / `--server-version`。
+
+**Q: 界面语言怎么切**
+基本设置第一行的"界面语言"下拉框选 English / 中文即可, 立即生效并记进 `config.json`; 命令行用 `--language zh`。
+
+**Q: 目标填错 / 服务器不在线时会怎么样**
+客户端会收到一条**带原因**的提示(`[协议转换器] ...`), 而不是干巴巴的 "Connection Closed";
+日志里也会写明是 DNS 解析失败、连接被拒绝、超时还是握手失败。转发目标留空会被直接拒绝(不会静默回退到默认地址)。
+
+**Q: 客户端发文本帧(base64)时数据丢了**
 现在的版本会自动切换 base64 模式并兼容**省略 `=` 补齐**、URL-safe 字符表以及带换行的写法;
 如果日志出现 `文本帧不是有效的 base64, 已丢弃 N 字节`, 会把内容开头一起打出来, 把这行发我即可。
 
@@ -252,9 +278,12 @@ python tools\build.py
 
 | 产物 | 说明 |
 | --- | --- |
-| `dist\MCJS-服务器协议转换.exe` | 主程序(带控制台: 可以用 `--no-gui` / `--check` 等命令行参数) |
-| `dist\MPRESS\MCJS-服务器协议转换.exe` | MPRESS 压缩版(体积更小, 备选) |
+| `dist\MCJS-Bridge.exe` | 主程序(带控制台: 可以用 `--no-gui` / `--check` 等命令行参数) |
+| `dist\MPRESS-folder\MCJS-Bridge.exe` | MPRESS 压缩版(体积更小, 备选) |
 | `dist\build-report.txt` | 各阶段体积与 SHA256 |
+
+打包脚本会把桥接层的动态依赖一并收进去(`--collect-all uvicorn` / `--collect-all websockets` /
+`--hidden-import httptools`), 否则打出来的 EXE 会出现"WebSocket 监听起不来"。
 
 要点:
 * PyInstaller 打包时通过 `--upx-dir` 已经把 `python3x.dll`、tcl/tk 等内部文件用 **UPX** 压缩过一遍;
@@ -285,10 +314,13 @@ MCJS-服务器协议转换/
 │   ├── gui.py              tkinter 图形界面
 │   ├── cli.py              命令行模式
 │   ├── logger.py           日志(控制台 + 界面回调)
+│   ├── i18n.py             语言切换(中/英, 默认 English)
+│   ├── locales/            各模块的中英对照文案表(EN / ZH)
 │   └── utils.py            路径与格式化工具
 ├── tests/test_all.py       自检测试(证书真实握手 / 帧编解码 / 端到端转发)
 ├── tests/test_translate.py 协议翻译测试(握手样本 / 状态机 / 端到端翻译)
 ├── tests/test_crypto.py    加密测试(RSA 往返 / CFB8 逐字节对照标准定义)
+├── tests/test_i18n.py      语言测试(默认英文 / 切换 / 词条完整性)
 ├── tools/probe.py          目标服务器诊断(状态查询 / 登录探测 / 握手探测)
 ├── tools/check_frames.py   回程数据校验: 按客户端的方式逐帧检查"一个帧 = 一个裸包"
 ├── tools/build.py          打包脚本(PyInstaller + UPX + MPRESS)
@@ -331,3 +363,11 @@ python -m unittest discover -s tests -v
 * **base64 兼容模式**: 少数老浏览器客户端会把数据放进文本帧, 程序会自动切换到 base64 模式, 也能识别 `Sec-WebSocket-Protocol: base64`。
 * **证书**: 无第三方库, 用标准库手写 DER 编码 + RSA 密钥生成 + PKCS#1 v1.5 签名; 系统里有 openssl 时会优先用 openssl(更快)。测试里包含真实 TLS 握手校验(域名与 IP 两种 SAN)。
 * **只监听 127.0.0.1**: 默认不对外开放。改成 `0.0.0.0` 等于把转发入口暴露给整个局域网, 请自行评估。
+* **语言与注释**: 代码注释一律英文; 界面、日志、发给玩家的提示都通过 `mcjs_proxy/i18n.py` 的 `tr()` 取词
+  (词条在 `mcjs_proxy/locales/`), 默认 English、可切中文 —— 协议层文案(例如 `[协议转换器] ` 前缀)也跟着语言走。
+* **客户端标识伪装**: 进入游戏后, 代理按 `spoof_brand` 主动补发一条 `MC|Brand`(原版客户端就是这么干的),
+  并丢弃浏览器客户端自己发的那条, 目标服务器侧的插件因此看到的是一个普通客户端。补发时要按连接当前的
+  压缩状态正确封帧 —— 多封一层就会被对端当成别的包解, 直接踢线。
+* **桥接层(FastAPI + uvicorn)**: 监听套接字由本模块自己 `bind`+`listen` 后交给
+  `uvicorn.Server.serve(sockets=[...])`, wss 与 ws 各跑一个 daemon 线程、共用同一个 FastAPI app;
+  WebSocket 负责双向转发, `GET /` 是状态页、`GET /status` 是 JSON。

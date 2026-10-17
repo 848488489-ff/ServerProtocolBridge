@@ -1,7 +1,8 @@
-"""日志。
+"""Logging.
 
-同一份日志可以同时输出到控制台(命令行模式 / 带控制台的 EXE)与回调函数(图形界面)。
-回调在任意线程被调用, 界面侧只需要把文本丢进队列即可。
+A single log stream can go to the console (command line mode / console EXE) and
+to a callback (GUI) at the same time.  The callback may be invoked from any
+thread; the GUI side only needs to push the text into a queue.
 """
 
 from __future__ import annotations
@@ -10,8 +11,15 @@ import sys
 import threading
 import time
 
+from .i18n import tr
+
 LEVELS = {'debug': 10, 'info': 20, 'warn': 30, 'error': 40}
-LEVEL_LABELS = {'debug': '调试', 'info': '信息', 'warn': '警告', 'error': '错误'}
+# Translation key of the tag shown in each log line.  The level identifiers
+# themselves are protocol content and never change; only the displayed tag
+# follows the active language.  The lookup happens per line, so a runtime
+# language switch in the GUI applies to all subsequent lines as well.
+LEVEL_LABEL_KEYS = {'debug': 'core.log.debug', 'info': 'core.log.info',
+                    'warn': 'core.log.warn', 'error': 'core.log.error'}
 
 
 class Logger:
@@ -33,15 +41,17 @@ class Logger:
         if not self.enabled(level):
             return
         stamp = time.strftime('%H:%M:%S')
-        text = '[%s] [%s] %s' % (stamp, LEVEL_LABELS.get(level, level), message)
+        key = LEVEL_LABEL_KEYS.get(level)
+        label = tr(key) if key else level
+        text = '[%s] [%s] %s' % (stamp, label, message)
         if self.callback is not None:
             try:
                 self.callback(level, text)
-            except Exception:  # 界面回调异常不应该影响转发
+            except Exception:  # a GUI callback error must not break forwarding
                 pass
         if self.echo:
             stream = self.stream if self.stream is not None else sys.stdout
-            if stream is None:  # pythonw / --windowed 打包时可能为 None
+            if stream is None:  # may be None under pythonw / a --windowed build
                 return
             try:
                 with self._lock:
@@ -63,7 +73,7 @@ class Logger:
 
 
 class NullLogger(Logger):
-    """什么都不做的日志器, 供测试与库调用使用。"""
+    """A logger that does nothing, used by tests and library callers."""
 
     def __init__(self):
         super().__init__(level='error', echo=False)

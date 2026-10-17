@@ -1,6 +1,7 @@
-"""命令行模式(无 GUI)。
+"""Command line mode (no GUI).
 
-适合服务器/计划任务场景, 也用于给 GUI 版本做无界面冒烟测试:
+Suited to servers and scheduled tasks, and also used to smoke-test the GUI
+build without a display:
 
     python main.py --no-gui
     python main.py --no-gui --target mc244.com --port 8443
@@ -10,44 +11,53 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import threading
-import time
 
 from . import certs, resolver
 from .config import Config, parse_address
+from .i18n import LANGUAGES, set_language, tr
 from .logger import Logger
 from .proxy import ProxyServer
 from .utils import app_dir
-from .version import APP_NAME, VERSION
+from .version import VERSION, app_name
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # argparse resolves the text below while the parser is built, which happens
+    # before the configured language is known, so --help and --version always
+    # render in the default language.
     parser = argparse.ArgumentParser(
-        prog='mcjs-proxy', description='%s v%s —— 把普通 Minecraft 服务器转换为本地 wss:// 端点' % (APP_NAME, VERSION))
-    parser.add_argument('-c', '--config', help='配置文件路径(默认程序目录下的 config.json)')
-    parser.add_argument('--no-gui', action='store_true',
-                        help='以命令行方式运行(这里本来就是命令行模式, 这个参数只是为了和 main.py 的用法保持一致)')
-    parser.add_argument('-t', '--target', help='转发目标, 例如 mc244.com(按 SRV 解析) 或 127.0.0.1:25565')
-    parser.add_argument('-l', '--listen', help='监听地址(默认 127.0.0.1)')
-    parser.add_argument('-p', '--port', type=int, help='wss:// 监听端口(默认 8443)')
-    parser.add_argument('--ws-port', type=int, help='ws://(明文, 备用)监听端口, 0 表示关闭')
-    parser.add_argument('--no-srv', action='store_true', help='不做 SRV 解析, 目标不带端口时直接用 25565')
+        prog='mcjs-proxy',
+        description=tr('core.cli.description', app=app_name(), version=VERSION))
+    parser.add_argument('-c', '--config', help=tr('core.cli.config_help'))
+    parser.add_argument('--no-gui', action='store_true', help=tr('core.cli.no_gui_help'))
+    parser.add_argument('-t', '--target', help=tr('core.cli.target_help'))
+    parser.add_argument('-l', '--listen', help=tr('core.cli.listen_help'))
+    parser.add_argument('-p', '--port', type=int, help=tr('core.cli.port_help'))
+    parser.add_argument('--ws-port', type=int, help=tr('core.cli.ws_port_help'))
+    parser.add_argument('--no-srv', action='store_true', help=tr('core.cli.no_srv_help'))
     parser.add_argument('--rewrite-handshake-host', action='store_true',
-                        help='把握手包里的服务器地址改写成目标域名(服务器按地址校验/分流时使用)')
+                        help=tr('core.cli.rewrite_host_help'))
     parser.add_argument('--no-eagler-translate', action='store_true',
-                        help='关闭浏览器客户端(EaglercraftX)协议翻译, 只做纯字节转发')
-    parser.add_argument('--cert-dir', help='证书目录(默认 certs)')
-    parser.add_argument('--regen-cert', action='store_true', help='重新生成证书')
-    parser.add_argument('--install-cert', action='store_true', help='把证书导入系统信任库后退出')
-    parser.add_argument('--check', action='store_true', help='检查证书与目标服务器连通性后退出')
-    parser.add_argument('--selftest', action='store_true',
-                        help='打印运行环境自检(加密库/图形界面/配置), 打包后用来确认依赖齐全')
-    parser.add_argument('--log-level', choices=('debug', 'info', 'warn', 'error'), help='日志级别')
-    parser.add_argument('--heartbeat', type=int, help='WebSocket 心跳间隔秒数, 0 关闭')
-    parser.add_argument('--max-payload', type=int, help='单帧上限(MB)')
-    parser.add_argument('--version', action='version', version='%s v%s' % (APP_NAME, VERSION))
+                        help=tr('core.cli.no_eagler_help'))
+    parser.add_argument('--server-brand', help=tr('core.cli.server_brand_help'))
+    parser.add_argument('--server-version', help=tr('core.cli.server_version_help'))
+    parser.add_argument('--spoof-brand', help=tr('core.cli.spoof_brand_help'))
+    parser.add_argument('--no-spoof-brand', action='store_true',
+                        help=tr('core.cli.no_spoof_brand_help'))
+    parser.add_argument('--cert-dir', help=tr('core.cli.cert_dir_help'))
+    parser.add_argument('--regen-cert', action='store_true', help=tr('core.cli.regen_cert_help'))
+    parser.add_argument('--install-cert', action='store_true', help=tr('core.cli.install_cert_help'))
+    parser.add_argument('--check', action='store_true', help=tr('core.cli.check_help'))
+    parser.add_argument('--selftest', action='store_true', help=tr('core.cli.selftest_help'))
+    parser.add_argument('--log-level', choices=('debug', 'info', 'warn', 'error'),
+                        help=tr('core.cli.log_level_help'))
+    parser.add_argument('--heartbeat', type=int, help=tr('core.cli.heartbeat_help'))
+    parser.add_argument('--max-payload', type=int, help=tr('core.cli.max_payload_help'))
+    parser.add_argument('--language', choices=LANGUAGES, help=tr('core.cli.language_help'))
+    parser.add_argument('--version', action='version',
+                        version=tr('core.cli.version_line', app=app_name(), version=VERSION))
     return parser
 
 
@@ -66,6 +76,14 @@ def apply_arguments(config: Config, args: argparse.Namespace) -> Config:
         config.rewrite_handshake_host = True
     if args.no_eagler_translate:
         config.eagler_translate = False
+    if args.server_brand:
+        config.server_brand = args.server_brand
+    if args.server_version is not None:
+        config.server_brand_version = args.server_version
+    if args.no_spoof_brand:
+        config.spoof_brand = ''
+    elif args.spoof_brand is not None:
+        config.spoof_brand = args.spoof_brand
     if args.cert_dir:
         config.cert_dir = args.cert_dir
     if args.log_level:
@@ -74,31 +92,33 @@ def apply_arguments(config: Config, args: argparse.Namespace) -> Config:
         config.heartbeat_sec = args.heartbeat
     if args.max_payload is not None:
         config.max_payload_mb = args.max_payload
+    if args.language:
+        config.language = args.language
     return config
 
 
 def run_check(config: Config, logger: Logger) -> int:
-    """检查配置、证书与目标服务器连通性。"""
+    """Check the configuration, the certificate and the target connectivity."""
     problems = config.validate()
     for problem in problems:
-        logger.error('配置: %s' % problem)
-    logger.info('工作目录: %s' % app_dir())
-    logger.info('转发目标: %s' % config.describe_target())
+        logger.error(tr('core.cli.config_problem', problem=problem))
+    logger.info(tr('core.cli.work_dir', path=app_dir()))
+    logger.info(tr('core.cli.target_line', target=config.describe_target()))
 
     if config.tls_enabled:
-        logger.info('正在检查证书...')
+        logger.info(tr('core.cli.checking_cert'))
         try:
             info = certs.ensure_certificate(
                 config.resolved_cert_dir, common_name=config.cert_common_name,
                 extra_names=config.cert_extra_names, days=int(config.cert_days),
                 generator=config.cert_generator, regenerate=False, logger=logger)
-            logger.info('证书可用: %s' % info['cert_path'])
-            logger.info('指纹 SHA-256: %s' % info['thumbprint'])
+            logger.info(tr('core.cli.cert_ok', path=info['cert_path']))
+            logger.info(tr('core.cli.cert_thumbprint', thumbprint=info['thumbprint']))
             if info.get('alt_names'):
-                logger.info('覆盖名称: %s' % ', '.join(info['alt_names']))
-            logger.warn('如果浏览器仍提示证书不受信任, 请执行 --install-cert 后重启浏览器。')
+                logger.info(tr('core.cli.cert_alt_names', names=', '.join(info['alt_names'])))
+            logger.warn(tr('core.cli.cert_trust_hint'))
         except Exception as exc:
-            logger.error('证书检查失败: %s' % exc)
+            logger.error(tr('core.cli.cert_check_failed', error=exc))
             return 2
 
     try:
@@ -106,65 +126,70 @@ def run_check(config: Config, logger: Logger) -> int:
         if not port:
             host, port = resolver.resolve_target(host, None, logger=logger, use_srv=config.use_srv)
     except ValueError as exc:
-        logger.error('转发目标无效: %s' % exc)
+        logger.error(tr('core.config.target_invalid', error=exc))
         return 2
-    logger.info('正在测试 %s:%d 的连通性...' % (host, port))
+    logger.info(tr('core.cli.probing', host=host, port=port))
     ok, elapsed, message = resolver.probe(host, port)
     if ok:
-        logger.info('目标服务器可达, 握手耗时 %.0f ms' % elapsed)
+        logger.info(tr('core.cli.probe_ok', ms='%.0f' % elapsed))
     else:
-        logger.error('目标服务器不可达: %s' % message)
+        logger.error(tr('core.cli.probe_failed', error=message))
     return 0 if (ok and not problems) else 1
 
 
 def run_selftest(config: Config, logger: Logger) -> int:
-    """打印运行环境自检。加密握手那一步依赖 cryptography, 打包后最容易漏的就是它。"""
+    """Print an environment self-test.  The crypto handshake is the step to
+    watch: it needs ``cryptography``, the dependency most easily missed when
+    packaging."""
     import platform
 
     from . import crypto
 
     frozen = getattr(sys, 'frozen', False)
-    logger.info('%s v%s' % (APP_NAME, VERSION))
+    logger.info(tr('core.cli.version_line', app=app_name(), version=VERSION))
     logger.info('Python: %s (%s)' % (platform.python_version(), platform.machine()))
-    logger.info('运行方式: %s' % ('打包的 EXE' if frozen else '源码'))
-    logger.info('工作目录: %s' % app_dir())
+    mode = tr('core.cli.run_mode_frozen') if frozen else tr('core.cli.run_mode_source')
+    logger.info(tr('core.cli.run_mode', mode=mode))
+    logger.info(tr('core.cli.work_dir', path=app_dir()))
     if crypto.available():
-        logger.info('加密握手: 可用 (后端 %s) —— 目标服务器要求加密时可以代做' % crypto.backend_name())
+        logger.info(tr('core.cli.crypto_ok', backend=crypto.backend_name()))
     else:
-        logger.error('加密握手: 不可用 —— 需要 cryptography (pip install cryptography)')
+        logger.error(tr('core.cli.crypto_missing'))
     try:
         import tkinter  # noqa: F401
 
-        logger.info('图形界面: 可用 (tkinter)')
-    except Exception as exc:                       # 打包漏了 tcl/tk 时最直观的提示
-        logger.error('图形界面: 不可用 (%s)' % exc)
+        logger.info(tr('core.cli.gui_ok'))
+    except Exception as exc:                       # the symptom seen when tcl/tk is missing from a package
+        logger.error(tr('core.cli.gui_missing', error=exc))
     for problem in config.validate():
-        logger.warn('配置: %s' % problem)
+        logger.warn(tr('core.cli.config_problem', problem=problem))
     return 0 if crypto.available() else 1
 
 
 def run_install_certificate(config: Config, logger: Logger, regenerate: bool) -> int:
     if regenerate:
-        logger.info('将重新签发证书...')
+        logger.info(tr('core.cli.regen_notice'))
     try:
         info = certs.ensure_certificate(
             config.resolved_cert_dir, common_name=config.cert_common_name,
             extra_names=config.cert_extra_names, days=int(config.cert_days),
             generator=config.cert_generator, regenerate=regenerate, logger=logger)
     except Exception as exc:
-        logger.error('证书生成失败: %s' % exc)
+        logger.error(tr('core.cli.cert_generate_failed', error=exc))
         return 2
     ok, message = certs.install_to_trust_store(info['cert_path'], logger=logger)
     if not ok:
-        logger.error('导入失败: %s' % message)
+        logger.error(tr('core.cli.install_failed', error=message))
         return 1
-    logger.info('完成。请重启浏览器后使用 %s' % config.wss_url())
+    logger.info(tr('core.cli.install_done', url=config.wss_url()))
     return 0
 
 
 def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     config = apply_arguments(Config.load(args.config), args)
+    # Everything below -- log lines, errors, --check output -- uses this language.
+    set_language(config.language)
     logger = Logger(config.log_level)
 
     if args.check:
@@ -178,21 +203,21 @@ def main(argv=None) -> int:
         server = ProxyServer(config, logger)
         info = server.start()
     except Exception as exc:
-        logger.error('启动失败: %s' % exc)
+        logger.error(tr('core.cli.start_failed', error=exc))
         return 1
 
-    logger.info('wss 地址: %s' % (info.get('wss_url') or '(未启用)'))
+    logger.info(tr('core.cli.wss_line', url=info.get('wss_url') or tr('core.cli.disabled')))
     for listener in info.get('listeners', []):
         if listener.startswith('ws://'):
-            logger.info('备用明文地址: %s' % listener)
-    logger.info('按 Ctrl+C 停止服务')
+            logger.info(tr('core.cli.fallback_ws_line', url=listener))
+    logger.info(tr('core.cli.stop_hint'))
 
     stop_event = threading.Event()
     try:
         while not stop_event.wait(0.5):
             pass
     except KeyboardInterrupt:
-        logger.info('收到 Ctrl+C, 正在停止...')
+        logger.info(tr('core.cli.ctrl_c'))
     finally:
         server.stop()
     return 0

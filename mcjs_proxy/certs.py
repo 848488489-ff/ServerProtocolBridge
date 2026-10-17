@@ -1,8 +1,10 @@
-"""证书管理: 生成、校验、安装到系统信任库。
+"""Certificate management: generation, validation, installation into the system trust store.
 
-wss:// 必须有证书, 而浏览器不会默认信任自签名证书, 因此首次运行时
-自动签发一张包含 localhost / 127.0.0.1 / ::1 / 主机名 的证书,
-再由用户一键导入 Windows 受信任的根证书颁发机构。
+wss:// requires a certificate, and browsers do not trust self-signed
+certificates out of the box, so the first run issues one covering
+localhost / 127.0.0.1 / ::1 / the machine host name, which the user can
+then import into the Windows Trusted Root Certification Authorities store
+with a single click.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import time
 from pathlib import Path
 
 from . import x509
+from .i18n import tr
 
 CERT_FILENAME = 'cert.pem'
 KEY_FILENAME = 'key.pem'
@@ -28,13 +31,13 @@ def certificate_paths(cert_dir: Path) -> tuple[Path, Path]:
 
 
 def thumbprint(pem: str) -> str:
-    """证书 SHA-256 指纹(冒号分隔), 便于用户核对与导入。"""
+    """SHA-256 fingerprint of the certificate (colon-separated), so the user can verify it before importing."""
     digest = hashlib.sha256(x509.pem_to_der(pem)).hexdigest().upper()
     return ':'.join(digest[index:index + 2] for index in range(0, len(digest), 2))
 
 
 def default_alt_names(common_name: str = 'localhost', extra_names=None) -> list[str]:
-    """证书要覆盖的名称: 本机回环地址 + 常见主机名 + 用户自定义的名称。"""
+    """Names the certificate must cover: loopback addresses + common host names + user-supplied names."""
     names = ['localhost', '127.0.0.1', '::1']
     if common_name:
         names.append(common_name)
@@ -66,7 +69,7 @@ def _looks_like_ip(text: str) -> bool:
 
 def _openssl_generate(cert_path: Path, key_path: Path, common_name: str,
                       alt_names: list[str], days: int, key_bits: int) -> bool:
-    """如果系统里有 openssl, 用它签发(更快)。失败返回 False 由内置生成器兜底。"""
+    """Sign with the system openssl when it is available (faster). Returns False on failure, letting the built-in generator take over."""
     executable = shutil.which('openssl')
     if not executable:
         return False
@@ -88,7 +91,7 @@ def _openssl_generate(cert_path: Path, key_path: Path, common_name: str,
 def _write_certificate_files(cert_path: Path, key_path: Path, certificate: dict) -> None:
     cert_path.write_text(certificate['cert_pem'], encoding='ascii')
     key_path.write_text(certificate['key_pem'], encoding='ascii')
-    if os.name != 'nt':  # Windows 下没有 POSIX 权限位
+    if os.name != 'nt':  # Windows has no POSIX permission bits
         try:
             os.chmod(key_path, 0o600)
         except OSError:
@@ -96,7 +99,7 @@ def _write_certificate_files(cert_path: Path, key_path: Path, certificate: dict)
 
 
 def _flatten_names(values) -> tuple:
-    """把 ssl._test_decode_cert 返回的嵌套元组压平成字符串元组。"""
+    """Flatten the nested tuples returned by ssl._test_decode_cert into a tuple of strings."""
     names = []
     for item in values or ():
         if isinstance(item, (tuple, list)):
@@ -107,7 +110,7 @@ def _flatten_names(values) -> tuple:
 
 
 def _decode_cert_details(cert_path: Path) -> dict:
-    """尝试用标准库自带的解码器取出证书信息(仅用于界面展示, 失败不影响功能)。"""
+    """Try to pull certificate details out of the standard library decoder (display only; a failure here must not break anything)."""
     details: dict = {}
     decoder = getattr(__import__('ssl'), '_ssl', None)
     if decoder is None or not hasattr(decoder, '_test_decode_cert'):
@@ -125,7 +128,7 @@ def _decode_cert_details(cert_path: Path) -> dict:
 
 
 def inspect_certificate(cert_path: Path, key_path: Path) -> dict | None:
-    """校验证书与私钥是否匹配、PEM/DER 是否合法, 顺便取出指纹等信息。"""
+    """Check that certificate and private key match and that the PEM/DER is valid; also collect the fingerprint and related details."""
     import ssl
 
     try:
@@ -165,7 +168,7 @@ def inspect_certificate(cert_path: Path, key_path: Path) -> dict | None:
 def generate_certificate(cert_dir: Path, common_name: str = 'localhost', extra_names=None,
                          days: int = 3650, generator: str = 'auto',
                          key_bits: int = 2048, logger=None) -> str:
-    """签发证书到 cert_dir, 返回实际使用的生成器('python' / 'openssl')。"""
+    """Issue a certificate into cert_dir; returns the generator that actually produced it ('python' / 'openssl')."""
     cert_path, key_path = certificate_paths(cert_dir)
     cert_dir = Path(cert_dir)
     cert_dir.mkdir(parents=True, exist_ok=True)
@@ -177,14 +180,14 @@ def generate_certificate(cert_dir: Path, common_name: str = 'localhost', extra_n
 
     if method == 'openssl':
         if logger is not None:
-            logger.info('正在通过 openssl 签发证书...')
+            logger.info(tr('certs.signing_openssl'))
         if _openssl_generate(cert_path, key_path, common_name, names, days, key_bits):
             return 'openssl'
         if logger is not None:
-            logger.warn('openssl 签发失败, 改用内置生成器')
+            logger.warn(tr('certs.openssl_failed'))
 
     if logger is not None:
-        logger.info('正在生成 RSA %d 位密钥并自签名(首次运行需要几秒)...' % key_bits)
+        logger.info(tr('certs.generating', bits=key_bits))
     certificate = x509.create_self_signed_certificate(
         common_name=common_name, alt_names=names, days=days, key_bits=key_bits)
     _write_certificate_files(cert_path, key_path, certificate)
@@ -194,49 +197,49 @@ def generate_certificate(cert_dir: Path, common_name: str = 'localhost', extra_n
 def ensure_certificate(cert_dir: Path, common_name: str = 'localhost', extra_names=None,
                        days: int = 3650, generator: str = 'auto', key_bits: int = 2048,
                        regenerate: bool = False, logger=None) -> dict:
-    """确保证书存在且可用; 不存在(或被要求重建)时自动签发。"""
+    """Make sure a usable certificate exists; issue one automatically when it is missing (or regeneration was requested)."""
     cert_path, key_path = certificate_paths(cert_dir)
     if not regenerate and cert_path.exists() and key_path.exists():
         info = inspect_certificate(cert_path, key_path)
         if info is not None:
             if logger is not None:
-                logger.info('已存在可用证书: %s' % cert_path)
+                logger.info(tr('certs.exists', path=cert_path))
             return info
         if logger is not None:
-            logger.warn('现有证书不可用, 将重新签发: %s' % cert_path)
+            logger.warn(tr('certs.unusable', path=cert_path))
 
     used = generate_certificate(cert_dir, common_name, extra_names, days, generator, key_bits, logger)
     info = inspect_certificate(cert_path, key_path)
     if info is None:
-        raise RuntimeError('证书签发失败, 请检查目录写入权限: %s' % cert_path)
+        raise RuntimeError(tr('certs.generate_failed', path=cert_path))
     info['generator'] = used
     info['generated'] = True
     if logger is not None:
-        logger.info('证书已生成: %s (生成器: %s)' % (cert_path, used))
-        logger.info('证书指纹 SHA-256: %s' % info['thumbprint'])
+        logger.info(tr('certs.generated', path=cert_path, generator=used))
+        logger.info(tr('certs.thumbprint', thumbprint=info['thumbprint']))
         if info['alt_names']:
-            logger.info('证书包含的名称: %s' % ', '.join(info['alt_names']))
+            logger.info(tr('certs.alt_names', names=', '.join(info['alt_names'])))
     return info
 
 
 def install_to_trust_store(cert_path: Path, logger=None) -> tuple[bool, str]:
-    """把证书导入当前用户的"受信任的根证书颁发机构"(Windows)。"""
+    """Import the certificate into the current user's "Trusted Root Certification Authorities" store (Windows)."""
     cert_path = Path(cert_path)
     if not cert_path.exists():
-        return False, '证书文件不存在: %s' % cert_path
+        return False, tr('certs.file_missing', path=cert_path)
     if platform.system() != 'Windows':
-        return False, '自动导入仅支持 Windows, 请手动把证书加入系统/浏览器信任库'
+        return False, tr('certs.windows_only')
     command = ['certutil', '-user', '-addstore', 'root', str(cert_path)]
     try:
         completed = subprocess.run(command, capture_output=True, text=True, timeout=60)
     except Exception as exc:
-        return False, '执行 certutil 失败: %s' % exc
+        return False, tr('certs.certutil_failed', error=exc)
     output = ((completed.stdout or '') + (completed.stderr or '')).strip()
     ok = completed.returncode == 0
     if logger is not None:
         if ok:
-            logger.info('证书已导入当前用户的受信任根证书库: %s' % cert_path)
-            logger.info('请重启浏览器后生效(Firefox 需要单独导入, 见 README)。')
+            logger.info(tr('certs.installed', path=cert_path))
+            logger.info(tr('certs.restart_browser'))
         else:
-            logger.error('导入失败: %s' % output)
+            logger.error(tr('certs.import_failed', output=output))
     return ok, output

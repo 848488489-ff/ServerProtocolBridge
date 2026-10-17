@@ -1,4 +1,6 @@
-r"""GUI 输入校验冒烟检查: 确认数字输入框拒绝中文/字母/超长输入, 且错误提示是中文。
+r"""GUI input-validation smoke check: numeric entries must reject Chinese characters, letters,
+spaces, full-width digits and signs, enforce the 5-digit cap, and raise a clear ValueError for
+out-of-range or empty values.
 
     py -3.14 -X utf8 tools\check_gui_input.py
 """
@@ -17,7 +19,7 @@ failures = []
 
 
 def type_into(entry, text: str) -> str:
-    """模拟键盘输入: 逐个字符 insert, Tk 的 validatecommand 会逐次拦截。"""
+    """Simulate typing: insert one character at a time so Tk's validatecommand fires per keypress."""
     entry.focus_set()
     for char in text:
         entry.insert('end', char)
@@ -25,49 +27,49 @@ def type_into(entry, text: str) -> str:
     return entry.get()
 
 
-# 1) 中文/字母/空格/全角数字/负号都被拒绝
-for entry, name in ((app.entry_wss_port, 'wss 端口'), (app.entry_ws_port, 'ws 端口'),
-                    (app.entry_cert_days, '有效期'), (app.entry_heartbeat, '心跳'),
-                    (app.entry_timeout, '超时'), (app.entry_max_payload, '单帧上限')):
+# 1) Chinese characters / letters / spaces / full-width digits / minus sign are all rejected
+for entry, name in ((app.entry_wss_port, 'wss port'), (app.entry_ws_port, 'ws port'),
+                    (app.entry_cert_days, 'cert valid days'), (app.entry_heartbeat, 'heartbeat'),
+                    (app.entry_timeout, 'timeout'), (app.entry_max_payload, 'max frame payload')):
     original = entry.get()
     typed = type_into(entry, '端口abc １２３')
     if typed != original:
-        failures.append('%s 接受了非法字符: %r -> %r' % (name, original, typed))
+        failures.append('%s accepted invalid characters: %r -> %r' % (name, original, typed))
 
-# 2) 正常数字可以输入
+# 2) a normal number can be typed
 app.entry_wss_port.delete('0', 'end')
 typed = type_into(app.entry_wss_port, '8443')
 if typed != '8443':
-    failures.append('wss 端口 无法输入正常数字: %r' % typed)
+    failures.append('wss port rejected a valid number: %r' % typed)
 
-# 3) 最多 5 位: 第 6 位字符输入不进去
+# 3) at most 5 digits: the 6th character must not go in
 typed = type_into(app.entry_wss_port, '99')
 if len(typed) != 5 or typed != '84439':
-    failures.append('wss 端口 的位数限制不对: %r' % typed)
+    failures.append('wss port length cap is wrong: %r' % typed)
 
-# 4) 超范围时 _collect_form 抛中文提示
+# 4) out of range: _collect_form must raise
 app.entry_wss_port.delete('0', 'end')
 type_into(app.entry_wss_port, '99999')
 try:
     app._collect_form()
-    failures.append('99999 没有被范围校验拦下')
+    failures.append('99999 was not caught by the range check')
 except ValueError as exc:
-    print('超范围提示: %s' % exc)
+    print('range error message: %s' % exc)
 
-# 5) 清空端口后收集配置必须有明确提示
+# 5) cleared port: collecting the config must report a clear error
 app.entry_wss_port.delete('0', 'end')
 app.update()
 try:
     app._collect_form()
-    failures.append('空端口没有被拦下')
+    failures.append('an empty port was not caught')
 except ValueError as exc:
-    print('空值提示: %s' % exc)
+    print('empty value message: %s' % exc)
 
-# 6) 超时字段: 只允许一个小数点, 第二个小数点被拒绝
+# 6) timeout field: only one decimal point, the second one must be rejected
 app.entry_timeout.delete('0', 'end')
 typed = type_into(app.entry_timeout, '10.5.5')
 if typed != '10.55':
-    failures.append('超时字段的小数点处理不对: %r' % typed)
+    failures.append('timeout field mishandles decimal points: %r' % typed)
 
 app.destroy()
 if failures:

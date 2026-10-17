@@ -9,6 +9,7 @@ venv/
 build/
 dist/
 *.spec
+/*.exe
 
 # 运行时生成
 certs/

@@ -1,37 +1,44 @@
-"""加密握手支持: RSA 公钥加密 + AES-128-CFB8 流加密。
+"""Encryption handshake support: RSA public-key encryption + AES-128-CFB8 stream cipher.
 
-原版服务器发加密请求 (Login Encryption Request, 0x01) 时, 正常流程是:
+When a vanilla server sends the Login Encryption Request (0x01), the normal
+flow is:
 
-    服务器 → 客户端: 服务器 ID + RSA 公钥 + 验证令牌
-    客户端 → 服务器: RSA(共享密钥) + RSA(验证令牌)
-    之后两个方向: AES-128-CFB8(key = 共享密钥, iv = 共享密钥)
+    server -> client: server id + RSA public key + verify token
+    client -> server: RSA(shared secret) + RSA(verify token)
+    afterwards both directions: AES-128-CFB8(key = shared secret, iv = shared secret)
 
-不少服务器(尤其是国内"看起来像正版"的)开着这套握手, 但并不真的拿它去 Mojang
-校验会话 —— 也就是说**离线账号照样能进**。所以这层必须代做, 否则就会像只认识
-离线模式服务器那样, 一看到加密请求就把玩家劝退。
+Plenty of servers (especially the ones that "look official") enable this
+handshake but never actually validate the session against Mojang -- in other
+words **offline accounts can still join**.  The bridge must therefore perform
+this step on the client's behalf; otherwise it would look just like an
+offline-mode-only server and turn players away the moment the encryption
+request arrives.
 
-AES 走 cryptography(或 pycryptodome): 纯 Python 版 AES-CFB8 每字节都要算一次
-分组加密, 进游戏后连区块数据都收不顺, 没有实用价值。
+AES runs through cryptography (or pycryptodome): a pure-Python AES-CFB8 would
+have to compute one block-cipher call per byte, and even receiving chunk data
+in-game would stall, so it has no practical value.
 """
 
 from __future__ import annotations
 
-# 后端实现: 'cryptography' / 'pycryptodome' / ''(都不可用)
+from .i18n import tr
+
+# Backend implementation: 'cryptography' / 'pycryptodome' / '' (neither available)
 _BACKEND = ''
 
-try:                                                    # 优先 cryptography
+try:                                                    # cryptography first
     from cryptography.hazmat.primitives import serialization
     from cryptography.hazmat.primitives.asymmetric import padding as _asym_padding
     from cryptography.hazmat.primitives.ciphers import Cipher as _Cipher
     from cryptography.hazmat.primitives.ciphers import algorithms as _cipher_algorithms
 
-    try:                                                # cryptography >= 45 挪到了 decrepit
+    try:                                                # cryptography >= 45 moved this to decrepit
         from cryptography.hazmat.decrepit.ciphers.modes import CFB8 as _Cfb8
-    except ImportError:                                 # 老版本还在原处
+    except ImportError:                                 # older versions keep it in place
         from cryptography.hazmat.primitives.ciphers.modes import CFB8 as _Cfb8
 
     _BACKEND = 'cryptography'
-except Exception:                                       # pragma: no cover - 环境相关
+except Exception:                                       # pragma: no cover - environment dependent
     try:
         from Crypto.Cipher import AES as _PyCryptoAes
         from Crypto.Cipher import PKCS1_v1_5 as _PyCryptoPkcs1
@@ -43,7 +50,7 @@ except Exception:                                       # pragma: no cover - 环
 
 
 class CryptoUnavailable(RuntimeError):
-    """没有可用的 AES 实现, 无法完成加密握手。"""
+    """No AES implementation is available, so the encrypted handshake cannot be completed."""
 
 
 def available() -> bool:
@@ -56,14 +63,13 @@ def backend_name() -> str:
 
 def _require() -> None:
     if not _BACKEND:
-        raise CryptoUnavailable(
-            '缺少 AES 库, 无法完成加密握手 —— 请安装 cryptography: pip install cryptography')
+        raise CryptoUnavailable(tr('crypto.missing_backend'))
 
 
 # ---------- RSA ----------
 
 def _parse_public_key_der(der_bytes: bytes) -> tuple[int, int]:
-    """从 SubjectPublicKeyInfo / RSAPublicKey 里取出 (模数, 指数)。"""
+    """Extract (modulus, exponent) from a SubjectPublicKeyInfo / RSAPublicKey blob."""
 
     def read_element(data: bytes, pos: int) -> tuple[int, bytes, int]:
         tag = data[pos]
@@ -77,28 +83,28 @@ def _parse_public_key_der(der_bytes: bytes) -> tuple[int, int]:
 
     tag, body, _ = read_element(der_bytes, 0)
     if tag != 0x30:
-        raise ValueError('公钥不是 SEQUENCE')
-    # 可能是 SubjectPublicKeyInfo: SEQUENCE { SEQUENCE{...}, BIT STRING { SEQUENCE{n,e} } }
+        raise ValueError(tr('crypto.key_not_sequence'))
+    # May be a SubjectPublicKeyInfo: SEQUENCE { SEQUENCE{...}, BIT STRING { SEQUENCE{n,e} } }
     tag, first, after = read_element(body, 0)
-    if tag == 0x30:                                     # SPKI: 跳过算法标识, 取 BIT STRING
+    if tag == 0x30:                                     # SPKI: skip the algorithm identifier, take the BIT STRING
         tag, bit_string, _ = read_element(body, after)
         if tag != 0x03:
-            raise ValueError('公钥里没有 BIT STRING')
-        body = bit_string[1:]                           # 去掉补零计数
+            raise ValueError(tr('crypto.key_no_bit_string'))
+        body = bit_string[1:]                           # drop the unused-bits count
         tag, rest, _ = read_element(body, 0)            # RSAPublicKey SEQUENCE
         if tag == 0x30:
             body = rest
     tag, modulus, after = read_element(body, 0)
     if tag != 0x02:
-        raise ValueError('公钥里没有模数')
+        raise ValueError(tr('crypto.key_no_modulus'))
     tag, exponent, _ = read_element(body, after)
     if tag != 0x02:
-        raise ValueError('公钥里没有指数')
+        raise ValueError(tr('crypto.key_no_exponent'))
     return (int.from_bytes(modulus, 'big'), int.from_bytes(exponent, 'big'))
 
 
 def rsa_encrypt(public_key_der: bytes, data: bytes) -> bytes:
-    """用服务器给的公钥做 PKCS#1 v1.5 加密(原版加密握手用的就是这个)。"""
+    """Encrypt with the server's public key using PKCS#1 v1.5 (what the vanilla encryption handshake uses)."""
     _require()
     if _BACKEND == 'cryptography':
         key = serialization.load_der_public_key(public_key_der)
@@ -111,18 +117,19 @@ def rsa_encrypt(public_key_der: bytes, data: bytes) -> bytes:
 # ---------- AES-128-CFB8 ----------
 
 class AesCfb8:
-    """AES-128-CFB8 流密码(原版 Minecraft 用的就是这个)。
+    """AES-128-CFB8 stream cipher (what vanilla Minecraft uses).
 
-    CFB8 是流模式, 加解密是同一个操作、长度不变, 所以一条流的**每个方向**各要
-    一个实例(两边的状态各自独立推进)。
+    CFB8 is a stream mode: encryption and decryption are the same operation
+    and the length never changes, so one connection needs **one instance per
+    direction** (the two sides advance their own state independently).
     """
 
     def __init__(self, key: bytes, iv: bytes):
         _require()
         if len(key) != 16:
-            raise ValueError('AES-128 需要 16 字节密钥')
+            raise ValueError(tr('crypto.bad_key_size'))
         if len(iv) != 16:
-            raise ValueError('CFB8 需要 16 字节 IV')
+            raise ValueError(tr('crypto.bad_iv_size'))
         self.key = bytes(key)
         self.iv = bytes(iv)
         if _BACKEND == 'cryptography':
@@ -132,7 +139,7 @@ class AesCfb8:
                                       _Cfb8(self.iv)).decryptor()
             self._aes_enc = self._aes_dec = None
         else:
-            # pycryptodome 的 CFB 对象会保存链接状态, 一个对象不能同时当加密和解密用
+            # pycryptodome CFB objects keep the chaining state, so one object cannot encrypt and decrypt at the same time
             self._aes_enc = _PyCryptoAes.new(self.key, _PyCryptoAes.MODE_CFB,
                                              iv=self.iv, segment_size=8)
             self._aes_dec = _PyCryptoAes.new(self.key, _PyCryptoAes.MODE_CFB,

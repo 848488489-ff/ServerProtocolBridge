@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""MCJS 服务器协议转换 —— 程序入口。
+"""MCJS Server Protocol Bridge -- program entry point.
 
-直接运行(或双击 EXE)会打开图形界面; 加 --no-gui 则以命令行方式运行。
+Running it (or double-clicking the EXE) opens the GUI; add --no-gui to run in
+command line mode.
 
     python main.py
     python main.py --no-gui --target mc244.com --port 8443
@@ -32,9 +33,15 @@ def main() -> int:
         return cli_main(argv)
     try:
         from mcjs_proxy.gui import main as gui_main
-    except ImportError as exc:  # 没有 tkinter 时退回命令行
-        print('无法加载图形界面(%s), 已切换到命令行模式。' % exc)
-        print('提示: Windows 请安装带 tkinter 的 Python; Linux 需安装 python3-tk。\n')
+    except ImportError as exc:  # no tkinter -> fall back to the command line
+        from mcjs_proxy.config import Config
+        from mcjs_proxy.i18n import set_language, tr
+
+        # Mirror what the CLI would do, so the notice below already honours the
+        # language stored in config.json.
+        set_language(Config.load().language)
+        print(tr('core.main.gui_fallback', error=exc))
+        print(tr('core.main.gui_fallback_hint'))
         from mcjs_proxy.cli import main as cli_main
 
         return cli_main(argv)
