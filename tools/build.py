@@ -146,6 +146,7 @@ def build_mpress_folder(python: str, mpress: Path, report: list[str]) -> bool:
         '--workpath', str(stage / 'work'), '--specpath', str(stage), '--console',
         '--collect-submodules', 'mcjs_proxy',
         '--hidden-import', 'tkinter', '--hidden-import', 'tkinter.filedialog',
+        '--hidden-import', 'cryptography',
     ]
     for module in EXCLUDES:
         command += ['--exclude-module', module]
@@ -259,6 +260,7 @@ def main() -> int:
         '--console' if not args.windowed else '--windowed',
         '--collect-submodules', 'mcjs_proxy',
         '--hidden-import', 'tkinter', '--hidden-import', 'tkinter.filedialog',
+        '--hidden-import', 'cryptography',       # 加密握手要用(可选依赖, 但没有它就没法代做)
     ]
     if upx_dir is not None:
         command += ['--upx-dir', str(upx_dir)]

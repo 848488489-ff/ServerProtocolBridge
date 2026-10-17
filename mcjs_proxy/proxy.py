@@ -1,7 +1,8 @@
 """转发核心: 把本地 wss:// / ws:// 的 WebSocket 连接桥接成目标 Minecraft 服务器的 TCP 连接。
 
-每条 WebSocket 连接都会独立建立一条到目标服务器的 TCP 连接, 双向原样搬运字节,
-不做任何协议解析与修改 —— 与原版客户端直连服务器的数据完全一致。
+平时是纯字节透传(与原版客户端直连服务器的数据完全一致); 一旦发现对面是浏览器端
+(EaglercraftX 系)客户端, 就交给 translator.py 做协议翻译 —— 因为它根本不发原版
+握手包, 原版服务器只会关它的连接。
 """
 
 from __future__ import annotations
@@ -13,9 +14,10 @@ import ssl
 import threading
 import time
 
-from . import certs, handshake, resolver, wsproto
+from . import certs, eagler, handshake, resolver, wsproto
 from .config import Config, parse_address
 from .logger import NullLogger
+from .translator import EaglerTranslator
 from .utils import human_bytes
 from .version import APP_NAME, SERVICE_NAME, VERSION
 
@@ -98,6 +100,11 @@ class Bridge:
         self.handshake_seen = False          # 上行开头的握手包是否已解析过
         self.handshake_info: dict | None = None
         self.target_sent_any = False         # 目标服务器是否回过数据
+        self._send_lock = threading.Lock()   # 两个方向的线程都会往同一个 socket 写
+        self._tcp_lock = threading.Lock()    # 同上, 但这是写给目标服务器的 TCP 连接
+        self.protocol_checked = False        # 上行第一个数据帧是否判断过客户端类型
+        self.translator: EaglerTranslator | None = None
+        self.route_host = ''                 # 用户配置里的目标域名(用于原版握手)
 
     # ---------- 生命周期 ----------
     def run(self) -> None:
@@ -161,6 +168,7 @@ class Bridge:
 
         route = self.server.resolve_route(path)
         self.route_label = route['label']
+        self.route_host = route['host']
         host, port = self.server.resolve_endpoint(route['host'], route['port'])
         self.endpoint = (host, port)
         self.log.info('#%d %s 接入 %s:%s -> %s [%s]'
@@ -227,7 +235,23 @@ class Bridge:
                                % (self.id, self.frames_in,
                                   '文本帧' if frame.opcode == wsproto.OP_TEXT else '二进制帧',
                                   len(frame.payload), handshake.hex_preview(frame.payload)))
-            self._forward_to_server(self._decode_payload(frame))
+            if self.translator is not None:
+                if frame.opcode == wsproto.OP_TEXT:
+                    # 浏览器端客户端只用二进制帧传游戏数据, 文本帧说明对面不是它
+                    self.log.warn('#%d 协议翻译模式下收到文本帧, 断开连接' % self.id)
+                    self.close_reason = '协议翻译模式下收到文本帧'
+                    self._send_close(1003, 'text frame not allowed')
+                    return False
+                self._forward_to_server(self.translator.feed_client(frame.payload))
+                return not self.closing.is_set()
+            data = self._decode_payload(frame)
+            if not self.protocol_checked and data:
+                self.protocol_checked = True
+                if (getattr(self.config, 'eagler_translate', True)
+                        and eagler.parse_client_version(data) is not None):
+                    self._start_translator()
+                    data = self.translator.feed_client(data) if self.translator else data
+            self._forward_to_server(data)
             return not self.closing.is_set()
         if frame.opcode == wsproto.OP_PING:
             self._send_frame(wsproto.OP_PONG, frame.payload)
@@ -263,13 +287,21 @@ class Bridge:
     def _forward_to_server(self, data: bytes) -> None:
         if not data or self.closing.is_set():
             return
-        data = self._inspect_handshake(data)
+        if self.translator is None:
+            data = self._inspect_handshake(data)
+        self._write_tcp(data)
+
+    def _write_tcp(self, data: bytes) -> None:
+        """把已经准备好的字节直接写给目标服务器(不做任何解析)。"""
+        if not data or self.closing.is_set():
+            return
         # 注意: self.tcp 可能刚被服务端线程关掉并置空, 所以这里用局部变量并且判空
         tcp = self.tcp
-        if not data or tcp is None or self.closing.is_set():
+        if tcp is None or self.closing.is_set():
             return
         try:
-            tcp.sendall(data)
+            with self._tcp_lock:              # 服务器方向的线程也可能在写(代做加密握手)
+                tcp.sendall(data)
         except OSError as exc:
             if not self.closing.is_set():
                 self.log.warn('#%d 发送到目标服务器失败: %s' % (self.id, exc))
@@ -278,6 +310,33 @@ class Bridge:
             return
         self.bytes_to_server += len(data)
         self.server.stats.add_bytes(to_server=len(data))
+
+    def _start_translator(self) -> None:
+        """发现对面是浏览器端客户端: 建立协议翻译层。"""
+        host, port = self.endpoint if self.endpoint else (self.route_host, 25565)
+        self.translator = EaglerTranslator(
+            target_host=self.route_host or host,
+            target_port=port,
+            log=self.log,
+            tag='#%d' % self.id,
+            send_client=self._send_payload,
+            send_backend=self._write_tcp,
+            request_close=self._translator_close,
+            brand='MCJS-Proxy',
+            brand_version=VERSION,
+        )
+        self.log.info('#%d 检测到浏览器端客户端 (EaglercraftX 握手), 启用协议翻译层' % self.id)
+
+    def _translator_close(self, reason: str) -> None:
+        """翻译层要求收尾: 先让它把要说的话发出去, 稍微等一下再断开。
+
+        立刻断开的话, 客户端常常还没读到"为什么被拒"就被关了。
+        """
+        if not self.close_reason:
+            self.close_reason = reason
+        timer = threading.Timer(0.3, lambda: self._send_close(1000, 'session closed'))
+        timer.daemon = True
+        timer.start()
 
     def _inspect_handshake(self, data: bytes) -> bytes:
         """只对上行开头的握手包做一次解析(写日志), 必要时按配置改写其中的地址。
@@ -325,9 +384,15 @@ class Bridge:
                     self.close_reason = self.close_reason or '目标服务器关闭了连接'
                     break
                 self.target_sent_any = True
-                self._send_payload(data)
                 self.bytes_to_client += len(data)
                 self.server.stats.add_bytes(to_client=len(data))
+                translator = self.translator
+                if translator is not None:
+                    data = translator.feed_server(data)
+                    if translator.close_reason and not self.close_reason:
+                        self.close_reason = translator.close_reason
+                if data:
+                    self._send_payload(data)
         except (OSError, ssl.SSLError) as exc:
             if not self.closing.is_set():
                 self.log.debug('#%d 与目标服务器的连接中断: %s' % (self.id, exc))
@@ -346,12 +411,16 @@ class Bridge:
     def _send_frame(self, opcode: int, payload: bytes) -> None:
         if not self.handshake_done or self.close_sent or self.ws_closed:
             return
-        try:
-            self.sock.sendall(wsproto.encode_frame(opcode, payload))
-        except (OSError, ssl.SSLError) as exc:
-            if not self.closing.is_set():
-                self.log.debug('#%d 发送到客户端失败: %s' % (self.id, exc))
-            self.closing.set()
+        with self._send_lock:
+            sock = self.sock
+            if sock is None:
+                return
+            try:
+                sock.sendall(wsproto.encode_frame(opcode, payload))
+            except (OSError, ssl.SSLError) as exc:
+                if not self.closing.is_set():
+                    self.log.debug('#%d 发送到客户端失败: %s' % (self.id, exc))
+                self.closing.set()
 
     def _send_close(self, code: int, reason: str) -> None:
         """发送关闭帧并收尾(重复调用无副作用)。"""
@@ -459,6 +528,9 @@ class Bridge:
 
     def _diagnose(self) -> list[str]:
         """连接异常结束时给出一句可能原因, 免得只能看到"连接结束"四个字。"""
+        if self.translator is not None:
+            # 协议翻译层的日志已经写清楚了原因, 不用再猜
+            return []
         hints: list[str] = []
         if self.target_sent_any:
             return hints

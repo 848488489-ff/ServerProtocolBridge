@@ -34,6 +34,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--no-srv', action='store_true', help='不做 SRV 解析, 目标不带端口时直接用 25565')
     parser.add_argument('--rewrite-handshake-host', action='store_true',
                         help='把握手包里的服务器地址改写成目标域名(服务器按地址校验/分流时使用)')
+    parser.add_argument('--no-eagler-translate', action='store_true',
+                        help='关闭浏览器客户端(EaglercraftX)协议翻译, 只做纯字节转发')
     parser.add_argument('--cert-dir', help='证书目录(默认 certs)')
     parser.add_argument('--regen-cert', action='store_true', help='重新生成证书')
     parser.add_argument('--install-cert', action='store_true', help='把证书导入系统信任库后退出')
@@ -58,6 +60,8 @@ def apply_arguments(config: Config, args: argparse.Namespace) -> Config:
         config.use_srv = False
     if args.rewrite_handshake_host:
         config.rewrite_handshake_host = True
+    if args.no_eagler_translate:
+        config.eagler_translate = False
     if args.cert_dir:
         config.cert_dir = args.cert_dir
     if args.log_level:
