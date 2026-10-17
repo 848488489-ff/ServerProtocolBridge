@@ -172,6 +172,27 @@ class WsClient:
             time.sleep(0.01)
         return None
 
+    def recv_exactly(self, size: int, timeout: float = 30.0) -> bytes:
+        """收满 size 字节。
+
+        服务端是把 TCP 读到的每段数据各自发成一个 WebSocket 帧的, 所以回程数据可能
+        分成好几帧; 客户端本来就要把它们拼回字节流, 这里照做。
+        """
+        buffer = bytearray()
+        deadline = time.time() + timeout
+        while len(buffer) < size and time.time() < deadline:
+            frame = None
+            with self._lock:
+                for index, item in enumerate(self.inbox):
+                    if item.opcode in (wsproto.OP_BINARY, wsproto.OP_TEXT):
+                        frame = self.inbox.pop(index)
+                        break
+            if frame is None:
+                time.sleep(0.01)
+            else:
+                buffer.extend(frame.payload)
+        return bytes(buffer)
+
     def wait_close(self, timeout: float = 5.0) -> tuple[int, str] | None:
         deadline = time.time() + timeout
         while time.time() < deadline:
@@ -325,9 +346,10 @@ class CertificateTests(unittest.TestCase):
 
         fields = _children(tbs_value)
         spki_children = _children(fields[6][1])          # 第 7 项: subjectPublicKeyInfo
-        public_key = _children(spki_children[1][1][1:])  # BIT STRING 去掉未使用位字节
-        modulus = int.from_bytes(public_key[0][1], 'big')
-        exponent = int.from_bytes(public_key[1][1], 'big')
+        rsa_key = _children(spki_children[1][1][1:])[0][1]  # BIT STRING 去掉未使用位字节
+        rsa_fields = _children(rsa_key)                  # RSAPublicKey 序列的内容
+        modulus = int.from_bytes(rsa_fields[0][1], 'big')
+        exponent = int.from_bytes(rsa_fields[1][1], 'big')
 
         recovered = pow(int.from_bytes(signature, 'big'), exponent, modulus).to_bytes(
             (modulus.bit_length() + 7) // 8, 'big')
@@ -522,9 +544,10 @@ class ConfigTests(unittest.TestCase):
 
     def test_describe_and_urls(self):
         config = Config()
-        self.assertEqual(config.describe_target(), 'mc.hypixel.net:25565')
-        config.target = 'hypixel.net'
-        self.assertIn('SRV', config.describe_target())
+        self.assertEqual(config.target, 'mc244.com')
+        self.assertIn('SRV', config.describe_target())      # 默认目标不带端口, 走 SRV
+        config.target = '127.0.0.1:25565'
+        self.assertEqual(config.describe_target(), '127.0.0.1:25565')
         self.assertEqual(config.wss_url(), 'wss://127.0.0.1:8443')
         config.wss_port = 0
         config.ws_port = 0
@@ -619,7 +642,7 @@ class ProxyEndToEndTests(unittest.TestCase):
             self.assertEqual(client.recv(5), b'HELLO-FROM-SERVER')
             payload = os.urandom(2048)
             client.send(payload)
-            self.assertEqual(client.recv(10), payload)
+            self.assertEqual(client.recv_exactly(len(payload)), payload)
         finally:
             client.close()
 
@@ -629,8 +652,7 @@ class ProxyEndToEndTests(unittest.TestCase):
             client.recv(5)
             payload = os.urandom(1024 * 1024)
             client.send(payload)
-            received = client.recv(30)
-            self.assertIsNotNone(received)
+            received = client.recv_exactly(len(payload))
             self.assertEqual(hashlib.sha256(received).hexdigest(),
                              hashlib.sha256(payload).hexdigest())
         finally:
@@ -642,7 +664,7 @@ class ProxyEndToEndTests(unittest.TestCase):
             client.recv(5)
             payload = os.urandom(200000)
             client.send_fragmented(payload, pieces=5)
-            self.assertEqual(client.recv(20), payload)
+            self.assertEqual(client.recv_exactly(len(payload)), payload)
         finally:
             client.close()
 
@@ -730,9 +752,14 @@ class ProxyEndToEndTests(unittest.TestCase):
             server.stop()
 
     def test_stats_and_route_resolution(self):
-        route = self.server.resolve_route('/second')
-        self.assertEqual(route['label'], '路径 /second')
-        self.assertEqual(self.server.resolve_route('/')['label'], '默认目标')
+        # 路径映射属于运行期可变配置, 这里自己准备好再断言, 不依赖别的用例留下什么
+        original = self.config.routes
+        self.config.routes = {'/second': '127.0.0.1:%d' % self.backend.port}
+        try:
+            self.assertEqual(self.server.resolve_route('/second')['label'], '路径 /second')
+            self.assertEqual(self.server.resolve_route('/')['label'], '默认目标')
+        finally:
+            self.config.routes = original
         status = self.server.status('/')
         self.assertGreaterEqual(status['total_connections'], 1)
         self.assertGreater(status['bytes_to_client'], 0)

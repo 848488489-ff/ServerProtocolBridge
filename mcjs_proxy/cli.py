@@ -3,7 +3,7 @@
 适合服务器/计划任务场景, 也用于给 GUI 版本做无界面冒烟测试:
 
     python main.py --no-gui
-    python main.py --no-gui --target mc.hypixel.net:25565 --port 8443
+    python main.py --no-gui --target mc244.com --port 8443
     python main.py --check
 """
 
@@ -27,11 +27,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='mcjs-proxy', description='%s v%s —— 把普通 Minecraft 服务器转换为本地 wss:// 端点' % (APP_NAME, VERSION))
     parser.add_argument('-c', '--config', help='配置文件路径(默认程序目录下的 config.json)')
-    parser.add_argument('-t', '--target', help='转发目标, 例如 mc.hypixel.net:25565 或 hypixel.net(按 SRV 解析)')
+    parser.add_argument('-t', '--target', help='转发目标, 例如 mc244.com(按 SRV 解析) 或 127.0.0.1:25565')
     parser.add_argument('-l', '--listen', help='监听地址(默认 127.0.0.1)')
     parser.add_argument('-p', '--port', type=int, help='wss:// 监听端口(默认 8443)')
     parser.add_argument('--ws-port', type=int, help='ws://(明文, 备用)监听端口, 0 表示关闭')
     parser.add_argument('--no-srv', action='store_true', help='不做 SRV 解析, 目标不带端口时直接用 25565')
+    parser.add_argument('--rewrite-handshake-host', action='store_true',
+                        help='把握手包里的服务器地址改写成目标域名(服务器按地址校验/分流时使用)')
     parser.add_argument('--cert-dir', help='证书目录(默认 certs)')
     parser.add_argument('--regen-cert', action='store_true', help='重新生成证书')
     parser.add_argument('--install-cert', action='store_true', help='把证书导入系统信任库后退出')
@@ -54,6 +56,8 @@ def apply_arguments(config: Config, args: argparse.Namespace) -> Config:
         config.ws_port = args.ws_port
     if args.no_srv:
         config.use_srv = False
+    if args.rewrite_handshake_host:
+        config.rewrite_handshake_host = True
     if args.cert_dir:
         config.cert_dir = args.cert_dir
     if args.log_level:

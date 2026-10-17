@@ -34,7 +34,8 @@ LOG_COLORS = {
 
 HELP_TEXT = """使用步骤
 
-1. 确认"转发目标", 例如 mc.hypixel.net:25565 (也可以只写 hypixel.net, 程序会按 SRV 解析)。
+1. 确认"转发目标", 默认 mc244.com (只写域名即可, 程序会按 SRV 记录找到真正的服务器节点)。
+   想连别的服务器就改成它的域名或 域名:端口。
 2. 点击【启动服务】, 界面下方状态变为"运行中"。
 3. 首次使用请点击【安装到系统信任库】, 把自签名证书加入 Windows 的
    "受信任的根证书颁发机构", 否则浏览器会提示 wss:// 证书不受信任。
@@ -43,6 +44,9 @@ HELP_TEXT = """使用步骤
    wss://127.0.0.1:8443
    然后连接即可。程序会把 WebSocket 帧原样还原成 Minecraft 协议字节流,
    转发到目标服务器, 数据与原版客户端直连完全一致。
+
+连不上时看"运行日志": 每条连接的握手信息(协议版本/客户端填写的地址)、
+上下行字节数、断开原因都会打出来。
 """
 
 
@@ -141,6 +145,7 @@ class BridgeApp(tk.Tk):
         self.var_ws_port = tk.StringVar()
         self.var_target = tk.StringVar()
         self.var_use_srv = tk.BooleanVar()
+        self.var_rewrite_host = tk.BooleanVar()
         self.var_routes = tk.StringVar()
         self.var_cert_dir = tk.StringVar()
         self.var_cert_common_name = tk.StringVar()
@@ -197,8 +202,9 @@ class BridgeApp(tk.Tk):
         ttk.Label(header, text=APP_NAME, font=(None, 14, 'bold')).grid(row=0, column=0, sticky='w')
         ttk.Label(header, text='把普通 Minecraft 服务器转换为本地 wss:// 端点, 供 MCJS 等浏览器端客户端连接',
                   foreground='#555555').grid(row=0, column=1, sticky='w', padx=(12, 0))
-        ttk.Label(header, textvariable=self.var_status, width=12, anchor='center',
-                  foreground='#c02b2b').grid(row=0, column=2, sticky='e')
+        self.lbl_status = ttk.Label(header, textvariable=self.var_status, width=12, anchor='center',
+                                    foreground='#c02b2b')
+        self.lbl_status.grid(row=0, column=2, sticky='e')
 
         self._build_basic(outer)
         self._build_cert(outer)
@@ -252,7 +258,7 @@ class BridgeApp(tk.Tk):
         self.text_routes = tk.Text(frame, height=3, width=40, wrap='none')
         self.text_routes.grid(row=2, column=1, columnspan=5, sticky='ew', pady=(6, 3))
         self.text_routes.bind('<<Modified>>', self._on_routes_modified)
-        ttk.Label(frame, text='每行一条, 格式: 路径=目标, 例如 /hypixel=mc.hypixel.net:25565',
+        ttk.Label(frame, text='每行一条, 格式: 路径=目标, 例如 /mc244=mc244.com',
                   foreground='#777777').grid(row=3, column=1, columnspan=5, sticky='w', pady=(0, 2))
 
     def _build_cert(self, parent: ttk.Frame) -> None:
@@ -312,6 +318,10 @@ class BridgeApp(tk.Tk):
                                               max_length=4)
         self.entry_max_payload.grid(row=0, column=7, sticky='w')
 
+        ttk.Checkbutton(frame, text='按目标域名改写握手地址(服务器按地址校验/分流时勾选)',
+                        variable=self.var_rewrite_host).grid(row=1, column=0, columnspan=8,
+                                                             sticky='w', pady=(6, 0))
+
     def _build_actions(self, parent: ttk.Frame) -> None:
         frame = ttk.Frame(parent)
         frame.grid(row=4, column=0, sticky='ew', pady=(10, 0))
@@ -346,6 +356,7 @@ class BridgeApp(tk.Tk):
         self.entry_ws_port.set_value(str(config.ws_port))
         self.var_target.set(config.target)
         self.var_use_srv.set(bool(config.use_srv))
+        self.var_rewrite_host.set(bool(getattr(config, 'rewrite_handshake_host', False)))
         self.var_cert_dir.set(config.cert_dir)
         self.var_cert_common_name.set(config.cert_common_name)
         self.var_cert_extra.set(', '.join(config.cert_extra_names or []))
@@ -397,8 +408,9 @@ class BridgeApp(tk.Tk):
         self.config.listen_host = self.var_listen_host.get().strip() or '127.0.0.1'
         self.config.wss_port = as_int(self.var_wss_port, 'wss 端口')
         self.config.ws_port = as_int(self.var_ws_port, 'ws 端口')
-        self.config.target = self.var_target.get().strip() or 'mc.hypixel.net:25565'
+        self.config.target = self.var_target.get().strip() or 'mc244.com'
         self.config.use_srv = bool(self.var_use_srv.get())
+        self.config.rewrite_handshake_host = bool(self.var_rewrite_host.get())
         self.config.routes = routes
         self.config.tls_enabled = True  # wss:// 是本工具的用途, 始终启用
         self.config.cert_dir = self.var_cert_dir.get().strip() or 'certs'
@@ -449,8 +461,14 @@ class BridgeApp(tk.Tk):
         self.server = ProxyServer(config, self.logger)
         self.btn_start.configure(state='disabled')
         self.btn_stop.configure(state='normal')
-        self.var_status.set('启动中')
+        self._set_status('启动中')
         threading.Thread(target=self._start_server, daemon=True).start()
+
+    def _set_status(self, text: str, color: str | None = None) -> None:
+        """状态栏文字与颜色: 颜色要改在 Label 控件上(StringVar 没有 configure)。"""
+        self.var_status.set(text)
+        if color:
+            self.lbl_status.configure(foreground=color)
 
     def _start_server(self) -> None:
         assert self.server is not None and self.logger is not None
@@ -473,8 +491,7 @@ class BridgeApp(tk.Tk):
         self.enqueue_ui(self._on_started)
 
     def _on_started(self) -> None:
-        self.var_status.set('运行中')
-        self.var_status.configure(foreground='#0b6e4f')
+        self._set_status('运行中', '#0b6e4f')
         self.btn_start.configure(state='disabled')
         self.btn_stop.configure(state='normal')
         self._refresh_target_hint()
@@ -482,8 +499,7 @@ class BridgeApp(tk.Tk):
 
     def _on_start_failed(self, message: str) -> None:
         self.server = None
-        self.var_status.set('启动失败')
-        self.var_status.configure(foreground='#c02b2b')
+        self._set_status('启动失败', '#c02b2b')
         self.btn_start.configure(state='normal')
         self.btn_stop.configure(state='disabled')
         messagebox.showerror('启动失败', message)
@@ -492,7 +508,7 @@ class BridgeApp(tk.Tk):
         server = self.server
         if server is None:
             return
-        self.var_status.set('停止中')
+        self._set_status('停止中')
         self.btn_stop.configure(state='disabled')
 
         def _worker() -> None:
@@ -505,8 +521,7 @@ class BridgeApp(tk.Tk):
 
     def _on_stopped(self) -> None:
         self.server = None
-        self.var_status.set('已停止')
-        self.var_status.configure(foreground='#c02b2b')
+        self._set_status('已停止', '#c02b2b')
         self.btn_start.configure(state='normal')
         self.btn_stop.configure(state='disabled')
         for variable in (self.var_stat_active, self.var_stat_total, self.var_stat_up,
@@ -647,8 +662,8 @@ class BridgeApp(tk.Tk):
     def _on_certificate_installed(self, ok: bool, message: str) -> None:
         self._update_cert_label()
         if ok:
-            self.var_status.set('运行中' if (self.server and self.server.running) else '已停止')
-            self.var_status.configure(foreground='#0b6e4f' if (self.server and self.server.running) else '#c02b2b')
+            self._set_status('运行中' if (self.server and self.server.running) else '已停止',
+                             '#0b6e4f' if (self.server and self.server.running) else '#c02b2b')
             messagebox.showinfo(
                 '导入成功',
                 '证书已加入当前用户的"受信任的根证书颁发机构"。\n\n'

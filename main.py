@@ -4,7 +4,7 @@
 直接运行(或双击 EXE)会打开图形界面; 加 --no-gui 则以命令行方式运行。
 
     python main.py
-    python main.py --no-gui --target mc.hypixel.net:25565
+    python main.py --no-gui --target mc244.com --port 8443
     python main.py --check
 """
 

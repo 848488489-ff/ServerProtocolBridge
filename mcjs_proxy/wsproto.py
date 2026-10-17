@@ -56,6 +56,23 @@ def compute_accept_key(sec_websocket_key: str) -> str:
     return base64.b64encode(digest).decode('ascii')
 
 
+def decode_base64_text(payload: bytes) -> bytes | None:
+    """把文本帧里的 base64 内容还原成字节, 解不出来返回 None。
+
+    浏览器端客户端的写法并不统一: 有的省略 '=' 补齐, 有的用 URL-safe 字符表(- 和 _),
+    有的会插入换行。这里统一兼容; 结果里出现非法字符时按标准库规则处理。
+    """
+    text = ''.join(payload.decode('utf-8', 'ignore').split())
+    if not text:
+        return b''
+    text = text.replace('-', '+').replace('_', '/')
+    text += '=' * (-len(text) % 4)
+    try:
+        return base64.b64decode(text, validate=False)
+    except Exception:
+        return None
+
+
 def encode_frame(opcode: int, payload: bytes = b'', fin: bool = True, mask: bool = False) -> bytes:
     """组帧。服务端 -> 客户端不加掩码; 客户端 -> 服务端必须加掩码。"""
     length = len(payload)

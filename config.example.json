@@ -2,11 +2,12 @@
   "listen_host": "127.0.0.1",
   "wss_port": 8443,
   "ws_port": 8080,
-  "target": "mc.hypixel.net:25565",
+  "target": "mc244.com",
   "routes": {
-    "/hypixel": "mc.hypixel.net:25565"
+    "/mc244": "mc244.com"
   },
   "use_srv": true,
+  "rewrite_handshake_host": false,
   "tls_enabled": true,
   "cert_dir": "certs",
   "cert_common_name": "localhost",
