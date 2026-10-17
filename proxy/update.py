@@ -27,17 +27,14 @@ import urllib.request
 from .i18n import tr
 from .version import VERSION
 
-# Public endpoints that announce the newest release (see the "云端版本检查"
-# section of the README for the expected document).
-#   * the Pages copy is a plain static file, and *.pages.dev is reachable from
-#     mainland China, where *.workers.dev is DNS-poisoned;
-#   * the Worker takes over for everyone else and as a backup if the Pages
-#     project ever goes away.
-# Both are tried in order (see check()), so a user can put whichever host works
-# on their network first.
+# Public endpoint that announces the newest release: a plain static file on
+# Cloudflare Pages (see the "云端版本检查" section of the README for the
+# expected document).  *.pages.dev is reachable from mainland China, unlike
+# *.workers.dev, which is DNS-poisoned there.  Several URLs may be listed,
+# separated by commas, and are tried in order (see check()), so a mirror that
+# works on the local network can be put in front of this one.
 PAGES_UPDATE_URL = 'https://banbengengxinjiancha.pages.dev/version.json'
-WORKER_UPDATE_URL = 'https://misty-salad-1657.15923383477.workers.dev/'
-DEFAULT_UPDATE_URL = '%s, %s' % (PAGES_UPDATE_URL, WORKER_UPDATE_URL)
+DEFAULT_UPDATE_URL = PAGES_UPDATE_URL
 
 # The endpoint may sit on the other side of the planet, so give it room: the
 # check runs in the background everywhere, waiting a few extra seconds costs

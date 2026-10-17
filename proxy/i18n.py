@@ -2,7 +2,7 @@
 
 Design
 ------
-* Translation tables live next to this module in ``mcjs_proxy/locales/*.py``.
+* Translation tables live next to this module in ``proxy/locales/*.py``.
   Every locale module exposes two plain dicts, ``EN`` and ``ZH``, whose keys
   are dotted identifiers grouped by the module that uses them (``gui.*``,
   ``proxy.*``, ``translator.*``, ``tls.*``, ``core.*``, ...).

@@ -1,7 +1,7 @@
 """Translation tables, merged into one dictionary per language.
 
 Each locale module owns the keys of the modules it translates (see the module
-docstring of ``mcjs_proxy.i18n``).  Keeping one file per area lets several
+docstring of ``proxy.i18n``).  Keeping one file per area lets several
 people (or agents) work on the translations without touching each other.
 """
 

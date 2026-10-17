@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mcjs_proxy import crypto, x509  # noqa: E402
+from proxy import crypto, x509  # noqa: E402
 
 
 def _aes_block(key: bytes, block: bytes) -> bytes:

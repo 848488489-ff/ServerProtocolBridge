@@ -12,12 +12,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 STEPS = [
-    ('feat: implement RFC6455 WebSocket framing and handshake', ['mcjs_proxy/wsproto.py']),
-    ('feat: implement SRV lookup and target server reachability probe', ['mcjs_proxy/resolver.py']),
-    ('feat: implement config load/save, address parsing and validation', ['mcjs_proxy/config.py']),
-    ('feat: implement the WebSocket-to-TCP forwarding core', ['mcjs_proxy/proxy.py']),
-    ('feat: implement the tkinter GUI', ['mcjs_proxy/gui.py']),
-    ('feat: implement CLI mode and the program entry point', ['mcjs_proxy/cli.py', 'main.py']),
+    ('feat: implement RFC6455 WebSocket framing and handshake', ['proxy/wsproto.py']),
+    ('feat: implement SRV lookup and target server reachability probe', ['proxy/resolver.py']),
+    ('feat: implement config load/save, address parsing and validation', ['proxy/config.py']),
+    ('feat: implement the WebSocket-to-TCP forwarding core', ['proxy/proxy.py']),
+    ('feat: implement the tkinter GUI', ['proxy/gui.py']),
+    ('feat: implement CLI mode and the program entry point', ['proxy/cli.py', 'main.py']),
     ('test: add self-tests (certificate handshake / frame codec / end-to-end relay)', ['tests/test_all.py']),
     ('build: add PyInstaller + UPX + MPRESS packaging scripts', ['tools/build.py', 'tools/build.bat', 'start.bat']),
     ('docs: write README, config example and dependency notes', ['README.md', 'config.example.json', 'requirements.txt']),

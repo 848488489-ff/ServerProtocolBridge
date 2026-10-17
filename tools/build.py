@@ -158,7 +158,7 @@ def build_mpress_folder(python: str, mpress: Path, report: list[str], name: str)
         python, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir',
         '--name', name, '--distpath', str(app_root),
         '--workpath', str(stage / 'work'), '--specpath', str(stage), '--console',
-        '--collect-submodules', 'mcjs_proxy',
+        '--collect-submodules', 'proxy',
         '--collect-all', 'uvicorn',              # uvicorn imports its protocol / loop /
         '--collect-all', 'websockets',           # lifespan modules dynamically, so the
         '--hidden-import', 'httptools',          # freezer has to be told about them
@@ -280,7 +280,7 @@ def main() -> int:
         '--name', args.name,
         '--distpath', str(DIST), '--workpath', str(BUILD), '--specpath', str(BUILD),
         '--console' if not args.windowed else '--windowed',
-        '--collect-submodules', 'mcjs_proxy',
+        '--collect-submodules', 'proxy',
         '--collect-all', 'uvicorn',              # uvicorn imports its protocol / loop /
         '--collect-all', 'websockets',           # lifespan modules dynamically, so the
         '--hidden-import', 'httptools',          # freezer has to be told about them

@@ -115,7 +115,7 @@ python main.py --install-cert   :: 生成并导入证书
 连接数、流量与目标服务器状态; `http://127.0.0.1:8080/status` 是给程序读的 JSON。`GET /` 是 HTML、JSON 在 `/status`。
 
 **语言**: 基本设置里的"界面语言"下拉框可随时切换中/英, 立即生效(界面重建, 日志保留); 选择会写进 `config.json` 的 `language`。
-代码注释一律英文, 界面/日志/玩家提示走 `mcjs_proxy/locales/` 里的中英对照表。
+代码注释一律英文, 界面/日志/玩家提示走 `proxy/locales/` 里的中英对照表。
 
 ---
 
@@ -148,7 +148,7 @@ python main.py --install-cert   :: 生成并导入证书
 | `log_level` | `info` | `debug` / `info` / `warn` / `error` |
 | `language` | `en` | 界面/日志/玩家提示语言: `en`(English) 或 `zh`(中文)。命令行 `--language` |
 | `update_check` | `true` | 启动时向 `update_url` 查一次最新版本(见下面"云端版本检查")。命令行 `--no-update-check` |
-| `update_url` | `https://banbengengxinjiancha.pages.dev/version.json, https://misty-salad-1657.15923383477.workers.dev/` | 版本检查地址, 可以写多个(逗号/空格分隔, 按顺序试, 第一个能应答的生效), 留空 = 不做检查。命令行 `--update-url` |
+| `update_url` | `https://banbengengxinjiancha.pages.dev/version.json` | 版本检查地址, 可以写多个(逗号/空格分隔, 按顺序试, 第一个能应答的生效), 留空 = 不做检查。命令行 `--update-url` |
 
 ### 云端版本检查
 
@@ -170,11 +170,10 @@ python main.py --install-cert   :: 生成并导入证书
 请求头带 `User-Agent: wss-proxy (ServerProtocolBridge/<版本号>)`, 公开端点可以据此过滤掉扫描器(UA 里带 `wss-proxy` 的请求通过)。
 
 **国内可达性**: `*.workers.dev` 在国内会被 DNS 污染(解析到国外 IP, 连接超时), 而 `*.pages.dev` 不会,
-所以推荐把这份 JSON 放到 **Cloudflare Pages**(纯静态, 不需要 Worker / 限流; 现成的工程就在旁边的
-`..\版本更新检查\`, 拖上去即可), 或者自己的域名 / 对象存储 / Gitee; 纯文本文件同样能用。
-默认的 `update_url` 就是这两条: `https://banbengengxinjiancha.pages.dev/version.json`(国内可达) 和
-Worker 地址(给国外用户 + 备份)。`update_url` 支持写**多个地址**(逗号或空格分隔), 按顺序试, 第一个能
-应答的生效 —— 换成自己的地址时, 把国内能通的写在前面即可。全都连不上时程序只记一行日志, 不影响使用。
+所以版本文件放在 **Cloudflare Pages** 上(纯静态, 不需要 Worker / 限流; 工程就在旁边的 `..\版本更新检查\`)。
+同一个 Pages 站点里也放一份 `服务器协议转换.exe`, 提示里的链接就是**自己的直链**(见第 6 节), 不经过第三方网盘。
+`update_url` 支持写**多个地址**(逗号或空格分隔), 按顺序试, 第一个能应答的生效 —— 换地址时把国内能通的写在前面
+即可。全都连不上时程序只记一行日志, 不影响使用。
 命令行:
 
 ```bat
@@ -336,7 +335,7 @@ python tools\build.py
 ```
 服务器协议转换/
 ├── main.py                 入口(默认 GUI, --no-gui 走命令行)
-├── mcjs_proxy/
+├── proxy/
 │   ├── proxy.py            转发核心: 监听 -> WebSocket 握手 -> TCP 桥接 + 翻译层挂载
 │   ├── translator.py       协议翻译层: EaglercraftX 握手代答 + 双向封包搬运
 │   ├── eagler.py           EaglercraftX 1.8 握手协议(解析/组包/UUID)
@@ -377,7 +376,7 @@ python -m unittest discover -s tests -v
 
 * **透明转发**: WebSocket 二进制帧的负载就是 Minecraft 协议字节; 反向从 TCP 读到的字节也原样塞进帧里。
 * **协议翻译(可选, 默认开)**: 上行的第一个数据帧按 EaglercraftX 首个握手包解析, 成功才启用翻译层
-  (`mcjs_proxy/translator.py`), 认不出就完全按原样转发 —— 原版客户端不受任何影响。翻译层里:
+  (`proxy/translator.py`), 认不出就完全按原样转发 —— 原版客户端不受任何影响。翻译层里:
   * 在客户端面前扮演 EaglercraftX 服务端, 在服务器面前扮演原版 1.8.8 客户端;
   * **一个帧一个裸包**: 浏览器客户端读帧时直接拿帧开头当包 id(没有长度前缀, 也没有压缩),
     所以服务器来的每个包单独发一帧, 客户端来的每一帧单独装回原版 `[包长][包体]` 字节流;
@@ -389,7 +388,7 @@ python -m unittest discover -s tests -v
     所以上行的解码是"一个一个取包"( `Decoder.next_packet` ), 而不是一次解析一整段;
   * 客户端发往 `EAG|...` 私有通道的插件消息直接丢弃(原版服务器不认识);
   * 服务器要加密握手时代客户端做完: 用服务器给的 RSA 公钥加密随机共享密钥与验证令牌,
-    之后两个方向的 TCP 字节流全程 AES-128-CFB8(`mcjs_proxy/crypto.py`);
+    之后两个方向的 TCP 字节流全程 AES-128-CFB8(`proxy/crypto.py`);
   * 代理自己给客户端发的提示都带 `[协议转换器] ` 前缀, 服务器原话不加 —— 便于区分;
   * 客户端在登录请求里没带合法名字时, 依次回退到握手包里的 `authUsername`、最后才是内置备用名。
 * **离线 UUID**: 与 Java 的 `UUID.nameUUIDFromBytes("OfflinePlayer:"+名字)` 完全一致, 保证客户端、代理、
@@ -400,8 +399,8 @@ python -m unittest discover -s tests -v
 * **base64 兼容模式**: 少数老浏览器客户端会把数据放进文本帧, 程序会自动切换到 base64 模式, 也能识别 `Sec-WebSocket-Protocol: base64`。
 * **证书**: 无第三方库, 用标准库手写 DER 编码 + RSA 密钥生成 + PKCS#1 v1.5 签名; 系统里有 openssl 时会优先用 openssl(更快)。测试里包含真实 TLS 握手校验(域名与 IP 两种 SAN)。
 * **只监听 127.0.0.1**: 默认不对外开放。改成 `0.0.0.0` 等于把转发入口暴露给整个局域网, 请自行评估。
-* **语言与注释**: 代码注释一律英文; 界面、日志、发给玩家的提示都通过 `mcjs_proxy/i18n.py` 的 `tr()` 取词
-  (词条在 `mcjs_proxy/locales/`), 默认 English、可切中文 —— 协议层文案(例如 `[协议转换器] ` 前缀)也跟着语言走。
+* **语言与注释**: 代码注释一律英文; 界面、日志、发给玩家的提示都通过 `proxy/i18n.py` 的 `tr()` 取词
+  (词条在 `proxy/locales/`), 默认 English、可切中文 —— 协议层文案(例如 `[协议转换器] ` 前缀)也跟着语言走。
 * **客户端标识伪装**: 进入游戏后, 代理按 `spoof_brand` 主动补发一条 `MC|Brand`(原版客户端就是这么干的),
   并丢弃浏览器客户端自己发的那条, 目标服务器侧的插件因此看到的是一个普通客户端。补发时要按连接当前的
   压缩状态正确封帧 —— 多封一层就会被对端当成别的包解, 直接踢线。
