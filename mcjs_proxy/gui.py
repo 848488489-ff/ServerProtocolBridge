@@ -67,6 +67,48 @@ def _apply_font(root: tk.Misc) -> None:
             pass
 
 
+class NumericEntry(ttk.Entry):
+    """只接受数字的输入框。
+
+    在按键/粘贴阶段就拒绝非数字字符(中文、字母、空格、全角数字都打不进去),
+    避免出现"端口号填成中文"这类情况。allow_decimal=True 时允许一个英文小数点。
+    """
+
+    def __init__(self, master=None, textvariable=None, *, max_length: int | None = None,
+                 allow_decimal: bool = False, **kwargs):
+        super().__init__(master, textvariable=textvariable, **kwargs)
+        self._max_length = max_length
+        self._allow_decimal = allow_decimal
+        self._validation = (self.register(self._is_allowed), '%P')
+        self.configure(validate='all', validatecommand=self._validation)
+
+    def _is_allowed(self, proposed: str) -> bool:
+        if proposed == '':
+            return True                      # 允许清空后重新输入
+        if not proposed.isascii():
+            return False                     # 全角数字、中文等一律拒绝
+        text = proposed[1:] if proposed.startswith('-') else proposed
+        if self._allow_decimal and text.count('.') <= 1:
+            head, _, tail = text.partition('.')
+            if not (head == '' or head.isdigit()) or not (tail == '' or tail.isdigit()):
+                return False
+        elif not text.isdigit():
+            return False
+        if self._max_length is not None and len(text) > self._max_length:
+            return False
+        return True
+
+    def set_value(self, text: str) -> None:
+        """程序化赋值: 期间关闭校验, 免得历史配置里的脏值触发 Tk 校验告警。"""
+        self.configure(validate='none')
+        try:
+            self.delete('0', 'end')
+            self.insert('0', text)
+        finally:
+            self.configure(validatecommand=self._validation)
+            self.configure(validate='all')
+
+
 class BridgeApp(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -193,9 +235,13 @@ class BridgeApp(tk.Tk):
         ttk.Label(frame, text='监听地址').grid(row=0, column=0, sticky='w', padx=(0, 6), pady=3)
         ttk.Entry(frame, textvariable=self.var_listen_host, width=18).grid(row=0, column=1, sticky='ew', pady=3)
         ttk.Label(frame, text='wss 端口').grid(row=0, column=2, sticky='e', padx=(12, 6))
-        ttk.Entry(frame, textvariable=self.var_wss_port, width=8).grid(row=0, column=3, sticky='w')
+        self.entry_wss_port = NumericEntry(frame, textvariable=self.var_wss_port, width=8,
+                                           max_length=5)
+        self.entry_wss_port.grid(row=0, column=3, sticky='w')
         ttk.Label(frame, text='ws 端口(0=关闭)').grid(row=0, column=4, sticky='e', padx=(12, 6))
-        ttk.Entry(frame, textvariable=self.var_ws_port, width=8).grid(row=0, column=5, sticky='w')
+        self.entry_ws_port = NumericEntry(frame, textvariable=self.var_ws_port, width=8,
+                                          max_length=5)
+        self.entry_ws_port.grid(row=0, column=5, sticky='w')
 
         ttk.Label(frame, text='转发目标').grid(row=1, column=0, sticky='w', padx=(0, 6), pady=3)
         ttk.Entry(frame, textvariable=self.var_target).grid(row=1, column=1, columnspan=3, sticky='ew')
@@ -220,7 +266,9 @@ class BridgeApp(tk.Tk):
         ttk.Label(frame, text='名称(CN)').grid(row=0, column=2, sticky='e', padx=(12, 6))
         ttk.Entry(frame, textvariable=self.var_cert_common_name, width=16).grid(row=0, column=3, sticky='w')
         ttk.Label(frame, text='有效期(天)').grid(row=0, column=4, sticky='e', padx=(12, 6))
-        ttk.Entry(frame, textvariable=self.var_cert_days, width=8).grid(row=0, column=5, sticky='w')
+        self.entry_cert_days = NumericEntry(frame, textvariable=self.var_cert_days, width=8,
+                                            max_length=5)
+        self.entry_cert_days.grid(row=0, column=5, sticky='w')
 
         ttk.Label(frame, text='额外名称').grid(row=1, column=0, sticky='w', padx=(0, 6), pady=3)
         ttk.Entry(frame, textvariable=self.var_cert_extra).grid(
@@ -252,11 +300,17 @@ class BridgeApp(tk.Tk):
         ttk.Combobox(frame, textvariable=self.var_log_level, width=8, state='readonly',
                      values=('debug', 'info', 'warn', 'error')).grid(row=0, column=1, sticky='w')
         ttk.Label(frame, text='心跳(秒, 0=关闭)').grid(row=0, column=2, sticky='e', padx=(12, 6))
-        ttk.Entry(frame, textvariable=self.var_heartbeat, width=8).grid(row=0, column=3, sticky='w')
+        self.entry_heartbeat = NumericEntry(frame, textvariable=self.var_heartbeat, width=8,
+                                            max_length=6)
+        self.entry_heartbeat.grid(row=0, column=3, sticky='w')
         ttk.Label(frame, text='连接超时(秒)').grid(row=0, column=4, sticky='e', padx=(12, 6))
-        ttk.Entry(frame, textvariable=self.var_connect_timeout, width=8).grid(row=0, column=5, sticky='w')
+        self.entry_timeout = NumericEntry(frame, textvariable=self.var_connect_timeout, width=8,
+                                          max_length=7, allow_decimal=True)
+        self.entry_timeout.grid(row=0, column=5, sticky='w')
         ttk.Label(frame, text='单帧上限(MB)').grid(row=0, column=6, sticky='e', padx=(12, 6))
-        ttk.Entry(frame, textvariable=self.var_max_payload, width=8).grid(row=0, column=7, sticky='w')
+        self.entry_max_payload = NumericEntry(frame, textvariable=self.var_max_payload, width=8,
+                                              max_length=4)
+        self.entry_max_payload.grid(row=0, column=7, sticky='w')
 
     def _build_actions(self, parent: ttk.Frame) -> None:
         frame = ttk.Frame(parent)
@@ -288,19 +342,19 @@ class BridgeApp(tk.Tk):
     def _load_form(self) -> None:
         config = self.config
         self.var_listen_host.set(config.listen_host)
-        self.var_wss_port.set(str(config.wss_port))
-        self.var_ws_port.set(str(config.ws_port))
+        self.entry_wss_port.set_value(str(config.wss_port))
+        self.entry_ws_port.set_value(str(config.ws_port))
         self.var_target.set(config.target)
         self.var_use_srv.set(bool(config.use_srv))
         self.var_cert_dir.set(config.cert_dir)
         self.var_cert_common_name.set(config.cert_common_name)
         self.var_cert_extra.set(', '.join(config.cert_extra_names or []))
-        self.var_cert_days.set(str(config.cert_days))
+        self.entry_cert_days.set_value(str(config.cert_days))
         self.var_cert_generator.set(config.cert_generator)
         self.var_log_level.set(config.log_level)
-        self.var_heartbeat.set(str(config.heartbeat_sec))
-        self.var_connect_timeout.set(str(config.connect_timeout))
-        self.var_max_payload.set(str(config.max_payload_mb))
+        self.entry_heartbeat.set_value(str(config.heartbeat_sec))
+        self.entry_timeout.set_value(str(config.connect_timeout))
+        self.entry_max_payload.set_value(str(config.max_payload_mb))
         self.text_routes.delete('1.0', 'end')
         self.text_routes.insert('1.0', config_module.format_routes_text(config.routes))
         self.text_routes.edit_modified(False)
@@ -310,24 +364,39 @@ class BridgeApp(tk.Tk):
             self.text_routes.edit_modified(False)
 
     def _collect_form(self) -> config_module.Config:
-        def as_int(variable, fallback=0):
-            try:
-                return int(str(variable.get()).strip())
-            except ValueError:
-                return fallback
+        """把界面上的内容收集成配置对象。
 
-        def as_float(variable, fallback=0.0):
-            try:
-                return float(str(variable.get()).strip())
-            except ValueError:
+        数字类字段只接受数字(输入框本身就拦了非法字符), 这里再做一次严格解析:
+        遇到空值或脏值直接抛 ValueError, 交给调用方弹出提示, 绝不静默套用默认值。
+        """
+
+        def as_int(variable, label, fallback=None):
+            text = str(variable.get()).strip()
+            if not text:
+                if fallback is None:
+                    raise ValueError('「%s」不能为空' % label)
                 return fallback
+            if not (text.isascii() and text.isdigit()):
+                raise ValueError('「%s」只能是数字, 当前值是: %s' % (label, text))
+            return int(text)
+
+        def as_float(variable, label, fallback=0.0):
+            text = str(variable.get()).strip()
+            if not text:
+                return fallback
+            if not set(text) <= set('0123456789.'):
+                raise ValueError('「%s」只能是数字, 当前值是: %s' % (label, text))
+            try:
+                return float(text)
+            except ValueError:
+                raise ValueError('「%s」不是有效的数字: %s' % (label, text)) from None
 
         routes_text = self.text_routes.get('1.0', 'end')
         routes = config_module.parse_routes_text(routes_text) if routes_text.strip() else {}
         extra = [item.strip() for item in self.var_cert_extra.get().replace(',', ' ').split() if item.strip()]
         self.config.listen_host = self.var_listen_host.get().strip() or '127.0.0.1'
-        self.config.wss_port = as_int(self.var_wss_port, 8443)
-        self.config.ws_port = as_int(self.var_ws_port, 8080)
+        self.config.wss_port = as_int(self.var_wss_port, 'wss 端口')
+        self.config.ws_port = as_int(self.var_ws_port, 'ws 端口')
         self.config.target = self.var_target.get().strip() or 'mc.hypixel.net:25565'
         self.config.use_srv = bool(self.var_use_srv.get())
         self.config.routes = routes
@@ -335,19 +404,22 @@ class BridgeApp(tk.Tk):
         self.config.cert_dir = self.var_cert_dir.get().strip() or 'certs'
         self.config.cert_common_name = self.var_cert_common_name.get().strip() or 'localhost'
         self.config.cert_extra_names = extra
-        self.config.cert_days = max(1, as_int(self.var_cert_days, 3650))
+        self.config.cert_days = max(1, as_int(self.var_cert_days, '证书有效期', fallback=3650))
         self.config.cert_generator = self.var_cert_generator.get().strip() or 'auto'
         self.config.log_level = self.var_log_level.get().strip() or 'info'
-        self.config.heartbeat_sec = max(0, as_int(self.var_heartbeat, 30))
-        self.config.connect_timeout = max(1.0, as_float(self.var_connect_timeout, 10.0))
-        self.config.max_payload_mb = max(1, as_int(self.var_max_payload, 16))
+        self.config.heartbeat_sec = max(0, as_int(self.var_heartbeat, '心跳间隔', fallback=30))
+        self.config.connect_timeout = max(1.0, as_float(self.var_connect_timeout, '连接超时', fallback=10.0))
+        self.config.max_payload_mb = max(1, as_int(self.var_max_payload, '单帧上限', fallback=16))
+        for label, port in (('wss 端口', self.config.wss_port), ('ws 端口', self.config.ws_port)):
+            if not 0 <= port <= 65535:
+                raise ValueError('「%s」必须在 0~65535 之间, 当前值是: %d' % (label, port))
         return self.config
 
     def _refresh_target_hint(self, *_args) -> None:
         try:
             config = self._collect_form()
         except ValueError:
-            self.var_endpoint.set('(路径映射格式有误)')
+            self.var_endpoint.set('(请先填写端口)')
             return
         url = config.wss_url()
         self.var_endpoint.set(url or '(未启用监听)')
