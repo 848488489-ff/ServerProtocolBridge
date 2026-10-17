@@ -22,8 +22,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mcjs_proxy import crypto, resolver, vanilla  # noqa: E402
-from mcjs_proxy.translator import chat_to_text  # noqa: E402
+from proxy import crypto, resolver, vanilla  # noqa: E402
+from proxy.translator import chat_to_text  # noqa: E402
 
 RECV_TIMEOUT = 3.0          # longest wait for each recv
 TOTAL_TIMEOUT = 12.0        # longest duration of one whole probe

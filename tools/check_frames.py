@@ -38,8 +38,8 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mcjs_proxy import eagler, vanilla, wsproto       # noqa: E402
-from mcjs_proxy.config import Config                   # noqa: E402
+from proxy import eagler, vanilla, wsproto       # noqa: E402
+from proxy.config import Config                   # noqa: E402
 
 
 # ---------------------------------------------------------------- data reader

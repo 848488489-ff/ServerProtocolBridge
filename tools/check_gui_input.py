@@ -11,7 +11,7 @@ import sys
 
 sys.path.insert(0, '.')
 
-from mcjs_proxy.gui import BridgeApp  # noqa: E402
+from proxy.gui import BridgeApp  # noqa: E402
 
 app = BridgeApp()
 app.update()

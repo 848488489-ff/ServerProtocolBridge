@@ -1,4 +1,4 @@
-"""Translations for ``mcjs_proxy/update.py`` (cloud version check)."""
+"""Translations for ``proxy/update.py`` (cloud version check)."""
 
 from __future__ import annotations
 

@@ -16,10 +16,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mcjs_proxy import i18n  # noqa: E402
-from mcjs_proxy.config import Config  # noqa: E402
-from mcjs_proxy.logger import NullLogger  # noqa: E402
-from mcjs_proxy.translator import EaglerTranslator  # noqa: E402
+from proxy import i18n  # noqa: E402
+from proxy.config import Config  # noqa: E402
+from proxy.logger import NullLogger  # noqa: E402
+from proxy.translator import EaglerTranslator  # noqa: E402
 from test_translate import REAL_FIRST_PACKET, build_request_login  # noqa: E402
 
 PLACEHOLDER = re.compile(r'%\((\w+)\)')
@@ -85,7 +85,7 @@ class LanguageTests(unittest.TestCase):
                             for item in config.validate()))
 
     def test_cli_language_argument(self):
-        from mcjs_proxy.cli import apply_arguments, build_parser
+        from proxy.cli import apply_arguments, build_parser
 
         args = build_parser().parse_args(['--language', 'zh'])
         config = apply_arguments(Config(), args)

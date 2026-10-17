@@ -27,11 +27,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mcjs_proxy import certs, config as config_module, der, resolver, wsproto, x509  # noqa: E402
-from mcjs_proxy.config import Config  # noqa: E402
-from mcjs_proxy.i18n import tr  # noqa: E402
-from mcjs_proxy.logger import Logger  # noqa: E402
-from mcjs_proxy.proxy import ProxyServer  # noqa: E402
+from proxy import certs, config as config_module, der, resolver, wsproto, x509  # noqa: E402
+from proxy.config import Config  # noqa: E402
+from proxy.i18n import tr  # noqa: E402
+from proxy.logger import Logger  # noqa: E402
+from proxy.proxy import ProxyServer  # noqa: E402
 
 
 # ---------------------------------------------------------------- Helpers

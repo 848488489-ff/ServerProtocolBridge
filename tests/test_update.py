@@ -1,4 +1,4 @@
-"""Tests for the cloud version check (mcjs_proxy/update.py).
+"""Tests for the cloud version check (proxy/update.py).
 
     python -m unittest tests.test_update -v
 
@@ -17,10 +17,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from mcjs_proxy import update  # noqa: E402
-from mcjs_proxy.config import Config  # noqa: E402
-from mcjs_proxy.i18n import tr  # noqa: E402
-from mcjs_proxy.logger import NullLogger  # noqa: E402
+from proxy import update  # noqa: E402
+from proxy.config import Config  # noqa: E402
+from proxy.i18n import tr  # noqa: E402
+from proxy.logger import NullLogger  # noqa: E402
 
 # path -> (status, body); the handler answers 404 for anything not listed
 REPLIES: dict[str, tuple[int, str]] = {}
@@ -242,7 +242,7 @@ class AsyncTests(_ServerTest):
 
 class CliTests(_ServerTest):
     def test_parser_and_config_wiring(self):
-        from mcjs_proxy.cli import apply_arguments, build_parser
+        from proxy.cli import apply_arguments, build_parser
 
         args = build_parser().parse_args(
             ['--check-update', '--update-url', 'https://example.invalid/', '--no-update-check'])
@@ -252,7 +252,7 @@ class CliTests(_ServerTest):
         self.assertFalse(config.update_check)
 
     def test_check_update_exit_codes(self):
-        from mcjs_proxy.cli import run_update_check
+        from proxy.cli import run_update_check
 
         REPLIES['/new.json'] = (200, '{"version": "1.1"}')
         REPLIES['/same.json'] = (200, '{"version": "1.0.0"}')
