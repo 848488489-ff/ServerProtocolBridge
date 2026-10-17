@@ -227,13 +227,30 @@ def main() -> int:
 
     if not args.no_upx and upx is None:
         print('[警告] 没有找到 UPX, 将只生成未压缩版本(可以稍后手动压缩)')
-    if not args.no_mpress and mpress is None:
+    if args.no_mpress:
+        print('[提示] 已按参数要求跳过 MPRESS')
+    elif mpress is None:
         print('[提示] 没有找到 MPRESS, 跳过 MPRESS 版')
 
+    # 注意: 只删上一次的打包产物, 保留 dist 下的 certs/ 和 config.json ——
+    # 证书一旦被删就要重新导入系统信任库, 配置也会丢。
+    keep = {DIST / 'certs', DIST / 'config.json'}
     if DIST.exists():
-        shutil.rmtree(DIST, ignore_errors=True)
+        for item in DIST.iterdir():
+            if item in keep:
+                continue
+            if item.is_dir():
+                shutil.rmtree(item, ignore_errors=True)
+            else:
+                item.unlink(missing_ok=True)
     if BUILD.exists():
         shutil.rmtree(BUILD, ignore_errors=True)
+
+    # 源码目录里已经有证书的话, 复制一份给 EXE 用, 这样浏览器信任一次就够
+    source_certs = ROOT / 'certs'
+    target_certs = DIST / 'certs'
+    if source_certs.is_dir() and not target_certs.exists():
+        shutil.copytree(source_certs, target_certs)
 
     command = [
         args.python, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile',
