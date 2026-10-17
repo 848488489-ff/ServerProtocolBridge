@@ -1,0 +1,20 @@
+{
+  "listen_host": "127.0.0.1",
+  "wss_port": 8443,
+  "ws_port": 8080,
+  "target": "mc.hypixel.net:25565",
+  "routes": {
+    "/hypixel": "mc.hypixel.net:25565"
+  },
+  "use_srv": true,
+  "tls_enabled": true,
+  "cert_dir": "certs",
+  "cert_common_name": "localhost",
+  "cert_extra_names": [],
+  "cert_days": 3650,
+  "cert_generator": "auto",
+  "connect_timeout": 10.0,
+  "heartbeat_sec": 30,
+  "max_payload_mb": 16,
+  "log_level": "info"
+}
