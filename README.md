@@ -148,7 +148,7 @@ python main.py --install-cert   :: 生成并导入证书
 | `log_level` | `info` | `debug` / `info` / `warn` / `error` |
 | `language` | `en` | 界面/日志/玩家提示语言: `en`(English) 或 `zh`(中文)。命令行 `--language` |
 | `update_check` | `true` | 启动时向 `update_url` 查一次最新版本(见下面"云端版本检查")。命令行 `--no-update-check` |
-| `update_url` | `https://misty-salad-1657.15923383477.workers.dev/` | 版本检查地址, 留空 = 不做检查。命令行 `--update-url` |
+| `update_url` | `https://banbengengxinjiancha.pages.dev/version.json, https://misty-salad-1657.15923383477.workers.dev/` | 版本检查地址, 可以写多个(逗号/空格分隔, 按顺序试, 第一个能应答的生效), 留空 = 不做检查。命令行 `--update-url` |
 
 ### 云端版本检查
 
@@ -168,8 +168,13 @@ python main.py --install-cert   :: 生成并导入证书
 
 `version` 也接受 `v1.1` 这类写法, 比较时只看数字部分(`1.1` = `1.1.0`); 应答是纯文本(`1.1` 一行)也能识别。
 请求头带 `User-Agent: wss-proxy (ServerProtocolBridge/<版本号>)`, 公开端点可以据此过滤掉扫描器(UA 里带 `wss-proxy` 的请求通过)。
-地址随时可以换成别处: `*.workers.dev` 在国内多数网络下解析不出来(连不上时程序只会记一行日志, 不影响使用),
-这时把这份 JSON(或纯文本)放到能访问的地方 —— 比如自己的域名、网盘直链、Gitee —— 再把 `update_url` 指过去即可。
+
+**国内可达性**: `*.workers.dev` 在国内会被 DNS 污染(解析到国外 IP, 连接超时), 而 `*.pages.dev` 不会,
+所以推荐把这份 JSON 放到 **Cloudflare Pages**(纯静态, 不需要 Worker / 限流; 现成的工程就在旁边的
+`..\版本更新检查\`, 拖上去即可), 或者自己的域名 / 对象存储 / Gitee; 纯文本文件同样能用。
+默认的 `update_url` 就是这两条: `https://banbengengxinjiancha.pages.dev/version.json`(国内可达) 和
+Worker 地址(给国外用户 + 备份)。`update_url` 支持写**多个地址**(逗号或空格分隔), 按顺序试, 第一个能
+应答的生效 —— 换成自己的地址时, 把国内能通的写在前面即可。全都连不上时程序只记一行日志, 不影响使用。
 命令行:
 
 ```bat

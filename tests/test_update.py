@@ -181,6 +181,37 @@ class FetchTests(_ServerTest):
             update.check('http://127.0.0.1:9/', '1.0.0', timeout=0.5)
 
 
+class MultipleEndpointTests(_ServerTest):
+    def test_url_list_splitter(self):
+        self.assertEqual(update.split_urls(' a , b\nc '), ['a', 'b', 'c'])
+        self.assertEqual(update.split_urls(['a', 'b']), ['a', 'b'])
+        self.assertEqual(update.split_urls(''), [])
+        self.assertEqual(update.split_urls(None), [])
+
+    def test_falls_back_to_the_next_endpoint(self):
+        # The first host is unreachable -- that is what a blocked domain looks
+        # like; the mirror answers, and the mirror's link is the one used.
+        REPLIES['/v.json'] = (200, '{"version": "1.1", "download_page": "https://x/download"}')
+        with _Server() as base:
+            result = update.check('http://127.0.0.1:9/ , ' + base + '/v.json', '1.0.0',
+                                  timeout=0.5)
+        self.assertTrue(result['newer'])
+        self.assertEqual(result['url'], base + '/v.json')
+        self.assertEqual(result['page'], 'https://x/download')
+
+    def test_first_endpoint_wins(self):
+        REPLIES['/first.json'] = (200, '{"version": "1.1"}')
+        with _Server() as base:
+            result = update.check(base + '/first.json ' + base + '/second.json', '1.0.0')
+        self.assertEqual(result['url'], base + '/first.json')
+
+    def test_all_endpoints_failing_is_reported(self):
+        with _Server() as base:
+            with self.assertRaises(update.UpdateError) as caught:
+                update.check(base + '/missing.json, http://127.0.0.1:9/', '1.0.0', timeout=0.5)
+        self.assertIn('2', str(caught.exception))
+
+
 class AsyncTests(_ServerTest):
     @staticmethod
     def _collector():
@@ -245,6 +276,14 @@ class ConfigTests(unittest.TestCase):
         # With the check switched off the URL is never used, so it may be anything.
         config.update_check = False
         self.assertNotIn(tr('core.config.update_url_invalid'), config.validate())
+
+    def test_update_url_list_validation(self):
+        config = Config()
+        config.update_url = 'https://one.invalid/ , https://two.invalid/version.json'
+        self.assertNotIn(tr('core.config.update_url_invalid'), config.validate())
+        # One bad entry in the list is enough to report the list as bad.
+        config.update_url = 'https://one.invalid/, ftp://two.invalid/'
+        self.assertIn(tr('core.config.update_url_invalid'), config.validate())
 
 
 if __name__ == '__main__':
