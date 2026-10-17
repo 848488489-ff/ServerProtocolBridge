@@ -42,6 +42,10 @@ VERSION_KEYS = ('version', 'latest', 'latest_version', 'tag_name', 'name')
 PAGE_KEYS = ('download_page', 'page_url', 'download_url', 'page', 'url', 'html_url', 'download')
 NOTES_KEYS = ('notes', 'changelog', 'body', 'message', 'description')
 
+# Request identity: the public endpoint may gate on it, so it always mentions
+# "wss-proxy" (and still names the program, so server logs stay readable).
+USER_AGENT = 'wss-proxy (ServerProtocolBridge/%s)' % VERSION
+
 VERSION_TOKEN = re.compile(r'v?(\d+(?:\.\d+)*)')
 
 
@@ -87,7 +91,7 @@ def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
     entries are empty strings when the endpoint does not send them.
     """
     request = urllib.request.Request(
-        url, headers={'User-Agent': 'ServerProtocolBridge/%s' % VERSION,
+        url, headers={'User-Agent': USER_AGENT,
                       'Accept': 'application/json, text/plain, */*'})
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
