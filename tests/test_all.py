@@ -722,7 +722,7 @@ class ProxyEndToEndTests(unittest.TestCase):
         self.assertIn('200 OK', result['head'])
         data = json.loads(result['body'].decode('utf-8'))
         self.assertTrue(data['running'])
-        self.assertEqual(data['service'], 'mcjs-wss-proxy')
+        self.assertEqual(data['service'], 'server-protocol-bridge')
         self.assertEqual(data['target'], '127.0.0.1:%d' % self.backend.port)
         self.assertIn('listeners', data)
         self.assertEqual(data['target_source'], '127.0.0.1:%d' % self.backend.port)

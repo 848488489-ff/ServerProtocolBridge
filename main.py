@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCJS Server Protocol Bridge -- program entry point.
+"""Server Protocol Bridge -- program entry point.
 
 Running it (or double-clicking the EXE) opens the GUI; add --no-gui to run in
 command line mode.
@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import sys
 
-CLI_FLAGS = ('--no-gui', '--cli', '--check', '--selftest', '--install-cert', '--version', '--help', '-h')
+CLI_FLAGS = ('--no-gui', '--cli', '--check', '--selftest', '--install-cert', '--version',
+             '--check-update', '--update-url', '--no-update-check', '--help', '-h')
 
 
 def _use_cli(argv) -> bool:

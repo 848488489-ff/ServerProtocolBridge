@@ -30,6 +30,13 @@ ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / 'dist'
 BUILD = ROOT / 'build'
 
+# Default name of the produced EXE: it is the name a user sees and double-clicks,
+# so it is the localized program name.
+DEFAULT_NAME = '服务器协议转换'
+# What the smoke test looks for in the --version output (the program name in
+# whichever UI language the EXE ends up running with).
+SMOKE_NAMES = ('Server Protocol Bridge', '服务器协议转换')
+
 # Modules that are never needed at runtime; excluding them shrinks the build noticeably.
 # NOTE: do not exclude distutils -- PyInstaller's hook-distutils aliases it to setuptools._distutils,
 # and with the target name already excluded from the graph the build fails with a ValueError.
@@ -101,7 +108,7 @@ def smoke_test(exe: Path) -> bool:
         print('    smoke test raised: %s' % exc)
         return False
     output = ((completed.stdout or '') + (completed.stderr or ''))
-    ok = completed.returncode == 0 and 'MCJS' in output
+    ok = completed.returncode == 0 and any(name in output for name in SMOKE_NAMES)
     print('    smoke test: %s' % ('passed' if ok else 'failed'))
     if not ok:
         print('    returncode: %s' % completed.returncode)
@@ -135,7 +142,7 @@ def gui_smoke(exe: Path, seconds: float = 6.0) -> bool:
     return alive
 
 
-def build_mpress_folder(python: str, mpress: Path, report: list[str]) -> bool:
+def build_mpress_folder(python: str, mpress: Path, report: list[str], name: str) -> bool:
     """Build the MPRESS-compressed variant (folder form).
 
     NOTE: MPRESS treats the archive PyInstaller --onefile appends to the EXE tail as an overlay and
@@ -149,7 +156,7 @@ def build_mpress_folder(python: str, mpress: Path, report: list[str]) -> bool:
         shutil.rmtree(stage, ignore_errors=True)
     command = [
         python, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir',
-        '--name', 'MCJS-Bridge', '--distpath', str(app_root),
+        '--name', name, '--distpath', str(app_root),
         '--workpath', str(stage / 'work'), '--specpath', str(stage), '--console',
         '--collect-submodules', 'mcjs_proxy',
         '--collect-all', 'uvicorn',              # uvicorn imports its protocol / loop /
@@ -165,8 +172,8 @@ def build_mpress_folder(python: str, mpress: Path, report: list[str]) -> bool:
         print('  onedir build failed, skipping the MPRESS variant')
         return False
 
-    app_dir = app_root / 'MCJS-Bridge'
-    launcher = app_dir / 'MCJS-Bridge.exe'
+    app_dir = app_root / name
+    launcher = app_dir / ('%s.exe' % name)
     if not launcher.exists():
         print('  %s not found, skipping the MPRESS variant' % launcher)
         return False
@@ -213,7 +220,7 @@ def build_mpress_folder(python: str, mpress: Path, report: list[str]) -> bool:
         shutil.rmtree(final_dir, ignore_errors=True)
     target_dir.mkdir(parents=True, exist_ok=True)
     shutil.copytree(app_dir, final_dir)
-    archive = Path(shutil.make_archive(str(target_dir / 'MCJS-Bridge-MPRESS'), 'zip',
+    archive = Path(shutil.make_archive(str(target_dir / ('%s-MPRESS' % name)), 'zip',
                                        root_dir=str(target_dir), base_dir=app_dir.name))
     print('  size after MPRESS: %s, archive: %s (%s)'
           % (human(after), archive.name, human(archive.stat().st_size)))
@@ -223,8 +230,8 @@ def build_mpress_folder(python: str, mpress: Path, report: list[str]) -> bool:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Package MCJS Server Protocol Bridge')
-    parser.add_argument('--name', default='MCJS-Bridge', help='EXE name')
+    parser = argparse.ArgumentParser(description='Package Server Protocol Bridge')
+    parser.add_argument('--name', default=DEFAULT_NAME, help='EXE name')
     parser.add_argument('--windowed', action='store_true', help='pure GUI build without a console window')
     parser.add_argument('--no-upx', action='store_true', help='do not use UPX')
     parser.add_argument('--no-mpress', action='store_true', help='do not detect / use MPRESS')
@@ -320,7 +327,7 @@ def main() -> int:
 
     if mpress is not None and args.mpress_folder:
         print('[3/5] building the MPRESS variant (onedir folder, per-file PE compression)...')
-        build_mpress_folder(args.python, mpress, report)
+        build_mpress_folder(args.python, mpress, report, args.name)
     elif mpress is not None:
         print('[3/5] skipping the single-file MPRESS build:')
         print('      MPRESS does not understand the archive PyInstaller --onefile appends to the EXE')

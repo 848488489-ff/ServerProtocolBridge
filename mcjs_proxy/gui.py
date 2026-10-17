@@ -21,6 +21,7 @@ from tkinter.scrolledtext import ScrolledText
 
 from . import certs
 from . import config as config_module
+from . import update
 from .i18n import LANGUAGES, get_language, language_code, language_label, set_language, tr
 from .logger import Logger
 from .proxy import ProxyServer
@@ -119,6 +120,7 @@ class BridgeApp(tk.Tk):
         self.logger: Logger | None = None
         self.server: ProxyServer | None = None
         self._closing = False
+        self._update_outcome: dict | None = None   # last successful version check
 
         self._build_variables()
         self._build_menu()
@@ -130,6 +132,9 @@ class BridgeApp(tk.Tk):
         self._update_cert_label()
         self.protocol('WM_DELETE_WINDOW', self._on_close)
         self.after(120, self._poll)
+        # The window is usable long before the answer arrives, so the check runs
+        # in the background and only ever adds a line to the header.
+        self.after(600, self._check_updates)
 
     # ---------- Variables ----------
     def _build_variables(self) -> None:
@@ -141,7 +146,6 @@ class BridgeApp(tk.Tk):
         self.var_use_srv = tk.BooleanVar()
         self.var_rewrite_host = tk.BooleanVar()
         self.var_eagler_translate = tk.BooleanVar(value=True)
-        self.var_routes = tk.StringVar()
         self.var_cert_dir = tk.StringVar()
         self.var_cert_common_name = tk.StringVar()
         self.var_cert_extra = tk.StringVar()
@@ -182,6 +186,7 @@ class BridgeApp(tk.Tk):
         menu.add_cascade(label=tr('gui.menu.tools'), menu=tool_menu)
 
         help_menu = tk.Menu(menu, tearoff=0)
+        help_menu.add_command(label=tr('gui.menu.check_update'), command=self._check_updates_manual)
         help_menu.add_command(label=tr('gui.help.title'), command=self._show_help)
         help_menu.add_command(label=tr('gui.about.title'), command=self._show_about)
         menu.add_cascade(label=tr('gui.menu.help'), menu=help_menu)
@@ -207,6 +212,10 @@ class BridgeApp(tk.Tk):
         self.lbl_status = ttk.Label(header, textvariable=self.var_status, width=12, anchor='center',
                                     foreground=self._status_color)
         self.lbl_status.grid(row=0, column=2, sticky='e')
+        # "A newer release is available" line under the header; it is only
+        # gridded when there is news (see _apply_update_banner), so a start with
+        # nothing to report looks exactly like before.
+        self.lbl_update = ttk.Label(header, text='', foreground='#b26b00')
 
         self._build_basic(outer)
         self._build_cert(outer)
@@ -234,6 +243,7 @@ class BridgeApp(tk.Tk):
                   foreground='#777777').pack(side='right')
 
         self._build_status_bar(outer)
+        self._apply_update_banner()
 
     def _build_basic(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text=tr('gui.group.basic'), padding=(8, 6))
@@ -270,15 +280,6 @@ class BridgeApp(tk.Tk):
                                                             sticky='ew')
         ttk.Checkbutton(frame, text=tr('gui.label.use_srv'), variable=self.var_use_srv).grid(
             row=2, column=4, columnspan=2, sticky='e', padx=(8, 0))
-
-        ttk.Label(frame, text=tr('gui.label.routes')).grid(row=3, column=0, sticky='nw',
-                                                           padx=(0, 6), pady=(6, 3))
-        self.text_routes = tk.Text(frame, height=3, width=40, wrap='none')
-        self.text_routes.grid(row=3, column=1, columnspan=5, sticky='ew', pady=(6, 3))
-        self.text_routes.bind('<<Modified>>', self._on_routes_modified)
-        ttk.Label(frame, text=tr('gui.label.routes_hint'),
-                  foreground='#777777').grid(row=4, column=1, columnspan=5, sticky='w',
-                                             pady=(0, 2))
 
     def _build_cert(self, parent: ttk.Frame) -> None:
         frame = ttk.LabelFrame(parent, text=tr('gui.group.cert'), padding=(8, 6))
@@ -412,13 +413,6 @@ class BridgeApp(tk.Tk):
         self.entry_timeout.set_value(str(config.connect_timeout))
         self.entry_max_payload.set_value(str(config.max_payload_mb))
         self.var_language.set(language_label(config.language))
-        self.text_routes.delete('1.0', 'end')
-        self.text_routes.insert('1.0', config_module.format_routes_text(config.routes))
-        self.text_routes.edit_modified(False)
-
-    def _on_routes_modified(self, _event=None) -> None:
-        if self.text_routes.edit_modified():
-            self.text_routes.edit_modified(False)
 
     def _collect_form(self) -> config_module.Config:
         """Collect the form contents into the configuration object.
@@ -450,8 +444,6 @@ class BridgeApp(tk.Tk):
             except ValueError:
                 raise ValueError(tr('gui.error.invalid_number', label=label, value=text)) from None
 
-        routes_text = self.text_routes.get('1.0', 'end')
-        routes = config_module.parse_routes_text(routes_text) if routes_text.strip() else {}
         extra = [item.strip() for item in self.var_cert_extra.get().replace(',', ' ').split()
                  if item.strip()]
         self.config.listen_host = self.var_listen_host.get().strip() or '127.0.0.1'
@@ -461,7 +453,6 @@ class BridgeApp(tk.Tk):
         self.config.use_srv = bool(self.var_use_srv.get())
         self.config.rewrite_handshake_host = bool(self.var_rewrite_host.get())
         self.config.eagler_translate = bool(self.var_eagler_translate.get())
-        self.config.routes = routes
         self.config.tls_enabled = True  # wss:// is the whole point of this tool: always on
         self.config.cert_dir = self.var_cert_dir.get().strip() or 'certs'
         self.config.cert_common_name = self.var_cert_common_name.get().strip() or 'localhost'
@@ -876,6 +867,80 @@ class BridgeApp(tk.Tk):
         messagebox.showinfo(
             tr('gui.about.title'),
             tr('gui.about.text', name=tr('core.app_name'), version=VERSION, workdir=app_dir()))
+
+    # ---------- Cloud version check ----------
+    def _check_updates(self) -> None:
+        """Startup check: silent, the outcome only shows up when there is news."""
+        if self._closing or not self.config.update_check:
+            return
+        self._start_update_check(manual=False)
+
+    def _check_updates_manual(self) -> None:
+        """Menu entry: ask the endpoint and always report what came back."""
+        self._start_update_check(manual=True)
+
+    def _start_update_check(self, manual: bool) -> None:
+        url = (self.config.update_url or '').strip()
+        if not url:
+            if manual:
+                messagebox.showinfo(tr('gui.update.title'), tr('gui.update.disabled'))
+            return
+        if manual:
+            self._enqueue_log('info', tr('gui.update.checking'))
+        # Never on the UI thread: the request has its own timeout and the window
+        # keeps working while it runs.
+        update.check_async(url, VERSION,
+                           lambda outcome: self.enqueue_ui(self._on_update_result, outcome, manual))
+
+    def _on_update_result(self, outcome, manual: bool) -> None:
+        """Runs on the UI thread once the background check is done."""
+        if self._closing:
+            return
+        if isinstance(outcome, update.UpdateError):
+            message = tr('gui.update.failed', error=outcome)
+            self._enqueue_log('debug', message)
+            if manual:
+                messagebox.showwarning(tr('gui.update.title'), message)
+            return
+        current = outcome.get('current', VERSION)
+        if not outcome.get('newer'):
+            message = tr('gui.update.up_to_date', version=current)
+            self._enqueue_log('info', message)
+            if manual:
+                messagebox.showinfo(tr('gui.update.title'), message)
+            return
+        page = (outcome.get('page') or '').strip()
+        self._update_outcome = outcome
+        self._apply_update_banner()
+        self._enqueue_log('warn', tr('gui.update.available', version=outcome['version'],
+                                     current=current))
+        if page:
+            self._enqueue_log('info', tr('core.cli.update_page', url=page))
+        if manual:
+            if page:
+                ask = tr('gui.update.ask', version=outcome['version'], current=current,
+                         url=page)
+                if messagebox.askyesno(tr('gui.update.title'), ask):
+                    webbrowser.open(page)
+            else:
+                messagebox.showinfo(tr('gui.update.title'),
+                                    tr('gui.update.available', version=outcome['version'],
+                                       current=current))
+
+    def _apply_update_banner(self) -> None:
+        """Show (or refresh) the "newer release" line; a language switch rebuilds it."""
+        outcome = self._update_outcome
+        if not outcome or self._closing:
+            return
+        text = tr('gui.update.banner', version=outcome.get('version', '?'),
+                  current=outcome.get('current', VERSION))
+        page = (outcome.get('page') or '').strip()
+        if page:
+            text += '  ' + tr('gui.update.banner_page')
+            self.lbl_update.configure(cursor='hand2')
+            self.lbl_update.bind('<Button-1>', lambda _event: webbrowser.open(page))
+        self.lbl_update.configure(text=text)
+        self.lbl_update.grid(row=1, column=0, columnspan=3, sticky='w', pady=(2, 0))
 
     # ---------- Shutdown ----------
     def _on_close(self) -> None:

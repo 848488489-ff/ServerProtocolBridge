@@ -6,11 +6,11 @@ from .i18n import tr
 
 # Internal identity of the program: used as the EXE name, the FastAPI title and
 # in other machine-facing places, so it is always English and never translated.
-APP_NAME = 'MCJS Server Protocol Bridge'
+APP_NAME = 'Server Protocol Bridge'
 VERSION = '1.0.0'
 
 # Service identifier that shows up in the status page / handshake
-SERVICE_NAME = 'mcjs-wss-proxy'
+SERVICE_NAME = 'server-protocol-bridge'
 
 
 def app_name() -> str:
