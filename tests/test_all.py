@@ -1,0 +1,770 @@
+"""自检测试: 标准库 unittest, 不需要第三方依赖。
+
+    python -m unittest discover -s tests -v
+    python tests/test_all.py
+
+覆盖: DER 编码 / 自签名证书(含真实 TLS 握手校验) / WebSocket 帧编解码 /
+地址与配置解析 / SRV 回退 / wss 与 ws 的端到端转发 / base64 兼容模式 /
+路径映射 / 目标不可达 / 大流量数据完整性。
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import json
+import os
+import shutil
+import socket
+import ssl
+import sys
+import tempfile
+import threading
+import time
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from mcjs_proxy import certs, config as config_module, der, resolver, wsproto, x509  # noqa: E402
+from mcjs_proxy.config import Config  # noqa: E402
+from mcjs_proxy.logger import Logger  # noqa: E402
+from mcjs_proxy.proxy import ProxyServer  # noqa: E402
+
+
+# ---------------------------------------------------------------- 工具
+
+
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(('127.0.0.1', 0))
+        return sock.getsockname()[1]
+
+
+def _read_tlv(data: bytes, offset: int = 0):
+    """极简 DER 读取: 返回 (标签, 内容, 下一个偏移)。"""
+    tag = data[offset]
+    length = data[offset + 1]
+    offset += 2
+    if length & 0x80:
+        count = length & 0x7F
+        length = int.from_bytes(data[offset:offset + count], 'big')
+        offset += count
+    return tag, data[offset:offset + length], offset + length
+
+
+def _children(data: bytes):
+    items = []
+    offset = 0
+    while offset < len(data):
+        tag, value, offset = _read_tlv(data, offset)
+        items.append((tag, value))
+    return items
+
+
+class EchoServer:
+    """模拟 Minecraft 服务器: 连上先发一段欢迎数据, 之后原样回显。"""
+
+    def __init__(self, greeting: bytes = b''):
+        self.greeting = greeting
+        self.received = bytearray()
+        self.connections = 0
+        self._server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._server.bind(('127.0.0.1', 0))
+        self._server.listen(8)
+        self.port = self._server.getsockname()[1]
+        self._stop = False
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def _serve(self) -> None:
+        self._server.settimeout(0.3)
+        while not self._stop:
+            try:
+                conn, _addr = self._server.accept()
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            self.connections += 1
+            threading.Thread(target=self._handle, args=(conn,), daemon=True).start()
+
+    def _handle(self, conn: socket.socket) -> None:
+        conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        try:
+            if self.greeting:
+                conn.sendall(self.greeting)
+            while True:
+                data = conn.recv(65536)
+                if not data:
+                    break
+                self.received.extend(data)
+                conn.sendall(data)
+        except OSError:
+            pass
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
+
+    def close(self) -> None:
+        self._stop = True
+        try:
+            self._server.close()
+        except OSError:
+            pass
+        self._thread.join(timeout=2)
+
+
+class WsClient:
+    """极简 WebSocket 客户端, 用来测试服务端实现。"""
+
+    def __init__(self, sock: socket.socket):
+        self.sock = sock
+        self.decoder = wsproto.FrameDecoder()
+        self.inbox: list[wsproto.Frame] = []
+        self.closed: tuple[int, str] | None = None
+        self.eof = False
+        self._lock = threading.Lock()
+        self._thread = threading.Thread(target=self._reader, daemon=True)
+        self._thread.start()
+
+    def _reader(self) -> None:
+        try:
+            while True:
+                chunk = self.sock.recv(65536)
+                if not chunk:
+                    self.eof = True
+                    return
+                for frame in self.decoder.feed(chunk):
+                    with self._lock:
+                        if frame.opcode == wsproto.OP_CLOSE:
+                            self.closed = wsproto.parse_close_payload(frame.payload)
+                        else:
+                            self.inbox.append(frame)
+        except (OSError, ssl.SSLError):
+            self.eof = True
+
+    def send(self, data: bytes, opcode: int = wsproto.OP_BINARY) -> None:
+        self.sock.sendall(wsproto.encode_frame(opcode, data, mask=True))
+
+    def send_fragmented(self, data: bytes, pieces: int = 4) -> None:
+        step = max(1, len(data) // pieces)
+        offset = 0
+        first = True
+        while offset < len(data):
+            piece = data[offset:offset + step]
+            offset += step
+            self.sock.sendall(wsproto.encode_frame(
+                wsproto.OP_BINARY if first else wsproto.OP_CONTINUATION, piece,
+                fin=offset >= len(data), mask=True))
+            first = False
+
+    def recv(self, timeout: float = 5.0, opcode: int | None = None) -> bytes | None:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            with self._lock:
+                for index, frame in enumerate(self.inbox):
+                    if opcode is None or frame.opcode == opcode:
+                        return self.inbox.pop(index).payload
+            time.sleep(0.01)
+        return None
+
+    def wait_close(self, timeout: float = 5.0) -> tuple[int, str] | None:
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            if self.closed is not None:
+                return self.closed
+            time.sleep(0.01)
+        return None
+
+    def close(self) -> None:
+        try:
+            self.sock.sendall(wsproto.encode_frame(wsproto.OP_CLOSE, wsproto.close_payload(1000, 'bye'), mask=True))
+        except OSError:
+            pass
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+def connect_ws(port: int, host: str = '127.0.0.1', tls: bool = False,
+               ca_file: str | None = None, subprotocol: str | None = None,
+               path: str = '/', timeout: float = 8.0) -> tuple[WsClient, dict]:
+    sock = socket.create_connection((host, port), timeout=timeout)
+    if tls:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = True
+        context.verify_mode = ssl.CERT_REQUIRED
+        if ca_file:
+            context.load_verify_locations(cafile=ca_file)
+        sock = context.wrap_socket(sock, server_hostname='localhost')
+    key = base64.b64encode(os.urandom(16)).decode('ascii')
+    request = ('GET %s HTTP/1.1\r\nHost: %s:%d\r\nUpgrade: websocket\r\n'
+               'Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\n'
+               'Sec-WebSocket-Version: 13\r\n' % (path, host, port, key))
+    if subprotocol:
+        request += 'Sec-WebSocket-Protocol: %s\r\n' % subprotocol
+    request += '\r\n'
+    sock.sendall(request.encode('ascii'))
+
+    data = b''
+    while b'\r\n\r\n' not in data:
+        chunk = sock.recv(4096)
+        if not chunk:
+            raise AssertionError('握手响应为空')
+        data += chunk
+    head, rest = data.split(b'\r\n\r\n', 1)
+    lines = head.decode('latin-1').split('\r\n')
+    if not lines[0].startswith('HTTP/1.1 101'):
+        raise AssertionError('握手失败: %s (body=%r)' % (lines[0], rest[:200]))
+    headers = {}
+    for line in lines[1:]:
+        if ':' in line:
+            name, _, value = line.partition(':')
+            headers[name.strip().lower()] = value.strip()
+    headers['_request_key'] = key
+    client = WsClient(sock)
+    if rest:
+        for frame in client.decoder.feed(rest):
+            if frame.opcode == wsproto.OP_CLOSE:
+                client.closed = wsproto.parse_close_payload(frame.payload)
+            else:
+                client.inbox.append(frame)
+    return client, headers
+
+
+def http_get(port: int, path: str = '/', host: str = '127.0.0.1', timeout: float = 5.0) -> dict:
+    with socket.create_connection((host, port), timeout=timeout) as sock:
+        sock.sendall(('GET %s HTTP/1.1\r\nHost: %s:%d\r\nConnection: close\r\n\r\n' % (path, host, port)).encode())
+        data = b''
+        while True:
+            chunk = sock.recv(65536)
+            if not chunk:
+                break
+            data += chunk
+    head, _, body = data.partition(b'\r\n\r\n')
+    return {'head': head.decode('latin-1'), 'body': body}
+
+
+# ---------------------------------------------------------------- DER / X.509
+
+
+class DerTests(unittest.TestCase):
+    def test_integer_encoding(self):
+        self.assertEqual(der.integer(2), b'\x02\x01\x02')
+        self.assertEqual(der.integer(0), b'\x02\x01\x00')
+        self.assertEqual(der.integer(0x80), b'\x02\x02\x00\x80')
+        self.assertEqual(der.integer(b'\x00\x00\xff'), b'\x02\x02\x00\xff')  # 最高位为 1 需补 0x00
+
+    def test_oid_encoding(self):
+        self.assertEqual(der.oid('1.2.840.113549.1.1.11'),
+                         b'\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x0b')
+        self.assertEqual(der.oid('2.5.29.17'), b'\x06\x03\x55\x1d\x11')
+
+    def test_length_encoding(self):
+        self.assertEqual(der.encode_length(5), b'\x05')
+        self.assertEqual(der.encode_length(200), b'\x81\xc8')
+        self.assertEqual(der.encode_length(300), b'\x82\x01\x2c')
+
+    def test_time_encoding(self):
+        import datetime
+        value = datetime.datetime(2026, 10, 17, 12, 34, 56)
+        self.assertEqual(der.utc_time(value), b'\x17\x0d' + b'261017123456Z')
+
+
+class CertificateTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.cert_dir = Path(cls.tmp.name)
+        cls.certificate = x509.create_self_signed_certificate(
+            common_name='localhost',
+            alt_names=['localhost', '127.0.0.1', '::1', 'hypixel.local'],
+            days=3650,
+            key_bits=2048,
+        )
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def _write(self):
+        cert_path = self.cert_dir / 'cert.pem'
+        key_path = self.cert_dir / 'key.pem'
+        cert_path.write_text(self.certificate['cert_pem'], encoding='ascii')
+        key_path.write_text(self.certificate['key_pem'], encoding='ascii')
+        return cert_path, key_path
+
+    def test_pem_format(self):
+        self.assertTrue(self.certificate['cert_pem'].startswith('-----BEGIN CERTIFICATE-----'))
+        self.assertTrue(self.certificate['key_pem'].startswith('-----BEGIN RSA PRIVATE KEY-----'))
+        self.assertEqual(x509.pem_to_der(self.certificate['cert_pem']), self.certificate['cert_der'])
+
+    def test_openssl_can_load_certificate(self):
+        """标准库 SSLContext 能加载, 说明 DER 结构合法且私钥匹配。"""
+        cert_path, key_path = self._write()
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(str(cert_path), str(key_path))
+
+    def test_thumbprint(self):
+        expected = hashlib.sha256(self.certificate['cert_der']).hexdigest().upper()
+        actual = certs.thumbprint(self.certificate['cert_pem']).replace(':', '')
+        self.assertEqual(expected, actual)
+
+    def test_signature_verifies_against_public_key(self):
+        """从证书 DER 里取出公钥, 验证自签名确实是这把私钥签的。"""
+        _tag, certificate, _end = _read_tlv(self.certificate['cert_der'])
+        items = _children(certificate)
+        tbs_value = items[0][1]
+        signature = items[2][1][1:]  # BIT STRING: 去掉未使用位字节
+        tbs_der = der.tlv(0x30, tbs_value)
+
+        fields = _children(tbs_value)
+        spki_children = _children(fields[6][1])          # 第 7 项: subjectPublicKeyInfo
+        public_key = _children(spki_children[1][1][1:])  # BIT STRING 去掉未使用位字节
+        modulus = int.from_bytes(public_key[0][1], 'big')
+        exponent = int.from_bytes(public_key[1][1], 'big')
+
+        recovered = pow(int.from_bytes(signature, 'big'), exponent, modulus).to_bytes(
+            (modulus.bit_length() + 7) // 8, 'big')
+        digest_info = bytes.fromhex('3031300d060960864801650304020105000420')
+        self.assertTrue(recovered.startswith(b'\x00\x01\xff\xff'), 'PKCS#1 v1.5 填充不正确')
+        self.assertEqual(recovered[-len(digest_info) - 32:-32], digest_info)
+        self.assertEqual(recovered[-32:], hashlib.sha256(tbs_der).digest())
+
+    def test_tls_handshake_with_hostname_and_ip(self):
+        """真实握手: 证书链与 SAN 都必须正确, 否则 check_hostname 会失败。"""
+        cert_path, key_path = self._write()
+        server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        server_context.load_cert_chain(str(cert_path), str(key_path))
+
+        for server_hostname in ('localhost', '127.0.0.1'):
+            listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            listener.bind(('127.0.0.1', 0))
+            listener.listen(1)
+            port = listener.getsockname()[1]
+            error = []
+
+            def serve():
+                try:
+                    with socket.socket() as conn:
+                        conn.settimeout(10)
+                        accepted, _ = listener.accept()
+                        with server_context.wrap_socket(accepted, server_side=True) as tls_conn:
+                            tls_conn.sendall(b'ok')
+                except Exception as exc:  # pragma: no cover
+                    error.append(exc)
+                finally:
+                    listener.close()
+
+            thread = threading.Thread(target=serve, daemon=True)
+            thread.start()
+            try:
+                client_context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+                client_context.load_verify_locations(cafile=str(cert_path))
+                with socket.create_connection(('127.0.0.1', port), timeout=10) as raw:
+                    with client_context.wrap_socket(raw, server_hostname=server_hostname) as tls_sock:
+                        self.assertEqual(tls_sock.recv(16), b'ok')
+            finally:
+                thread.join(timeout=10)
+            self.assertEqual(error, [], '服务端握手出错: %s' % error)
+
+    def test_ensure_certificate_creates_files(self):
+        directory = self.cert_dir / 'generated'
+        info = certs.ensure_certificate(directory, common_name='localhost',
+                                        extra_names=['example.test'], days=30,
+                                        generator='python')
+        self.assertTrue(Path(info['cert_path']).exists())
+        self.assertTrue(Path(info['key_path']).exists())
+        self.assertTrue(info['thumbprint'])
+        again = certs.ensure_certificate(directory, common_name='localhost', generator='python')
+        self.assertEqual(again['thumbprint'], info['thumbprint'], '已存在时应复用证书')
+
+    def test_default_alt_names(self):
+        names = certs.default_alt_names('localhost', ['extra.example', '10.0.0.5'])
+        for expected in ('localhost', '127.0.0.1', '::1', 'extra.example', '10.0.0.5'):
+            self.assertIn(expected, names)
+        self.assertEqual(len(names), len(set(names)), '名称不应重复')
+
+
+# ---------------------------------------------------------------- WebSocket 帧
+
+
+class FrameTests(unittest.TestCase):
+    def test_roundtrip_sizes(self):
+        for size in (0, 1, 125, 126, 127, 1000, 65535, 65536, 200000):
+            payload = os.urandom(size)
+            decoder = wsproto.FrameDecoder()
+            frames = decoder.feed(wsproto.encode_frame(wsproto.OP_BINARY, payload))
+            self.assertEqual(len(frames), 1, 'size=%d' % size)
+            self.assertEqual(frames[0].payload, payload, 'size=%d' % size)
+
+    def test_masked_and_unmasked(self):
+        payload = os.urandom(1000)
+        decoder = wsproto.FrameDecoder()
+        masked = wsproto.encode_frame(wsproto.OP_BINARY, payload, mask=True)
+        self.assertEqual(decoder.feed(masked)[0].payload, payload)
+        decoder = wsproto.FrameDecoder()
+        self.assertEqual(decoder.feed(wsproto.encode_frame(wsproto.OP_BINARY, payload))[0].payload, payload)
+
+    def test_byte_by_byte_feed(self):
+        payload = os.urandom(700)
+        raw = wsproto.encode_frame(wsproto.OP_BINARY, payload, mask=True)
+        decoder = wsproto.FrameDecoder()
+        frames = []
+        for index in range(len(raw)):
+            frames.extend(decoder.feed(raw[index:index + 1]))
+        self.assertEqual(len(frames), 1)
+        self.assertEqual(frames[0].payload, payload)
+
+    def test_fragmentation(self):
+        payload = os.urandom(5000)
+        raw = (wsproto.encode_frame(wsproto.OP_BINARY, payload[:1000], fin=False)
+               + wsproto.encode_frame(wsproto.OP_CONTINUATION, payload[1000:3000], fin=False)
+               + wsproto.encode_frame(wsproto.OP_CONTINUATION, payload[3000:], fin=True))
+        decoder = wsproto.FrameDecoder()
+        frames = decoder.feed(raw)
+        self.assertEqual(len(frames), 1)
+        self.assertEqual(frames[0].opcode, wsproto.OP_BINARY)
+        self.assertEqual(frames[0].payload, payload)
+
+    def test_control_frames_interleaved(self):
+        raw = (wsproto.encode_frame(wsproto.OP_BINARY, b'x', fin=False)
+               + wsproto.encode_frame(wsproto.OP_PING, b'ping')
+               + wsproto.encode_frame(wsproto.OP_CONTINUATION, b'y', fin=True))
+        frames = wsproto.FrameDecoder().feed(raw)
+        self.assertEqual([f.opcode for f in frames], [wsproto.OP_PING, wsproto.OP_BINARY])
+        self.assertEqual(frames[1].payload, b'xy')
+
+    def test_protocol_errors(self):
+        cases = {
+            'RSV 位': bytes([0xC0, 0x00]),
+            '未知 opcode': wsproto.encode_frame(0x3, b'x'),
+            '控制帧分片': wsproto.encode_frame(wsproto.OP_PING, b'x', fin=False),
+            '控制帧过长': bytes([0x89, 126, 0x01, 0x00]),
+            '续帧无起点': wsproto.encode_frame(wsproto.OP_CONTINUATION, b'x'),
+        }
+        for name, raw in cases.items():
+            with self.assertRaises(wsproto.ProtocolError, msg=name):
+                wsproto.FrameDecoder().feed(raw)
+
+    def test_payload_limit(self):
+        with self.assertRaises(wsproto.ProtocolError):
+            wsproto.FrameDecoder(max_payload=1024).feed(
+                wsproto.encode_frame(wsproto.OP_BINARY, b'a' * 2048))
+
+    def test_close_payload(self):
+        self.assertEqual(wsproto.parse_close_payload(wsproto.close_payload(1011, 'boom')), (1011, 'boom'))
+        self.assertEqual(wsproto.parse_close_payload(b''), (1005, ''))
+
+    def test_handshake_accept_key(self):
+        # RFC 6455 示例
+        self.assertEqual(wsproto.compute_accept_key('dGhlIHNhbXBsZSBub25jZQ=='), 's3pPLMBiTxaQ9kYGzzhZRbK+xOo=')
+
+    def test_first_subprotocol(self):
+        self.assertEqual(wsproto.first_subprotocol('binary, base64'), 'binary')
+        self.assertIsNone(wsproto.first_subprotocol(None))
+        self.assertIsNone(wsproto.first_subprotocol(' , '))
+
+
+# ---------------------------------------------------------------- 配置
+
+
+class ConfigTests(unittest.TestCase):
+    def test_parse_address(self):
+        self.assertEqual(config_module.parse_address('mc.hypixel.net'), ('mc.hypixel.net', None))
+        self.assertEqual(config_module.parse_address('mc.hypixel.net:25565'), ('mc.hypixel.net', 25565))
+        self.assertEqual(config_module.parse_address('mc://mc.hypixel.net:25565'), ('mc.hypixel.net', 25565))
+        self.assertEqual(config_module.parse_address('[::1]:25566'), ('::1', 25566))
+        self.assertEqual(config_module.parse_address('example.test/path'), ('example.test', None))
+        self.assertEqual(config_module.parse_address('1.2.3.4', 25565), ('1.2.3.4', 25565))
+        with self.assertRaises(ValueError):
+            config_module.parse_address('   ')
+
+    def test_routes_text_roundtrip(self):
+        text = '/hypixel=mc.hypixel.net:25565\n/本地=127.0.0.1:25565\n'
+        routes = config_module.parse_routes_text(text)
+        self.assertEqual(routes, {'/hypixel': 'mc.hypixel.net:25565', '/本地': '127.0.0.1:25565'})
+        self.assertEqual(config_module.parse_routes_text(config_module.format_routes_text(routes)), routes)
+        with self.assertRaises(ValueError):
+            config_module.parse_routes_text('缺少等号')
+
+    def test_save_load_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'config.json'
+            config = Config()
+            config.target = 'mc.hypixel.net:25565'
+            config.routes = {'/a': '127.0.0.1:25566'}
+            config.wss_port = 9443
+            config.save(path)
+            loaded = Config.load(path)
+            self.assertEqual(loaded.target, config.target)
+            self.assertEqual(loaded.routes, config.routes)
+            self.assertEqual(loaded.wss_port, 9443)
+
+    def test_unknown_keys_ignored(self):
+        config = Config.from_dict({'target': 'a:1', '不存在的键': 5, 'wss_port': '1234'})
+        self.assertEqual(config.target, 'a:1')
+        self.assertEqual(config.wss_port, 1234)
+
+    def test_validate(self):
+        config = Config()
+        self.assertEqual(config.validate(), [])
+        config.wss_port = 70000
+        self.assertTrue(any('wss 端口' in item for item in config.validate()))
+        config = Config()
+        config.target = '  '
+        self.assertTrue(any('转发目标' in item for item in config.validate()))
+
+    def test_describe_and_urls(self):
+        config = Config()
+        self.assertEqual(config.describe_target(), 'mc.hypixel.net:25565')
+        config.target = 'hypixel.net'
+        self.assertIn('SRV', config.describe_target())
+        self.assertEqual(config.wss_url(), 'wss://127.0.0.1:8443')
+        config.wss_port = 0
+        config.ws_port = 0
+        self.assertIsNone(config.wss_url())
+
+
+# ---------------------------------------------------------------- DNS / SRV
+
+
+class ResolverTests(unittest.TestCase):
+    def test_explicit_port_skips_dns(self):
+        self.assertEqual(resolver.resolve_target('example.test', 12345), ('example.test', 12345))
+
+    def test_fallback_when_dns_unreachable(self):
+        original = resolver.system_nameservers
+        resolver.system_nameservers = lambda: ['127.0.0.1']  # 一定连不通, 保证离线可测
+        try:
+            logger = Logger('error', echo=False)
+            self.assertEqual(resolver.resolve_target('example.test', None, logger=logger, timeout=0.2),
+                             ('example.test', 25565))
+        finally:
+            resolver.system_nameservers = original
+
+    def test_pick_srv_priority_and_weight(self):
+        records = [
+            {'priority': 10, 'weight': 1, 'port': 25565, 'target': 'low.example'},
+            {'priority': 20, 'weight': 1, 'port': 25566, 'target': 'high.example'},
+        ]
+        self.assertEqual(resolver.pick_srv(records), ('low.example', 25565))
+        self.assertIsNone(resolver.pick_srv([]))
+
+    def test_system_nameservers_returns_something(self):
+        servers = resolver.system_nameservers()
+        self.assertTrue(servers)
+        for item in servers:
+            self.assertRegex(item, r'^\d{1,3}(\.\d{1,3}){3}$')
+
+
+# ---------------------------------------------------------------- 端到端转发
+
+
+class ProxyEndToEndTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.cert_dir = Path(cls.tmp.name) / 'certs'
+        cls.backend = EchoServer(greeting=b'HELLO-FROM-SERVER')
+        cls.log_lines: list[str] = []
+
+        def callback(level, text):
+            cls.log_lines.append(text)
+
+        cls.config = Config()
+        cls.config.target = '127.0.0.1:%d' % cls.backend.port
+        cls.config.listen_host = '127.0.0.1'
+        cls.config.wss_port = free_port()
+        cls.config.ws_port = free_port()
+        cls.config.cert_dir = str(cls.cert_dir)
+        cls.config.cert_generator = 'python'
+        cls.config.heartbeat_sec = 1
+        cls.config.connect_timeout = 3
+        cls.server = ProxyServer(cls.config, Logger('debug', callback=callback, echo=False))
+        cls.info = cls.server.start()
+        cls.ca_file = cls.server.certificate['cert_path']
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.stop()
+        cls.backend.close()
+        cls.tmp.cleanup()
+
+    def test_describe(self):
+        self.assertTrue(self.info['running'])
+        self.assertIn('wss://127.0.0.1:%d' % self.config.wss_port, self.info['listeners'])
+        self.assertTrue(self.info['certificate']['thumbprint'])
+
+    def test_websocket_handshake_over_wss(self):
+        client, headers = connect_ws(self.config.wss_port, tls=True, ca_file=self.ca_file,
+                                     subprotocol='binary')
+        try:
+            self.assertEqual(headers.get('sec-websocket-accept'),
+                             wsproto.compute_accept_key(headers['_request_key']))
+            self.assertEqual(headers.get('sec-websocket-protocol'), 'binary')
+            self.assertNotIn('sec-websocket-extensions', headers)  # 不启用压缩
+            self.assertEqual(client.recv(5), b'HELLO-FROM-SERVER')
+        finally:
+            client.close()
+
+    def test_plain_websocket(self):
+        client, _headers = connect_ws(self.config.ws_port)
+        try:
+            self.assertEqual(client.recv(5), b'HELLO-FROM-SERVER')
+            payload = os.urandom(2048)
+            client.send(payload)
+            self.assertEqual(client.recv(10), payload)
+        finally:
+            client.close()
+
+    def test_large_payload_integrity(self):
+        client, _headers = connect_ws(self.config.ws_port)
+        try:
+            client.recv(5)
+            payload = os.urandom(1024 * 1024)
+            client.send(payload)
+            received = client.recv(30)
+            self.assertIsNotNone(received)
+            self.assertEqual(hashlib.sha256(received).hexdigest(),
+                             hashlib.sha256(payload).hexdigest())
+        finally:
+            client.close()
+
+    def test_fragmented_client_frames(self):
+        client, _headers = connect_ws(self.config.ws_port)
+        try:
+            client.recv(5)
+            payload = os.urandom(200000)
+            client.send_fragmented(payload, pieces=5)
+            self.assertEqual(client.recv(20), payload)
+        finally:
+            client.close()
+
+    def test_two_concurrent_connections(self):
+        first, _ = connect_ws(self.config.ws_port)
+        second, _ = connect_ws(self.config.ws_port)
+        try:
+            self.assertEqual(first.recv(5), b'HELLO-FROM-SERVER')
+            self.assertEqual(second.recv(5), b'HELLO-FROM-SERVER')
+            first.send(b'ping-from-first')
+            second.send(b'ping-from-second')
+            self.assertEqual(first.recv(5), b'ping-from-first')
+            self.assertEqual(second.recv(5), b'ping-from-second')
+        finally:
+            first.close()
+            second.close()
+
+    def test_status_page(self):
+        result = http_get(self.config.ws_port, '/')
+        self.assertIn('200 OK', result['head'])
+        data = json.loads(result['body'].decode('utf-8'))
+        self.assertTrue(data['running'])
+        self.assertEqual(data['service'], 'mcjs-wss-proxy')
+        self.assertEqual(data['target'], '127.0.0.1:%d' % self.backend.port)
+        self.assertIn('listeners', data)
+
+    def test_base64_subprotocol_mode(self):
+        client, headers = connect_ws(self.config.ws_port, subprotocol='base64')
+        try:
+            self.assertEqual(headers.get('sec-websocket-protocol'), 'base64')
+            greeting = client.recv(5)
+            self.assertIsNotNone(greeting)
+            self.assertEqual(base64.b64decode(greeting), b'HELLO-FROM-SERVER')
+            payload = b'base64-mode-payload'
+            client.send(base64.b64encode(payload), opcode=wsproto.OP_TEXT)
+            self.assertEqual(base64.b64decode(client.recv(10)), payload)
+        finally:
+            client.close()
+
+    def test_text_frame_auto_switch(self):
+        client, _headers = connect_ws(self.config.ws_port)
+        try:
+            client.recv(5)
+            payload = b'text-frame-payload'
+            client.send(base64.b64encode(payload), opcode=wsproto.OP_TEXT)
+            received = client.recv(10)
+            self.assertEqual(base64.b64decode(received), payload)
+        finally:
+            client.close()
+
+    def test_route_mapping(self):
+        other = EchoServer(greeting=b'SECOND-SERVER')
+        try:
+            self.config.routes = {'/second': '127.0.0.1:%d' % other.port}
+            client, _headers = connect_ws(self.config.ws_port, path='/second')
+            try:
+                self.assertEqual(client.recv(5), b'SECOND-SERVER')
+            finally:
+                client.close()
+        finally:
+            self.config.routes = {}
+            other.close()
+
+    def test_target_unreachable_closes_with_1011(self):
+        dead_port = free_port()
+        config = Config()
+        config.tls_enabled = False
+        config.target = '127.0.0.1:%d' % dead_port
+        config.listen_host = '127.0.0.1'
+        config.wss_port = 0
+        config.ws_port = free_port()
+        config.connect_timeout = 2
+        config.heartbeat_sec = 0
+        server = ProxyServer(config, Logger('error', echo=False))
+        server.start()
+        try:
+            client, _headers = connect_ws(config.ws_port)
+            try:
+                closed = client.wait_close(10)
+                self.assertIsNotNone(closed, '目标不可达时应收到关闭帧')
+                self.assertEqual(closed[0], 1011)
+            finally:
+                client.close()
+        finally:
+            server.stop()
+
+    def test_stats_and_route_resolution(self):
+        route = self.server.resolve_route('/second')
+        self.assertEqual(route['label'], '路径 /second')
+        self.assertEqual(self.server.resolve_route('/')['label'], '默认目标')
+        status = self.server.status('/')
+        self.assertGreaterEqual(status['total_connections'], 1)
+        self.assertGreater(status['bytes_to_client'], 0)
+
+    def test_server_stop_closes_connections(self):
+        config = Config()
+        config.tls_enabled = False
+        config.target = '127.0.0.1:%d' % self.backend.port
+        config.listen_host = '127.0.0.1'
+        config.wss_port = 0
+        config.ws_port = free_port()
+        config.heartbeat_sec = 0
+        server = ProxyServer(config, Logger('error', echo=False))
+        server.start()
+        client, _headers = connect_ws(config.ws_port)
+        client.recv(5)
+        server.stop()
+        closed = client.wait_close(5)
+        client.close()
+        self.assertFalse(server.running)
+        self.assertIsNotNone(closed, '停止服务时应主动关闭客户端连接')
+        self.assertIn(closed[0], (1001, 1000))
+
+    def test_openssl_generator(self):
+        if not shutil.which('openssl'):
+            self.skipTest('系统中没有 openssl, 跳过')
+        directory = Path(self.tmp.name) / 'openssl-cert'
+        info = certs.ensure_certificate(directory, common_name='localhost', generator='openssl')
+        self.assertEqual(info['generator'], 'openssl')
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(info['cert_path'], info['key_path'])  # 能加载即合法
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)
