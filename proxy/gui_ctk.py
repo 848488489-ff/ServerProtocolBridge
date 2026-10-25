@@ -432,6 +432,12 @@ class BridgeApp(ctk.CTk):
         page = self.pages.get(name)
         if page is not None:
             return page
+        # An interrupted rebuild must not leave an old page stacked above the
+        # new one; drop anything the page map does not know about.
+        known = set(self.pages.values())
+        for child in list(self.page_host.winfo_children()):
+            if child not in known:
+                child.destroy()
         builder = self.page_builders.get(name) or self._build_control_page
         page = builder(self.page_host)
         page.grid(row=0, column=0, sticky='nsew')
@@ -441,12 +447,17 @@ class BridgeApp(ctk.CTk):
     def _select_page(self, name: str) -> None:
         if name not in self.page_builders:
             name = 'control'
-        self._ensure_page(name)
-        for key, page in self.pages.items():
+        page = self._ensure_page(name)
+        for key, other in self.pages.items():
             if key == name:
-                page.grid()
+                other.grid()
             else:
-                page.grid_remove()
+                other.grid_remove()
+        # Hide anything that is still gridded but no longer in the map (for
+        # example a page left behind by a language rebuild).
+        for child in list(self.page_host.winfo_children()):
+            if child is not page:
+                child.grid_remove()
         for key, button in self.nav_buttons.items():
             selected = key == name
             button.configure(fg_color=ACCENT if selected else 'transparent',

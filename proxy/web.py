@@ -393,6 +393,7 @@ def create_app(config_path: str | None = None) -> Flask:
         body = request.get_json(silent=True) or {}
         enabled = bool(body.get('enabled'))
         password = str(body.get('password') or '')
+        was_enabled = webauth.is_enabled()
         if enabled:
             if password:
                 if len(password) < 4:
@@ -402,8 +403,15 @@ def create_app(config_path: str | None = None) -> Flask:
                 return fail(tr('web.password_required'))
         else:
             webauth.disable()
-        session['authenticated'] = True
-        return jsonify({'ok': True, 'auth': webauth.state()})
+        # Enabling access control or changing the password must invalidate the
+        # current browser session: otherwise the page that just set the
+        # password keeps working and the password looks like it had no effect.
+        reauth = enabled and (bool(password) or not was_enabled)
+        if reauth:
+            session.clear()
+        else:
+            session['authenticated'] = True
+        return jsonify({'ok': True, 'auth': webauth.state(), 'reauth': reauth})
 
     @app.route('/api/ui/preferences', methods=['POST'])
     def api_preferences():
@@ -695,7 +703,7 @@ a { color: var(--accent); }
 .sidebar {
   width: 236px; flex: 0 0 236px; background: var(--sidebar);
   padding: 22px 14px 18px; position: sticky; top: 0; height: 100vh;
-  display: flex; flex-direction: column; gap: 8px;
+  display: flex; flex-direction: column; gap: 8px; overflow-y: auto;
 }
 .brand { padding: 0 10px 18px; }
 .brand strong { display: block; font-size: 17px; line-height: 1.35; }
@@ -737,6 +745,29 @@ a { color: var(--accent); }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
 .grid2 { display: grid; gap: 12px 18px; grid-template-columns: 180px minmax(0, 1fr); align-items: center; }
 .grid2 .hint { grid-column: 1 / -1; color: var(--muted); font-size: 12px; margin: -4px 0 4px; }
+.grid2 label[for] { cursor: pointer; }
+.switch {
+  position: relative; display: inline-block; width: 46px; height: 26px;
+  justify-self: start; flex: 0 0 auto; cursor: pointer;
+}
+.switch input {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  margin: 0; opacity: 0; cursor: pointer; z-index: 1;
+}
+.switch .knob {
+  position: absolute; inset: 0; border-radius: 999px;
+  background: var(--border); transition: background .18s ease;
+  pointer-events: none;
+}
+.switch .knob::after {
+  content: ""; position: absolute; top: 3px; left: 3px;
+  width: 20px; height: 20px; border-radius: 50%; background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .28);
+  transition: transform .18s ease;
+}
+.switch input:checked + .knob { background: var(--accent); }
+.switch input:checked + .knob::after { transform: translateX(20px); }
+.switch input:focus-visible + .knob { outline: 2px solid var(--accent); outline-offset: 2px; }
 .field, .grid2 input, .grid2 select, .grid2 textarea {
   width: 100%; background: var(--field); border: 1px solid var(--border);
   border-radius: 8px; padding: 8px 10px; outline: none;
@@ -936,8 +967,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <input id="wss_port" inputmode="numeric">
           <label data-i18n="gui.label.ws_port"></label>
           <input id="ws_port" inputmode="numeric">
-          <label data-i18n="gui.label.use_srv"></label>
-          <label class="switch"><input type="checkbox" id="use_srv"> <span data-i18n="gui.label.use_srv"></span></label>
+          <label for="use_srv" data-i18n="gui.label.use_srv"></label>
+          <label class="switch"><input type="checkbox" id="use_srv"><span class="knob"></span></label>
           <div class="hint" data-i18n="gui.hint.endpoint"></div>
         </div>
       </div>
@@ -963,16 +994,16 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
       <div class="card">
         <h2 data-i18n="gui.section.protocol"></h2>
         <div class="grid2">
-          <label data-i18n="gui.label.rewrite_host"></label>
-          <label class="switch"><input type="checkbox" id="rewrite_handshake_host"></label>
-          <label data-i18n="gui.label.eagler_translate"></label>
-          <label class="switch"><input type="checkbox" id="eagler_translate"></label>
-          <label data-i18n="gui.label.login_ack"></label>
-          <label class="switch"><input type="checkbox" id="login_ack"></label>
+          <label for="rewrite_handshake_host" data-i18n="gui.label.rewrite_host"></label>
+          <label class="switch"><input type="checkbox" id="rewrite_handshake_host"><span class="knob"></span></label>
+          <label for="eagler_translate" data-i18n="gui.label.eagler_translate"></label>
+          <label class="switch"><input type="checkbox" id="eagler_translate"><span class="knob"></span></label>
+          <label for="login_ack" data-i18n="gui.label.login_ack"></label>
+          <label class="switch"><input type="checkbox" id="login_ack"><span class="knob"></span></label>
           <label data-i18n="gui.label.resource_pack_mode"></label>
           <select id="resource_pack_mode"></select>
-          <label data-i18n="gui.label.auto_exit"></label>
-          <label class="switch"><input type="checkbox" id="auto_exit"></label>
+          <label for="auto_exit" data-i18n="gui.label.auto_exit"></label>
+          <label class="switch"><input type="checkbox" id="auto_exit"><span class="knob"></span></label>
         </div>
       </div>
 
@@ -987,12 +1018,12 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <input id="connect_timeout" inputmode="decimal">
           <label data-i18n="gui.label.max_payload"></label>
           <input id="max_payload_mb" inputmode="numeric">
-          <label data-i18n="gui.label.status_cache"></label>
-          <label class="switch"><input type="checkbox" id="status_cache"></label>
+          <label for="status_cache" data-i18n="gui.label.status_cache"></label>
+          <label class="switch"><input type="checkbox" id="status_cache"><span class="knob"></span></label>
           <label data-i18n="gui.label.status_cache_ttl"></label>
           <input id="status_cache_ttl" inputmode="numeric">
-          <label data-i18n="gui.label.update_check"></label>
-          <label class="switch"><input type="checkbox" id="update_check"></label>
+          <label for="update_check" data-i18n="gui.label.update_check"></label>
+          <label class="switch"><input type="checkbox" id="update_check"><span class="knob"></span></label>
         </div>
       </div>
 
@@ -1030,8 +1061,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
       <div class="card">
         <h2 data-i18n="web.access"></h2>
         <div class="grid2">
-          <label data-i18n="web.require_password"></label>
-          <label class="switch"><input type="checkbox" id="auth-enabled"></label>
+          <label for="auth-enabled" data-i18n="web.require_password"></label>
+          <label class="switch"><input type="checkbox" id="auth-enabled"><span class="knob"></span></label>
           <label data-i18n="web.new_password"></label>
           <input id="auth-password" type="password" autocomplete="new-password">
           <label data-i18n="web.confirm_password"></label>
@@ -1347,9 +1378,21 @@ async function saveAuth() {
     toast(t('web.password_required'), 'error');
     return;
   }
+  if (enabled && password && password.length < 4) {
+    toast(t('web.password_short'), 'error');
+    return;
+  }
   try {
     const data = await api('/api/auth', { method: 'POST', body: { enabled, password } });
     renderAuth(data.auth);
+    if (data.reauth) {
+      toast(t('web.password_saved'), 'ok');
+      setTimeout(() => {
+        const next = location.pathname + location.hash;
+        location.href = '/login?next=' + encodeURIComponent(next);
+      }, 700);
+      return;
+    }
     toast(enabled ? t('web.password_saved') : t('web.saved'), 'ok');
   } catch (err) {
     toast(err.message, 'error', 6000);
