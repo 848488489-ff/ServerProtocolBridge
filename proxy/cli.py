@@ -180,6 +180,11 @@ def run_selftest(config: Config, logger: Logger) -> int:
         logger.info(tr('core.cli.gui_ok'))
     except Exception as exc:                       # the symptom seen when tcl/tk is missing from a package
         logger.error(tr('core.cli.gui_missing', error=exc))
+    try:
+        import difflib  # noqa: F401  # flask's click imports it lazily when formatting errors
+        logger.info(tr('core.cli.difflib_ok'))
+    except ImportError as exc:           # the symptom seen when difflib was dropped from the build
+        logger.error(tr('core.cli.difflib_missing', error=exc))
     for problem in config.validate():
         logger.warn(tr('core.cli.config_problem', problem=problem))
     return 0 if crypto.available() else 1

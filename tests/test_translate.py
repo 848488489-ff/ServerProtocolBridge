@@ -28,7 +28,7 @@ from proxy.proxy import Bridge, ProxyServer  # noqa: E402
 from proxy.translator import EaglerTranslator, chat_to_legacy, chat_to_text  # noqa: E402
 from test_all import WsClient, connect_ws, free_port  # noqa: E402
 
-# First data packet observed from a real MCJS client (37 bytes), kept as a regression sample
+# First data packet observed from a real browser client (37 bytes), kept as a regression sample
 REAL_FIRST_PACKET = bytes.fromhex(
     '010200030003000400050001002f0c') + b'EaglercraftX' + bytes.fromhex('03753533') + bytes.fromhex(
     '00') + bytes.fromhex('04') + b'nopp'
@@ -376,12 +376,12 @@ class EaglerProtocolTests(unittest.TestCase):
         self.assertEqual(eagler.select_protocols(version), (5, 777))
 
     def test_server_version_formats(self):
-        v3 = eagler.pack_server_version(3, 47, 'MCJS-Proxy', '1.0')
+        v3 = eagler.pack_server_version(3, 47, 'TestProxy', '1.0')
         self.assertEqual(v3[0], eagler.PROTOCOL_SERVER_VERSION)
         self.assertEqual(int.from_bytes(v3[1:3], 'big'), 3)
         self.assertEqual(int.from_bytes(v3[3:5], 'big'), 47)
         self.assertEqual(v3[-3:], b'\x00\x00\x00')      # authMethod + salt length
-        v5 = eagler.pack_server_version(5, 47, 'MCJS-Proxy', '1.0')
+        v5 = eagler.pack_server_version(5, 47, 'TestProxy', '1.0')
         self.assertEqual(v5[-4:], b'\x00\x00\x00\x00')  # one extra nicknameSelection
 
     def test_request_login_variants(self):
@@ -402,11 +402,23 @@ class EaglerProtocolTests(unittest.TestCase):
         self.assertEqual(value[8] >> 6, 0b10)       # IETF variant
         self.assertNotEqual(value, eagler.offline_uuid('Herobrine'))
 
+    def test_usable_name(self):
+        """Only empty or control-character-only input is refused."""
+        for name in ('Tester', 'a', '名字', '名前_1'):
+            self.assertEqual(eagler.usable_name(name), name)
+        self.assertEqual(eagler.usable_name('  Tester  '), 'Tester')
+        for bad in ('', '   ', None, '\x00', '\n\t', '\x7f'):
+            self.assertEqual(eagler.usable_name(bad), '')
+
     def test_sanitize_username(self):
-        self.assertEqual(eagler.sanitize_username('Tester'), 'Tester')
-        self.assertEqual(eagler.sanitize_username('a'), 'aMCJSEagler'[:16])
-        self.assertEqual(eagler.sanitize_username('名字abc'), 'abc'[:16])
-        self.assertTrue(eagler.USERNAME_PATTERN.match(eagler.sanitize_username('名字123')))
+        # ASCII, short, long and non-ASCII names all pass through untouched: the
+        # proxy cannot decide what the target server will accept, so it only
+        # supplies a fallback when the client sent no name at all.
+        for name in ('Tester', 'a', 'a' * 200, '名字abc', '名字123'):
+            self.assertEqual(eagler.sanitize_username(name), name)
+        for bad in ('', '   ', None, '\x00\t'):
+            self.assertEqual(eagler.sanitize_username(bad), 'Player')
+        self.assertEqual(eagler.sanitize_username('', fallback='Alt'), 'Alt')
 
 
 # ---------------------------------------------------------------- State machine
@@ -1065,15 +1077,17 @@ class TranslatorUnitTests(unittest.TestCase):
         self.assertTrue(closed)
         self.assertIn('session rejected', closed[-1])
 
-    def test_bad_username_is_replaced(self):
-        translator, _sent, _closed, _backend = self.make()
-        translator.feed_client(REAL_FIRST_PACKET)
-        translator.feed_client(build_request_login(username='a'))
-        self.assertTrue(eagler.USERNAME_PATTERN.match(translator.username))
-        self.assertEqual(translator.uuid, eagler.offline_uuid(translator.username))
+    def test_username_is_kept_untouched(self):
+        """Short and non-ASCII names are forwarded as sent; the target decides."""
+        for name in ('a', '名字', '名前_1'):
+            translator, _sent, _closed, _backend = self.make()
+            self.assertEqual(translator.feed_client(REAL_FIRST_PACKET), b'')
+            translator.feed_client(build_request_login(username=name))
+            self.assertEqual(translator.username, name)
+            self.assertEqual(translator.uuid, eagler.offline_uuid(name))
 
     def test_empty_username_uses_handshake_name(self):
-        """Real MCJS login requests carry an empty name; fall back to authUsername from the handshake packet."""
+        """Real browser login requests can carry an empty name; fall back to authUsername from the handshake packet."""
         translator, _sent, _closed, _backend = self.make()
         self.assertEqual(translator.feed_client(REAL_FIRST_PACKET), b'')
         translator.feed_client(build_request_login(username=''))

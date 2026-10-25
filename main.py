@@ -46,6 +46,17 @@ def _option(argv, name: str, default: str) -> str:
 def main() -> int:
     argv = sys.argv[1:]
 
+    # DPI awareness must be armed before any Tk window is allocated; see
+    # proxy.dpi for why CTk's own activation is too late.
+    from proxy.dpi import activate as _activate_dpi
+    from proxy.icon import init_app_id as _init_app_id
+
+    _activate_dpi()
+    try:
+        _init_app_id()
+    except (OSError, AttributeError) as exc:  # cosmetic: taskbar falls back to the host icon
+        sys.stderr.write('AppUserModelID not set: %s\n' % exc)
+
     if _use_cli(argv):
         from proxy.cli import main as cli_main
         return cli_main(argv)

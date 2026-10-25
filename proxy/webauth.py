@@ -107,6 +107,21 @@ def set_password(password: str) -> None:
     clear_failures('')
 
 
+def enable() -> None:
+    """Put the stored hash into force without asking for the password again.
+
+    ``set_password`` always rewrites the hash, so there is no way to turn an
+    existing hash on without making the user retype it.  Without this the switch
+    could read "on" while ``web_auth.json`` still said ``enabled: false``, and
+    the Web UI would open without asking for a password at all.
+    """
+    with _lock:
+        data = _read()
+        if data['hash']:
+            data['enabled'] = True
+            _write(data)
+
+
 def disable() -> None:
     with _lock:
         data = _read()

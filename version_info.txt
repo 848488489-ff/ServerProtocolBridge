@@ -1,59 +1,61 @@
+# -*- coding: utf-8 -*-
 # Windows Version Information Resource for PyInstaller
 # Server Protocol Bridge v1.1.6
 #
-# Fields explained:
-#   FileVersion    - the version of this file
-#   ProductVersion - the version of the product
-#   FileOS         - 0x40004 = VOS_NT_WINDOWS32
-#   FileType       - 0x0000 = VFT_APP
+# This file is evaluated as Python by PyInstaller.  It must produce a
+# VSVersionInfo instance, so the class names below are the ones defined in
+# PyInstaller.utils.win32.versioninfo.
+#
+#   filevers / prodvers - (major, minor, patch, build)
+#   OS                  - 0x40004 = VOS_NT_WINDOWS32
+#   fileType            - 0x1 = VFT_APP
 #
 # Translation codes:
-#   1033 = English (United States)
-#   2052 = Chinese (Simplified)
-#   1200 = Windows Unicode (UTF-16LE)
+#   0x0409 = English (United States), 1200 = Unicode
+#   0x0804 = Chinese (Simplified), 1200 = Unicode
 
-VS_VERSION_INFO (
-  FixedFileInfo (
-    FileVersion=(1, 1, 6, 0),
-    ProductVersion=(1, 1, 6, 0),
-    FileFlagsMask=0x3f,
-    FileFlags=0x0,
-    FileOS=0x40004,
-    FileType=0x0000,
-    FileSubtype=0x0000
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(1, 1, 6, 0),
+    prodvers=(1, 1, 6, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
   ),
-  StringFileInfo (
-    StringTable (
-      u'040904B0',
-      (
-        ('CompanyName', u'无'),
-        ('FileDescription', u'Server Protocol Bridge'),
-        ('FileVersion', u'1.1.6.0'),
-        ('InternalName', u'Server Protocol Bridge'),
-        ('LegalCopyright', u'Public Domain (Unlicense)'),
-        ('OriginalFilename', u'Server Protocol Bridge.exe'),
-        ('ProductName', u'Server Protocol Bridge'),
-        ('ProductVersion', u'1.1.6.0'),
-        ('Translation', [1033, 1200]),
-      )
+  kids=[
+    StringFileInfo(
+      [
+        StringTable(
+          u'040904B0',
+          [
+            StringStruct(u'CompanyName', u'无'),
+            StringStruct(u'FileDescription', u'Server Protocol Bridge'),
+            StringStruct(u'FileVersion', u'1.1.6.0'),
+            StringStruct(u'InternalName', u'Server Protocol Bridge'),
+            StringStruct(u'LegalCopyright', u'Public Domain (Unlicense)'),
+            StringStruct(u'OriginalFilename', u'Server Protocol Bridge.exe'),
+            StringStruct(u'ProductName', u'Server Protocol Bridge'),
+            StringStruct(u'ProductVersion', u'1.1.6.0'),
+          ]
+        ),
+        StringTable(
+          u'080404B0',
+          [
+            StringStruct(u'CompanyName', u'无'),
+            StringStruct(u'FileDescription', u'服务器协议转换'),
+            StringStruct(u'FileVersion', u'1.1.6.0'),
+            StringStruct(u'InternalName', u'Server Protocol Bridge'),
+            StringStruct(u'LegalCopyright', u'公有领域 (Unlicense)'),
+            StringStruct(u'OriginalFilename', u'Server Protocol Bridge.exe'),
+            StringStruct(u'ProductName', u'服务器协议转换'),
+            StringStruct(u'ProductVersion', u'1.1.6.0'),
+          ]
+        ),
+      ]
     ),
-    StringTable (
-      u'080404B0',
-      (
-        ('CompanyName', u'无'),
-        ('FileDescription', u'服务器协议转换'),
-        ('FileVersion', u'1.1.6.0'),
-        ('InternalName', u'Server Protocol Bridge'),
-        ('LegalCopyright', u'公有领域 (Unlicense)'),
-        ('OriginalFilename', u'Server Protocol Bridge.exe'),
-        ('ProductName', u'服务器协议转换'),
-        ('ProductVersion', u'1.1.6.0'),
-        ('Translation', [2052, 1200]),
-      )
-    ),
-  ),
-  VarFileInfo (
-    VarTranslation ([1033, 1200]),
-    VarTranslation ([2052, 1200]),
-  )
+    VarFileInfo([VarStruct(u'Translation', [1033, 1200, 2052, 1200])]),
+  ]
 )

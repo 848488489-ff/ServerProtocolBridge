@@ -39,7 +39,7 @@ SMOKE_NAMES = ('Server Protocol Bridge', '服务器协议转换')
 # PyInstaller hook aliases it to setuptools._distutils, and excluding the target
 # name breaks the dependency graph.
 EXCLUDES = [
-    'unittest', 'pydoc', 'difflib', 'idlelib', 'ensurepip', 'sqlite3',
+    'unittest', 'pydoc', 'idlelib', 'ensurepip', 'sqlite3',
     'tkinter.test', 'turtledemo', 'lib2to3', 'pip', 'setuptools', 'pkg_resources',
     'test', 'numpy', 'PIL', 'PyQt5', 'PySide6',
     # Test tooling and optional back ends that dependency hooks may drag in.
@@ -113,7 +113,15 @@ def gui_smoke(exe: Path, seconds: float = 6.0) -> bool:
     time.sleep(seconds)
     alive = process.poll() is None
     if alive:
-        process.terminate()
+        # A PyInstaller onefile bootloader spawns a child that is the actual app,
+        # so terminating only this handle leaves that child running as an orphan
+        # and holds the EXE locked.  On Windows kill the whole process tree.
+        if os.name == 'nt':
+            subprocess.run(['taskkill', '/T', '/F', '/PID', str(process.pid)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           check=False)
+        else:
+            process.terminate()
         try:
             process.wait(timeout=20)
         except Exception:
