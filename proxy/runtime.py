@@ -62,6 +62,18 @@ class LogHub:
             lines = lines[-limit:]
         return lines
 
+    def set_limit(self, limit: int) -> None:
+        """Change how many lines are kept, applied immediately.
+
+        ``deque`` cannot change ``maxlen`` in place, so the ring is rebuilt with
+        the new cap.  Everything still in the old buffer is carried over, newest
+        last; when the new cap is smaller the oldest lines are dropped, which is
+        exactly what the user asked for when they lowered it.
+        """
+        limit = max(1, int(limit))
+        with self._lock:
+            self._lines = deque(self._lines, maxlen=limit)
+
     def clear(self) -> None:
         with self._lock:
             self._lines.clear()
@@ -74,7 +86,7 @@ class ServiceManager:
         self._lock = threading.RLock()
         self.config = config_module.Config.load()
         set_language(self.config.language)
-        self.hub = LogHub()
+        self.hub = LogHub(self.config.log_max_lines)
         self.logger: Logger | None = None
         self.server = None
         self._state = STOPPED
@@ -97,6 +109,7 @@ class ServiceManager:
             set_language(config.language)
             if self.logger is not None:
                 self.logger.set_level(config.log_level)
+            self.hub.set_limit(config.log_max_lines)
             self._revision += 1
             return config
 
@@ -108,12 +121,23 @@ class ServiceManager:
             set_language(config.language)
             if self.logger is not None:
                 self.logger.set_level(config.log_level)
+            self.hub.set_limit(config.log_max_lines)
             self._revision += 1
             try:
                 config.save()
             except OSError as exc:
                 self.hub.add('warn', tr('gui.log.config_save_failed', error=exc))
             return config
+
+    def set_log_limit(self, limit: int) -> int:
+        """Resize the log buffer the next time a line arrives.
+
+        The hub caps itself, so nothing is discarded here; the caller only tells
+        it how many lines to keep from now on.  Returns the value applied.
+        """
+        limit = max(1, int(limit))
+        self.hub.set_limit(limit)
+        return limit
 
     # ---------- state ----------
     @property

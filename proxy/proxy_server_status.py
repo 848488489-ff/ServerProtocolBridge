@@ -1,0 +1,349 @@
+"""ProxyServer status queries, the HTTP/upgrade front door and the listener lifecycle.  Split from proxy.py for file size.
+
+Method bodies are unchanged; they are methods of ProxyServer, reached
+through ``self``.
+"""
+
+import asyncio
+import json
+import socket
+import ssl
+import threading
+import time
+from . import resolver
+from .i18n import tr
+from .proxy import (Bridge, STATUS_TIMEOUT, WS_MAX_QUEUE, WS_WRITE_LIMIT, _NoDelayServerConnection)
+from .version import (SERVICE_NAME, VERSION)
+from websockets.asyncio.server import (ServerConnection, serve)
+from websockets.datastructures import Headers
+from websockets.http11 import (Request, Response)
+class ProxyStatus:
+    """ProxyStatus mixin for ProxyServer."""
+    def warm_status_async(self, host: str, port: int | None) -> None:
+        """Resolve and refresh a target status in a daemon thread."""
+        host = (host or '').strip()
+        if not host:
+            return
+        token = '%s:%s' % (host, port or 0)
+        with self._lock:
+            if token in self._status_warming:
+                return
+            self._status_warming.add(token)
+
+        def worker() -> None:
+            try:
+                resolved_host, resolved_port = self.resolve_endpoint(host, port)
+                self._start_status_refresh(resolved_host, resolved_port)
+            except Exception as exc:
+                self.log.debug('status warm-up failed: %s' % exc)
+            finally:
+                with self._lock:
+                    self._status_warming.discard(token)
+
+        threading.Thread(target=worker, daemon=True, name='spb-status-warm').start()
+    def _start_status_refresh(self, host: str, port: int,
+                              timeout: float = STATUS_TIMEOUT) -> None:
+        key = '%s:%d' % (host, int(port))
+        with self._lock:
+            if key in self._status_refreshing:
+                return
+            self._status_refreshing.add(key)
+
+        def worker() -> None:
+            try:
+                result = resolver.query_status(host, int(port), timeout=timeout)
+                result['time'] = time.time()
+                if self.config.status_cache:
+                    with self._lock:
+                        self._status_cache[key] = result
+            except Exception as exc:
+                self.log.debug('status refresh failed: %s' % exc)
+            finally:
+                with self._lock:
+                    self._status_refreshing.discard(key)
+
+        threading.Thread(target=worker, daemon=True, name='spb-status').start()
+    def status_for_query(self, host: str, port: int | None,
+                         timeout: float = STATUS_TIMEOUT) -> dict:
+        """Return the status used for an ``Accept: MOTD`` answer.
+
+        This runs in a worker thread.  With caching enabled a fresh result is
+        returned immediately, a stale result is returned while a refresh runs
+        in the background, and a miss performs one live query.  With caching
+        disabled every call queries the target and nothing is stored.
+        """
+        resolved_host, resolved_port = self.resolve_endpoint(host, port)
+        resolved_port = int(resolved_port)
+        key = '%s:%d' % (resolved_host, resolved_port)
+        if self.config.status_cache:
+            now = time.time()
+            with self._lock:
+                cached = self._status_cache.get(key)
+            if cached:
+                if now - cached['time'] < int(self.config.status_cache_ttl):
+                    return cached
+                self._start_status_refresh(resolved_host, resolved_port, timeout)
+                return cached
+        result = resolver.query_status(resolved_host, resolved_port, timeout=timeout)
+        result['time'] = time.time()
+        if self.config.status_cache:
+            with self._lock:
+                self._status_cache[key] = result
+        return result
+    def target_status(self, host: str, port: int, timeout: float = STATUS_TIMEOUT,
+                      max_age: float | None = None, wait: bool = True) -> dict:
+        """Return the target server status.
+
+        ``wait=True`` is for the status page: it may block for a fresh live
+        query.  ``wait=False`` is the non-blocking variant: it returns a cached
+        value immediately (even if stale) and refreshes it in the background,
+        or returns a placeholder while the first refresh runs.
+        """
+        if max_age is None:
+            max_age = float(self.config.status_cache_ttl)
+        key = '%s:%d' % (host, int(port))
+        now = time.time()
+        cached_result = None
+        needs_refresh = False
+        if self.config.status_cache:
+            with self._lock:
+                cached = self._status_cache.get(key)
+                if cached:
+                    fresh = now - cached['time'] < max_age
+                    if fresh or not wait:
+                        cached_result = cached
+                        needs_refresh = not fresh
+        if cached_result is not None:
+            if needs_refresh:
+                self._start_status_refresh(host, int(port), timeout)
+            return cached_result
+        if not wait:
+            if self.config.status_cache:
+                self._start_status_refresh(host, int(port), timeout)
+            return {
+                'ok': False,
+                'ms': None,
+                'status': None,
+                'error': '',
+                'time': now,
+                'refreshing': True,
+            }
+        result = resolver.query_status(host, int(port), timeout=timeout)
+        result['time'] = time.time()
+        if self.config.status_cache:
+            with self._lock:
+                self._status_cache[key] = result
+        return result
+    # ---------- HTTP / WebSocket transport ----------
+    @staticmethod
+    def _http_response(status: int, reason: str, body: bytes,
+                       content_type: str = '') -> Response:
+        headers = Headers()
+        if content_type:
+            headers['Content-Type'] = content_type
+        headers['Content-Length'] = str(len(body))
+        headers['Cache-Control'] = 'no-store'
+        headers['X-Content-Type-Options'] = 'nosniff'
+        # The status page is a diagnostic endpoint, not a browser application:
+        # closing the connection keeps the response bounded and avoids keeping
+        # idle HTTP sockets around on the game port.
+        headers['Connection'] = 'close'
+        return Response(status, reason, headers, body)
+    async def _process_http(self, connection: ServerConnection,
+                            request: Request) -> Response | None:
+        """Serve diagnostic HTTP on the same port, hand WebSocket upgrades on.
+
+        Returning None lets ``websockets`` complete the WebSocket handshake.
+        Everything else is answered here without touching the game path.
+        """
+        if request.headers.get('Upgrade', '').lower() == 'websocket':
+            return None
+
+        path = (request.path or '/').split('?', 1)[0] or '/'
+        # websockets 15 only parses GET handshake requests and has no method
+        # attribute; 17 adds one.  Treat the absent attribute as GET.
+        method = getattr(request, 'method', 'GET')
+        head = method == 'HEAD'
+        if method not in ('GET', 'HEAD'):
+            return self._http_response(
+                405, 'Method Not Allowed', b'',
+                'text/plain; charset=utf-8')
+
+        if path in ('/status', '/status.json'):
+            body = json.dumps(self.status(path), ensure_ascii=False).encode('utf-8')
+            return self._http_response(
+                200, 'OK', b'' if head else body,
+                'application/json; charset=utf-8')
+        if path == '/favicon.ico':
+            return self._http_response(204, 'No Content', b'')
+        return self._http_response(
+            404, 'Not Found', b'Not Found\n', 'text/plain; charset=utf-8')
+    @staticmethod
+    def _select_subprotocol(connection: ServerConnection,
+                            subprotocols: list[str]) -> str | None:
+        # Preserve the previous gateway's behaviour: use the first protocol the
+        # client offered, so ``base64`` remains an explicit opt-in.
+        return subprotocols[0] if subprotocols else None
+    async def handle_websocket(self, connection: ServerConnection, scheme: str) -> None:
+        request = connection.request
+        path = ((request.path if request is not None else '/') or '/').split('?', 1)[0] or '/'
+        if request is not None:
+            # Some browser clients attach a Cookie header to the WebSocket
+            # upgrade.  The Eagler protocol has no use for it and it must never
+            # leak into a backend handshake or a log line, so drop it before
+            # anything else can see it.
+            try:
+                del request.headers['Cookie']
+            except KeyError:
+                pass
+        client = connection.remote_address or ('?', 0)
+        addr = (client[0], client[1])
+        bridge = Bridge(self, connection, path, scheme, addr, self.log,
+                        connection.subprotocol)
+        with self._lock:
+            self._connections.add(bridge)
+            self.stats.connection_opened()
+        await bridge.run()
+    # ---------- listeners ----------
+    def _start_listener(self, port: int, scheme: str,
+                        ssl_context: ssl.SSLContext | None) -> str:
+        """Create the listening socket first (a busy port surfaces right away),
+        then hand it to a dedicated ``websockets`` event loop.
+
+        The socket is already listening, so client connections can arrive as
+        soon as start() returns; the kernel queues them until the loop is up.
+        """
+        config = self.config
+        host = config.listen_host or '127.0.0.1'
+        family = socket.AF_INET6 if ':' in host else socket.AF_INET
+        listener = socket.socket(family, socket.SOCK_STREAM)
+        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            listener.bind((host, int(port)))
+            listener.listen(128)
+        except OSError as exc:
+            listener.close()
+            raise OSError(tr('proxy.error.listen_failed',
+                             host=host, port=int(port), error=exc))
+
+        entry = {
+            'server': None,
+            'loop': None,
+            'serve_task': None,
+            'thread': None,
+            'listener': listener,
+            'ready': threading.Event(),
+            'error': None,
+        }
+        thread = threading.Thread(
+            target=self._serve, args=(entry, scheme, ssl_context),
+            daemon=True, name='spb-%s' % scheme)
+        entry['thread'] = thread
+        self._servers.append(entry)
+        thread.start()
+        # Waiting for the loop to install the server means a failure inside
+        # the thread is raised from start() instead of disappearing into it.
+        if not entry['ready'].wait(5.0):
+            try:
+                listener.close()
+            except OSError:
+                pass
+            raise RuntimeError(tr('proxy.error.listener_failed', scheme=scheme))
+        if entry['error'] is not None:
+            thread.join(1.0)
+            raise entry['error']
+        display_host = host if host not in ('0.0.0.0', '') else '127.0.0.1'
+        return '%s://%s:%d' % (scheme, display_host, int(port))
+    def _serve(self, entry: dict, scheme: str,
+               ssl_context: ssl.SSLContext | None) -> None:
+        async def main() -> None:
+            config = self.config
+            heartbeat = max(0, int(config.heartbeat_sec))
+            try:
+                server = await serve(
+                    lambda connection: self.handle_websocket(connection, scheme),
+                    sock=entry['listener'],
+                    ssl=ssl_context,
+                    process_request=self._process_http,
+                    select_subprotocol=self._select_subprotocol,
+                    compression=None,       # avoid per-message latency and CPU
+                    max_size=int(config.max_payload_bytes),
+                    max_queue=WS_MAX_QUEUE,
+                    write_limit=WS_WRITE_LIMIT,
+                    ping_interval=float(heartbeat) if heartbeat else None,
+                    ping_timeout=float(max(1, heartbeat)) * 2 if heartbeat else None,
+                    close_timeout=2,
+                    server_header='%s/%s' % (SERVICE_NAME, VERSION),
+                    create_connection=_NoDelayServerConnection,
+                )
+            except BaseException as exc:
+                entry['error'] = exc
+                entry['ready'].set()
+                return
+            entry['server'] = server
+            entry['loop'] = asyncio.get_running_loop()
+            serve_task = asyncio.create_task(server.serve_forever())
+            entry['serve_task'] = serve_task
+            entry['ready'].set()
+            try:
+                await serve_task
+            except asyncio.CancelledError:
+                pass
+            finally:
+                server.close()
+                await server.wait_closed()
+
+        try:
+            asyncio.run(main())
+        except asyncio.CancelledError:
+            pass
+        except Exception:      # errors in a thread cannot be raised to the caller; record them
+            import traceback
+            traceback.print_exc()
+            entry['error'] = entry['error'] or True
+    def _shutdown_servers(self) -> None:
+        servers = self._servers
+        self._servers = []
+        # Ask each loop to close its listener and terminate the remaining
+        # connections.  Server.close() is thread-safe only through the loop.
+        for entry in servers:
+            loop = entry.get('loop')
+            server = entry.get('server')
+            serve_task = entry.get('serve_task')
+            if loop is not None and server is not None and not loop.is_closed():
+                try:
+                    loop.call_soon_threadsafe(server.close)
+                except RuntimeError:
+                    pass
+            if loop is not None and serve_task is not None and not loop.is_closed():
+                # asyncio.Server.serve_forever() only returns when cancelled;
+                # close() stops accepting but leaves the wait itself pending.
+                try:
+                    loop.call_soon_threadsafe(serve_task.cancel)
+                except RuntimeError:
+                    pass
+        deadline = time.time() + 3.0
+        for entry in servers:
+            thread = entry.get('thread')
+            if thread is not None:
+                thread.join(max(0.1, deadline - time.time()))
+        # A handler stuck in a blocking call would keep its loop alive; stop
+        # the loop so the process can still exit cleanly.
+        for entry in servers:
+            thread = entry.get('thread')
+            loop = entry.get('loop')
+            if thread is not None and thread.is_alive() and loop is not None:
+                try:
+                    loop.call_soon_threadsafe(loop.stop)
+                except RuntimeError:
+                    pass
+        for entry in servers:
+            thread = entry.get('thread')
+            if thread is not None:
+                thread.join(2.0)
+            listener = entry.get('listener')
+            try:
+                if listener is not None:
+                    listener.close()
+            except OSError:
+                pass

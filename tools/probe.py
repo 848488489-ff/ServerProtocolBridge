@@ -108,7 +108,7 @@ def complete_encryption(sock: socket.socket, packet: vanilla.Packet, threshold: 
 
 
 def probe(host: str, port: int, protocol: int, address: str | None = None,
-          username: str = 'MCJSTestProbe', spoof_ip: str | None = None,
+          username: str = 'TestProbe', spoof_ip: str | None = None,
           quiet: bool = False, encrypt: bool = False) -> dict:
     result = {'host': host, 'port': port, 'protocol': protocol, 'verdict': '', 'lines': []}
 
@@ -307,7 +307,7 @@ def main() -> int:
     parser.add_argument('target', help='target, e.g. play.example.net or play.example.net:25565')
     parser.add_argument('--protocol', default='47', help='protocol versions to try, comma separated (default 47)')
     parser.add_argument('--address', help='server address placed in the handshake packet (defaults to the node hostname)')
-    parser.add_argument('--username', default='MCJSTestProbe', help='username used for the login')
+    parser.add_argument('--username', default='TestProbe', help='username used for the login')
     parser.add_argument('--spoof-ip', help='compose the address in BungeeCord ip_forward format (the client IP to fill in)')
     parser.add_argument('--status', action='store_true', help='status query only (server-list ping): self-reported version/MOTD')
     parser.add_argument('--eagler', action='store_true', help='send an EaglercraftX handshake to see whether the peer is a browser-side server')

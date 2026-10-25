@@ -1,0 +1,201 @@
+"""Module-level helpers for the Web UI, split from web.py for size.
+
+Pure request helpers, the Microsoft device-code job table and the
+dropdown code tables.  Function bodies are unchanged; web.py and
+web_routes.py both import them.
+"""
+
+import socket
+import threading
+import time
+from . import (accounts, certs, config as config_module)
+from .i18n import (LANGUAGES, language_label, tr)
+from .locales import EN as EN_TABLE
+from .runtime import get_manager
+# Dropdown value sets.  Labels are looked up as ``gui.log_level.<code>`` and
+# ``gui.cert_generator.<code>`` so they follow the interface language instead of
+# being hard-coded English words.
+LOG_LEVEL_CODES = ('debug', 'info', 'warn', 'error')
+LOG_LINE_LIMIT_CODES = ('1000', '4000', '10000', '20000', '50000')
+CERT_GENERATOR_CODES = ('auto', 'python', 'openssl')
+_jobs: dict[str, dict] = {}
+_jobs_lock = threading.Lock()
+JOB_TTL = 1800.0
+def _prune_jobs() -> None:
+    now = time.time()
+    with _jobs_lock:
+        for key in [key for key, job in _jobs.items()
+                    if now - job.get('created', now) > JOB_TTL]:
+            _jobs.pop(key, None)
+def _ms_worker(job_id: str, info: dict, verify: bool) -> None:
+    try:
+        account = accounts.microsoft_device_poll(info, verify)
+    except accounts.AccountError as exc:
+        with _jobs_lock:
+            job = _jobs.get(job_id)
+            if job is not None:
+                job.update(state='error', error=str(exc), code=exc.code)
+    except Exception as exc:
+        with _jobs_lock:
+            job = _jobs.get(job_id)
+            if job is not None:
+                job.update(state='error', error=str(exc), code='')
+    else:
+        accounts.add_account(account)
+        with _jobs_lock:
+            job = _jobs.get(job_id)
+            if job is not None:
+                job.update(state='done', account=_account_payload(account, ''))
+def _account_payload(account, active_id: str) -> dict:
+    return {
+        'id': account.id,
+        'kind': account.kind,
+        'username': account.username,
+        'uuid': account.uuid,
+        'active': bool(active_id and account.id == active_id),
+        'kind_label': tr('accounts.kind.' + account.kind),
+    }
+def _web_info() -> dict:
+    from .webserver import current_address, current_url
+
+    host, port = current_address()
+    config = get_manager().config
+    host = host or config.web_host
+    port = port or config.web_port
+    url = current_url() or config.web_url()
+    lan = ''
+    if (host or '').strip() in ('0.0.0.0', '::', '[::]'):
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            try:
+                probe.connect(('8.8.8.8', 80))
+                lan = 'http://%s:%d/' % (probe.getsockname()[0], int(port))
+            finally:
+                probe.close()
+        except Exception:
+            lan = ''
+    return {'host': host, 'port': int(port), 'url': url, 'lan_url': lan}
+def _config_options() -> dict:
+    return {
+        'themes': [{'code': code, 'label': tr('gui.theme.' + code)}
+                   for code in config_module.THEME_MODES],
+        'languages': [{'code': code, 'label': language_label(code)}
+                      for code in LANGUAGES],
+        'spoof_clients': [{'code': code, 'label': tr('gui.spoof.' + code)}
+                          for code in config_module.SPOOF_CLIENTS],
+        'resource_pack_modes': [
+            {'code': code, 'label': tr('gui.resource_pack_mode.' + code)}
+            for code in config_module.RESOURCE_PACK_MODES],
+        'log_levels': [{'code': code, 'label': tr('gui.log_level.' + code)}
+                       for code in LOG_LEVEL_CODES],
+        'log_limits': [{'code': code, 'label': tr('gui.log_limit.' + code)}
+                       for code in LOG_LINE_LIMIT_CODES],
+        'cert_generators': [
+            {'code': code, 'label': tr('gui.cert_generator.' + code)}
+            for code in CERT_GENERATOR_CODES],
+    }
+def _int_field(body: dict, key: str, label: str) -> int | None:
+    if key not in body:
+        return None
+    raw = body.get(key)
+    if isinstance(raw, bool):
+        raise ValueError(tr('web.invalid_number', field=label))
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        raise ValueError(tr('web.invalid_number', field=label)) from None
+    return value
+def _config_from_body(body: dict) -> config_module.Config:
+    current = get_manager().config
+    data = current.to_dict()
+    for key, value in body.items():
+        if key in data:
+            data[key] = value
+
+    for key, label in (
+            ('wss_port', tr('gui.label.wss_port')),
+            ('ws_port', tr('gui.label.ws_port')),
+            ('web_port', tr('gui.label.web_port')),
+            ('heartbeat_sec', tr('gui.label.heartbeat')),
+            ('log_max_lines', tr('gui.label.log_max_lines')),
+            ('status_cache_ttl', tr('gui.label.status_cache_ttl')),
+            ('max_payload_mb', tr('gui.label.max_payload')),
+            ('cert_days', tr('gui.label.cert_days'))):
+        value = _int_field(body, key, label)
+        if value is not None:
+            data[key] = value
+    if 'connect_timeout' in body:
+        try:
+            data['connect_timeout'] = float(body['connect_timeout'])
+        except (TypeError, ValueError):
+            raise ValueError(tr('web.invalid_number',
+                                field=tr('gui.label.connect_timeout'))) from None
+
+    if 'routes_text' in body:
+        data['routes'] = config_module.parse_routes_text(str(body['routes_text']))
+    if 'cert_extra_names' in body:
+        value = body['cert_extra_names']
+        if isinstance(value, str):
+            value = [item.strip() for item in value.replace(',', ' ').split()
+                     if item.strip()]
+        data['cert_extra_names'] = list(value or [])
+
+    # The buffer size is a runtime field, so validate_web() never reaches it and
+    # a hand-written request could otherwise install an unbounded buffer.
+    if 'log_max_lines' in body:
+        if not 50 <= int(data['log_max_lines']) <= 100000:
+            raise ValueError(tr('core.config.log_max_lines_invalid'))
+
+    config = config_module.Config.from_dict(data)
+    if config.theme not in config_module.THEME_MODES:
+        config.theme = current.theme
+    if (config.language or '').lower() not in LANGUAGES:
+        config.language = current.language
+    problems = config.validate_web()
+    if problems:
+        raise ValueError('\n'.join(problems))
+    return config
+def _save_body(body: dict) -> tuple[config_module.Config, bool, bool]:
+    manager = get_manager()
+    old = manager.config
+    config = _config_from_body(body)
+    web_changed = ((old.web_host or '').strip() != (config.web_host or '').strip()
+                   or int(old.web_port) != int(config.web_port))
+    language_changed = (old.language or '').lower() != (config.language or '').lower()
+    manager.save_config(config)
+    if web_changed:
+        _schedule_web_restart(config.web_host, config.web_port)
+    return manager.config, language_changed, web_changed
+def _schedule_web_restart(host: str, port: int) -> None:
+    def run() -> None:
+        time.sleep(1.0)
+        manager = get_manager()
+        try:
+            from .webserver import restart_web_ui
+
+            url, error = restart_web_ui(host, port)
+        except Exception as exc:
+            manager.hub.add('error', tr('web.webui_restart_failed', error=exc))
+            return
+        if url:
+            manager.hub.add('info', tr('web.webui_listening', host=host, port=port))
+        else:
+            manager.hub.add('error', tr('web.webui_restart_failed', error=error))
+
+    threading.Thread(target=run, name='web-ui-restart', daemon=True).start()
+def _i18n_payload() -> dict:
+    # Every namespace the front end can render.  A key that is used by the page
+    # but absent here shows up as its own raw identifier on screen, which reads
+    # as an un-localised bug ("core.config.route_missing_path").
+    prefixes = ('web.', 'gui.', 'accounts.', 'core.')
+    return {key: tr(key) for key in EN_TABLE if key.startswith(prefixes)}
+def _cert_payload() -> dict:
+    config = get_manager().config
+    cert_path, key_path = certs.certificate_paths(config.resolved_cert_dir)
+    info = certs.inspect_certificate(cert_path, key_path) if cert_path.exists() else None
+    return {
+        'exists': info is not None,
+        'cert_path': str(cert_path),
+        'key_path': str(key_path),
+        'info': info,
+    }

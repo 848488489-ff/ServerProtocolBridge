@@ -1,20 +1,23 @@
-"""Eased wheel scrolling shared by the Tk widgets and CustomTkinter.
+"""Wheel scrolling shared by the Tk widgets and CustomTkinter.
 
-Tk's native wheel handler jumps a fixed number of lines in one frame.  This
-module keeps the same scrollable widgets but spreads the jump over a handful
-of animation frames with an ease-out curve, so a notch of the wheel glides to
-a stop instead of teleporting.
+One wheel notch is applied as a single scroll step, and the scrollable canvas is
+invalidated right after.  On Windows with Tk 9 the canvas does not repaint the
+region an embedded window item vacated, so an animated scroll (several partial
+scrolls per notch) leaves a stale copy of the previous frame behind -- the "ghost"
+of the page offset.  Doing the whole step at once and then forcing a full canvas
+invalidation removes it, and scrolling stays fast because a notch costs one
+scroll plus one redraw instead of six or eight of each.
 
 Three entry points:
 
 ``enable(widget)``          -- bind the wheel directly to a widget that has
-                              ``yview_scroll`` (Tk Text, Treeview, CustomTkinter
-                              CTkTextbox, ...).
-``SmoothWheel``             -- the animation object itself; the GUI attaches
-                              one to a canvas and routes wheel events itself,
-                              which is what makes nested scroll areas behave.
+                               ``yview_scroll`` (Tk Text, Treeview, CustomTkinter
+                               CTkTextbox, ...).
+``SmoothWheel``             -- the scrolling object itself; the GUI attaches one
+                               to a canvas and routes wheel events itself, which
+                               is what makes nested scroll areas behave.
 ``enable_tree(root)``       -- walk a widget tree and enable every Text and
-                              Treeview (kept for compatibility).
+                               Treeview (kept for compatibility).
 """
 
 from __future__ import annotations
@@ -22,10 +25,6 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk as _ttk
 from typing import Any, Callable
-
-_FRAME_MS = 16
-_EASE_DIVISOR = 4
-_MAX_STEP = 3
 
 
 def wheel_notches(event: Any) -> int:
@@ -48,11 +47,12 @@ def wheel_notches(event: Any) -> int:
 
 
 class SmoothWheel:
-    """Ease-out scrolling for one scrollable target.
+    """One notch = one scroll step, for one scrollable target.
 
     ``scroll`` receives a signed number of "units" (whatever the target
-    understands); ``scheduler`` is any widget used for ``after`` (the target
-    itself normally).  ``wheel`` is a Tk event handler and returns ``'break'``.
+    understands); ``scheduler`` is any widget the step can be deferred through
+    (the target itself normally).  ``wheel`` is a Tk event handler and returns
+    ``'break'``.
     """
 
     def __init__(self, scroll: Callable[[int], None], scheduler: Any = None,
@@ -60,57 +60,50 @@ class SmoothWheel:
         self._scroll = scroll
         self._scheduler = scheduler
         self.units_per_notch = units_per_notch
-        self._target = 0
-        self._applied = 0
-        self._job = None
 
     # ---------- event handler ----------
     def wheel(self, event: Any) -> str:
         notches = wheel_notches(event)
         if notches:
-            self._target += notches * self.units_per_notch
-            if self._job is None:
-                self._tick()
+            self.apply(notches * self.units_per_notch)
         return 'break'
 
-    # ---------- animation ----------
-    def _tick(self) -> None:
-        remaining = self._target - self._applied
-        if remaining == 0:
-            self._job = None
-            return
-        step = int(round(remaining / _EASE_DIVISOR))
-        if step == 0:
-            step = 1 if remaining > 0 else -1
-        step = max(-_MAX_STEP, min(_MAX_STEP, step))
-        try:
-            self._scroll(step)
-        except tk.TclError:
-            self._job = None
-            return
-        self._applied += step
-        scheduler = self._scheduler
-        if scheduler is None:
-            self._job = None
+    # ---------- scroll ----------
+    def apply(self, units: int) -> None:
+        if not units:
             return
         try:
-            self._job = scheduler.after(_FRAME_MS, self._tick)
+            self._scroll(int(units))
         except tk.TclError:
-            self._job = None
+            return
+        self._repaint()
+
+    def _repaint(self) -> None:
+        """Force the canvas to redraw so the scroll leaves no stale pixels.
+
+        ``yview_moveto`` at the already-current position changes nothing about the
+        scroll position, but it runs Tk's canvas scrollview code, which moves
+        every embedded window item and invalidates the whole canvas.  That is the
+        difference between a clean scroll and a ghost of the previous frame.
+        """
+        target = self._scheduler
+        if not isinstance(target, tk.Canvas):
+            return
+        view = getattr(target, 'yview', None)
+        moveto = getattr(target, 'yview_moveto', None)
+        if view is None or moveto is None:
+            return
+        try:
+            moveto(view()[0])
+        except tk.TclError:
+            pass
 
     def reset(self) -> None:
-        """Forget pending movement (used when the target is rebuilt)."""
-        self._target = self._applied
-        if self._job is not None:
-            try:
-                self._scheduler.after_cancel(self._job)
-            except Exception:
-                pass
-            self._job = None
+        """Nothing is pending anymore; kept for the callers that still ask."""
 
 
 def enable(widget: Any, units_per_notch: int = 4) -> None:
-    """Bind eased wheel scrolling directly to *widget* (Text / Treeview / CTkTextbox)."""
+    """Bind wheel scrolling directly to *widget* (Text / Treeview / CTkTextbox)."""
     if getattr(widget, '_smooth_wheel', None) is not None:
         return
     wheel = SmoothWheel(lambda units: widget.yview_scroll(units, 'units'), widget,
@@ -124,7 +117,7 @@ def enable(widget: Any, units_per_notch: int = 4) -> None:
 
 
 def enable_tree(root: Any) -> int:
-    """Enable smooth scrolling on every Text and Treeview below *root*."""
+    """Enable wheel scrolling on every Text and Treeview below *root*."""
     count = 0
     try:
         children = root.winfo_children()

@@ -71,7 +71,15 @@ MARKER_CLASSIC = 0x01        # First byte: EaglercraftX 1.8
 MARKER_MODERN = 0x02         # Second byte: v2..v5 handshake
 MARKER_LEGACY = 0x01         # Second byte: v1 handshake
 
+# Kept as a reference for what the vanilla clients and Mojang's validator use.
+# It is deliberately not applied to names any more: many servers -- Chinese
+# servers and offline-mode setups in particular -- accept non-ASCII names, and
+# rewriting one invents an identity the client never asked for (see
+# usable_name).  Nothing in the proxy filters against this pattern.
 USERNAME_PATTERN = re.compile(r'^[A-Za-z0-9_]{3,16}$')
+# A name made only of control characters carries no identity; UTF-8 of any other
+# script is passed through untouched (see usable_name).
+_CONTROL_RE = re.compile(r'[\x00-\x1f\x7f]')
 MAX_STRING = 255
 MAX_LIST = 16
 
@@ -118,42 +126,7 @@ def _truncate_utf8(text: str, limit: int) -> str:
     return encoded[:limit].decode('utf-8', 'ignore')
 
 
-def _unwrap_json_strings(value, depth: int = 0):
-    """Decode a JSON value, following string-wrapped JSON (max 8 levels).
-
-    Some servers/proxies serialize an already-serialized chat component, so
-    the first ``json.loads`` returns a string containing the real object.
-    Keeping that string would make the client display a wall of JSON.
-    """
-    if depth >= 8 or not isinstance(value, str):
-        return value
-    value = value.strip().lstrip('\ufeff')
-    try:
-        parsed = json.loads(value)
-    except (TypeError, ValueError):
-        return value
-    if isinstance(parsed, str) and parsed != value:
-        return _unwrap_json_strings(parsed, depth + 1)
-    return parsed
-
-
-def as_chat_json(raw: str, fallback: str = 'Kicked') -> str:
-    """Turn a piece of text into chat-component JSON the client can parse.
-
-    Since v3, the client parses the body of "deny login" and "custom error"
-    packets as JSON (IChatComponent.Serializer.jsonToComponent); sending plain
-    text makes it throw and show nothing but "Invalid packet received", wasting
-    the kick reason the server gave. Kick reasons coming from vanilla servers
-    are already valid JSON and pass through unchanged. Nested JSON strings are
-    unwrapped, because a double-encoded reason is otherwise shown verbatim.
-    """
-    text = (raw or '').strip() or fallback
-    parsed = _unwrap_json_strings(text)
-    if isinstance(parsed, (dict, list)):
-        return json.dumps(parsed, ensure_ascii=False)
-    if isinstance(parsed, str):
-        return json.dumps({'text': parsed}, ensure_ascii=False)
-    return json.dumps({'text': text}, ensure_ascii=False)
+from .eagler_chat import as_chat_json, _unwrap_json_strings  # noqa: F401  (split for size)
 
 
 def offline_uuid(username: str) -> bytes:
@@ -487,14 +460,31 @@ def parse_request_login(data: bytes, handshake_protocol: int) -> LoginRequest:
     return request
 
 
-def sanitize_username(username: str, fallback: str = 'MCJSEagler') -> str:
-    """Target servers only accept [A-Za-z0-9_]{3,16}; anything else is replaced
-    with a stable, usable name."""
-    if USERNAME_PATTERN.match(username or ''):
-        return username
-    cleaned = re.sub(r'[^A-Za-z0-9_]', '', username or '')
-    if len(cleaned) > 16:
-        cleaned = cleaned[:16]
-    if len(cleaned) < 3:
-        cleaned = (cleaned + fallback)[:16]
-    return cleaned
+def usable_name(username: str) -> str:
+    """*username* stripped of surrounding whitespace, or '' when unusable.
+
+    A login name is a UTF-8 string and the targets disagree on what they accept.
+    Mojang validates against [A-Za-z0-9_]{3,16}, but a large number of servers --
+    Chinese servers in particular, and offline-mode BungeeCord setups -- accept
+    CJK and other Unicode names, or use the name only as a display label.  The
+    proxy must not decide for them: rewriting the name invents an identity the
+    client never asked for and breaks those servers, so the only input refused
+    here is input that carries no name at all (empty, or nothing but control
+    characters).  Length is left to the target, which already has its own limit
+    and will reject names it will not accept.
+    """
+    text = (username or '').strip()
+    if not text or _CONTROL_RE.search(text):
+        return ''
+    return text
+
+
+def sanitize_username(username: str, fallback: str = 'Player') -> str:
+    """A name to log in with: the client's own, or *fallback* when it sent none.
+
+    Nothing is stripped or transliterated -- see ``usable_name`` for why the
+    proxy must pass non-ASCII names through untouched.  Kept as a function so
+    the caller has one place to ask "what am I logging in as" and the answer is
+    never empty.
+    """
+    return usable_name(username) or fallback

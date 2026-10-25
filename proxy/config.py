@@ -61,6 +61,10 @@ def parse_routes_text(text: str) -> dict:
         path, _, target = line.partition('=')
         path = path.strip()
         target = target.strip()
+        # Neither side may be empty: a blank path would silently become the
+        # catch-all "/" route, and a blank target would route to nowhere.
+        if not path:
+            raise ValueError(tr('core.config.route_missing_path'))
         if not path.startswith('/'):
             path = '/' + path
         if not target:
@@ -110,7 +114,7 @@ class Config:
     # Rewrite the server address in the upstream handshake to the real target
     # domain (off by default: data is only touched when it is really needed)
     rewrite_handshake_host: bool = False
-    # Protocol translation for browser clients (EaglercraftX family, e.g. MCJS):
+    # Protocol translation for browser clients (the EaglercraftX family):
     # autodetect them and answer their private handshake on the server's behalf
     eagler_translate: bool = True
     # 1.20.2+ targets hold the connection in the login state until the client
@@ -175,6 +179,12 @@ class Config:
     status_cache: bool = True
     status_cache_ttl: int = 30    # seconds a cached status stays fresh
     log_level: str = 'info'
+    # Upper bound on how many log lines the hub keeps in memory.  The buffer is
+    # a ring: once it is full the oldest line is dropped, so a very long or very
+    # chatty session cannot grow memory without limit.  A small value keeps the
+    # footprint tiny; a large one leaves room to look back over a whole
+    # connection before the earliest lines scroll away.
+    log_max_lines: int = 4000
     # Before the service stops -- or the program closes -- tell every connected
     # client why the session is over, using the game's own disconnect packet:
     # a bare socket close is what clients show as an ended data stream
@@ -328,6 +338,13 @@ class Config:
             except ValueError as exc:
                 problems.append(tr('core.config.target_invalid', error=exc))
         for path, target in (self.routes or {}).items():
+            # Both sides of a route must be non-empty; a hand-edited config file
+            # can carry a half route that parse_routes_text would never produce.
+            if not (path or '').strip():
+                problems.append(tr('core.config.route_missing_path'))
+            if not (target or '').strip():
+                problems.append(tr('core.config.route_missing_target', path=path))
+                continue
             try:
                 parse_address(target)
             except ValueError:
@@ -365,6 +382,8 @@ class Config:
             problems.append(tr('core.config.status_cache_ttl_range'))
         if self.log_level not in ('debug', 'info', 'warn', 'error'):
             problems.append(tr('core.config.log_level_invalid'))
+        if not 50 <= int(self.log_max_lines) <= 100000:
+            problems.append(tr('core.config.log_max_lines_invalid'))
         if (self.language or '').strip().lower() not in LANGUAGES:
             problems.append(tr('core.config.language_invalid'))
         return problems
