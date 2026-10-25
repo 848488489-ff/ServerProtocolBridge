@@ -12,6 +12,7 @@ mapping / unreachable target / large-volume data integrity.
 from __future__ import annotations
 
 import base64
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -27,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from proxy import certs, config as config_module, der, resolver, wsproto, x509  # noqa: E402
+from proxy import certs, config as config_module, der, resolver, webauth, wsproto, x509  # noqa: E402
 from proxy.config import Config  # noqa: E402
 from proxy.i18n import tr  # noqa: E402
 from proxy.logger import Logger  # noqa: E402
@@ -517,6 +518,21 @@ class FrameTests(unittest.TestCase):
         self.assertIsNone(wsproto.first_subprotocol(' , '))
 
 
+# ---------------------------------------------------------------- Logger
+
+
+class LoggerLevelTests(unittest.TestCase):
+    def test_set_level_applies_to_the_next_line(self):
+        lines = []
+        logger = Logger('warn', callback=lambda level, text: lines.append(level),
+                        echo=False)
+        logger.info('hidden')
+        logger.warn('shown')
+        logger.set_level('debug')
+        logger.debug('visible now')
+        self.assertEqual(lines, ['warn', 'debug'])
+
+
 # ---------------------------------------------------------------- Configuration
 
 
@@ -546,11 +562,18 @@ class ConfigTests(unittest.TestCase):
             config.target = 'mc.hypixel.net:25565'
             config.routes = {'/a': '127.0.0.1:25566'}
             config.wss_port = 9443
+            config.status_cache = False
+            config.status_cache_ttl = 120
+            config.spoof_client = 'forge-1.8'
             config.save(path)
             loaded = Config.load(path)
             self.assertEqual(loaded.target, config.target)
             self.assertEqual(loaded.routes, config.routes)
             self.assertEqual(loaded.wss_port, 9443)
+            self.assertFalse(loaded.status_cache)
+            self.assertEqual(loaded.status_cache_ttl, 120)
+            self.assertEqual(loaded.config_version, 2)
+            self.assertEqual(loaded.spoof_client, 'forge-1.8')
 
     def test_unknown_keys_ignored(self):
         config = Config.from_dict({'target': 'a:1', '不存在的键': 5, 'wss_port': '1234'})
@@ -559,29 +582,204 @@ class ConfigTests(unittest.TestCase):
 
     def test_validate(self):
         config = Config()
+        self.assertTrue(config.status_cache)
+        self.assertEqual(config.status_cache_ttl, 30)
+        self.assertEqual(config.target, '')
+        self.assertTrue(any(tr('core.config.target_empty') in item
+                            for item in config.validate()))
+        config.target = 'play.example.net'
         self.assertEqual(config.validate(), [])
         config.wss_port = 70000
         expected = tr('core.config.port_range', name=tr('core.config.port_wss'))
         self.assertTrue(any(expected in item for item in config.validate()))
         config = Config()
         config.target = '  '
-        expected = tr('core.config.target_invalid', error=tr('core.config.address_empty'))
+        expected = tr('core.config.target_empty')
         self.assertTrue(any(expected in item for item in config.validate()))
         config = Config()
         config.language = 'fr'
         self.assertTrue(any(tr('core.config.language_invalid') in item
                             for item in config.validate()))
+        config = Config()
+        config.status_cache_ttl = 0
+        self.assertTrue(any(tr('core.config.status_cache_ttl_range') in item
+                            for item in config.validate()))
+        config.status_cache_ttl = 86401
+        self.assertTrue(any(tr('core.config.status_cache_ttl_range') in item
+                            for item in config.validate()))
+
+    def test_spoof_presets(self):
+        config = Config()
+        self.assertEqual(config.spoof_client, 'off')
+        self.assertEqual(config.spoof_brand, '')
+        self.assertEqual(config.spoof_brand_value(), '')
+        for preset, brand in (('vanilla', 'vanilla'), ('forge-1.8', 'fml,forge'),
+                              ('forge-1.13', 'forge'), ('neoforge', 'neoforge'),
+                              ('fabric', 'fabric')):
+            config.spoof_client = preset
+            self.assertEqual(config.spoof_brand_value(), brand)
+        config.spoof_client = 'off'
+        self.assertEqual(config.spoof_brand_value(), '')
+        config.spoof_client = 'forge-1.8'
+        config.spoof_brand = 'forge/1.8.8'          # an explicit brand overrides the preset default
+        self.assertEqual(config.spoof_brand_value(), 'forge/1.8.8')
+
+    def test_spoof_client_validation(self):
+        config = Config()
+        config.target = 'play.example.net'
+        self.assertEqual(config.validate(), [])
+        config.spoof_client = 'paper'
+        expected = tr('core.config.spoof_client_invalid',
+                      choices=' / '.join(config_module.SPOOF_CLIENTS))
+        self.assertTrue(any(expected in item for item in config.validate()))
+
+    def test_legacy_vanilla_brand_migrates_to_the_new_default(self):
+        """A pre-1.1.3 config.json has no preset and carried the old literal default
+        "vanilla"; it must fall back to the current no-spoof default instead of
+        sending a brand the user never chose."""
+        config = Config.from_dict({'target': 'a:1', 'spoof_brand': 'vanilla'})
+        self.assertEqual(config.spoof_client, 'off')
+        self.assertEqual(config.spoof_brand, '')
+        self.assertEqual(config.spoof_brand_value(), '')
+        config = Config.from_dict({'target': 'a:1', 'spoof_brand': 'Paper'})
+        self.assertEqual(config.spoof_brand, 'Paper')
+        self.assertEqual(config.spoof_brand_value(), '')
+
+    def test_legacy_forge_default_migrates_to_off(self):
+        """1.1.5.2 changes the default from forge-1.8 to off.  Old files that
+        never chose a custom brand must stop sending Forge fingerprints, while
+        a deliberate preset (config_version 2) and a custom brand survive."""
+        config = Config.from_dict({'target': 'a:1', 'spoof_client': 'forge-1.8',
+                                   'spoof_brand': ''})
+        self.assertEqual(config.spoof_client, 'off')
+        self.assertEqual(config.spoof_brand_value(), '')
+
+        config = Config.from_dict({'target': 'a:1', 'config_version': 2,
+                                   'spoof_client': 'forge-1.8', 'spoof_brand': ''})
+        self.assertEqual(config.spoof_client, 'forge-1.8')
+        self.assertEqual(config.spoof_brand_value(), 'fml,forge')
+
+        config = Config.from_dict({'target': 'a:1', 'spoof_client': 'forge-1.8',
+                                   'spoof_brand': 'forge/1.8.8'})
+        self.assertEqual(config.spoof_client, 'forge-1.8')
+        self.assertEqual(config.spoof_brand_value(), 'forge/1.8.8')
+
+    def test_cli_spoof_client_argument(self):
+        from proxy.cli import apply_arguments, build_parser
+
+        config = apply_arguments(Config(), build_parser().parse_args(['--spoof-client', 'vanilla']))
+        self.assertEqual(config.spoof_client, 'vanilla')
+        self.assertEqual(config.spoof_brand_value(), 'vanilla')
+        config = apply_arguments(Config(), build_parser().parse_args(['--no-spoof-brand']))
+        self.assertEqual(config.spoof_client, 'off')
+        self.assertEqual(config.spoof_brand_value(), '')
+
+    def test_spoof_preset_dropdown_labels_roundtrip(self):
+        """The settings window edits the spoof preset through a dropdown: every
+        label must map back to its code, whichever language is active now."""
+        from proxy import gui_ctk as gui
+        from proxy.i18n import get_language, set_language
+
+        self.addCleanup(set_language, get_language())
+        labels_by_language = {}
+        for code in ('en', 'zh'):
+            set_language(code)
+            labels = [gui.spoof_label(preset) for preset in config_module.SPOOF_CLIENTS]
+            labels_by_language[code] = labels
+            self.assertEqual(len(set(labels)), len(labels), 'duplicate dropdown labels in %s' % code)
+
+        # A language switch can leave the combobox showing the previous
+        # language's label until the form is rebuilt; it must still map back.
+        for active in ('en', 'zh'):
+            set_language(active)
+            for index, preset in enumerate(config_module.SPOOF_CLIENTS):
+                for label_language in ('en', 'zh'):
+                    label = labels_by_language[label_language][index]
+                    self.assertEqual(gui.spoof_code(label), preset,
+                                     '%r -> %s (active %s)' % (label, preset, active))
 
     def test_describe_and_urls(self):
         config = Config()
-        self.assertEqual(config.target, 'mc244.com')
-        self.assertIn('SRV', config.describe_target())      # the default target has no port, so SRV is used
+        self.assertEqual(config.target, '')
+        config.target = 'play.example.net'
+        self.assertIn('SRV', config.describe_target())      # no port, so SRV is used
         config.target = '127.0.0.1:25565'
         self.assertEqual(config.describe_target(), '127.0.0.1:25565')
         self.assertEqual(config.wss_url(), 'wss://127.0.0.1:8443')
         config.wss_port = 0
         config.ws_port = 0
         self.assertIsNone(config.wss_url())
+
+
+# ---------------------------------------------------------------- Web UI auth
+
+
+class WebAuthTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='spb-auth-'))
+        self._original_path = webauth.auth_path
+        webauth.auth_path = lambda: self.tmp / 'web_auth.json'
+        webauth.clear_failures('')
+
+    def tearDown(self):
+        webauth.auth_path = self._original_path
+        webauth.clear_failures('')
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_disabled_by_default(self):
+        self.assertFalse(webauth.is_enabled())
+        self.assertFalse(webauth.has_password())
+        self.assertEqual(webauth.state(), {'enabled': False, 'has_password': False})
+
+    def test_password_is_hashed_and_verified(self):
+        webauth.set_password('hunter22')
+        self.assertTrue(webauth.is_enabled())
+        self.assertTrue(webauth.verify('hunter22'))
+        self.assertFalse(webauth.verify('hunter23'))
+        raw = (self.tmp / 'web_auth.json').read_text(encoding='utf-8')
+        self.assertNotIn('hunter22', raw)
+        webauth.disable()
+        self.assertFalse(webauth.is_enabled())
+        self.assertFalse(webauth.verify('hunter22'))
+
+    def test_login_is_enforced_by_the_server(self):
+        from proxy.web import create_app
+
+        app = create_app()
+        app.testing = True
+        owner = app.test_client()
+        self.assertEqual(owner.get('/api/status').status_code, 200)
+        self.assertEqual(owner.post('/api/auth', json={
+            'enabled': True, 'password': 'abcd1234'}).status_code, 200)
+
+        anonymous = app.test_client()
+        self.assertEqual(anonymous.get('/api/status').status_code, 401)
+        self.assertEqual(anonymous.get('/api/config').status_code, 401)
+        self.assertEqual(anonymous.post('/api/auth', json={
+            'enabled': False}).status_code, 401)
+        page = anonymous.get('/')
+        self.assertEqual(page.status_code, 302)
+        self.assertTrue(page.headers['Location'].startswith('/login'))
+
+        failed = anonymous.post('/login', data={'password': 'wrong'})
+        self.assertIn(tr('web.login_failed'), failed.get_data(as_text=True))
+        self.assertEqual(anonymous.get('/api/status').status_code, 401)
+
+        signed_in = anonymous.post('/login', data={'password': 'abcd1234'})
+        self.assertEqual(signed_in.status_code, 302)
+        self.assertEqual(anonymous.get('/api/status').status_code, 200)
+        self.assertEqual(anonymous.post('/api/logout').status_code, 200)
+        self.assertEqual(anonymous.get('/api/status').status_code, 401)
+
+        self.assertEqual(owner.post('/api/auth', json={'enabled': False}).status_code, 200)
+        self.assertEqual(anonymous.get('/api/status').status_code, 200)
+
+    def test_login_throttling(self):
+        for _ in range(webauth.LOCK_AFTER):
+            webauth.record_failure('203.0.113.9')
+        self.assertGreater(webauth.throttle_remaining('203.0.113.9'), 0)
+        webauth.clear_failures('203.0.113.9')
+        self.assertEqual(webauth.throttle_remaining('203.0.113.9'), 0)
 
 
 # ---------------------------------------------------------------- DNS / SRV
@@ -654,6 +852,20 @@ class ProxyEndToEndTests(unittest.TestCase):
         self.assertIn('wss://127.0.0.1:%d' % self.config.wss_port, self.info['listeners'])
         self.assertTrue(self.info['certificate']['thumbprint'])
 
+    def test_discard_future_result_survives_cancellation(self):
+        """The done callback ProxyServer.stop() attaches retrieves the shutdown result;
+        a future cancelled while its event loop shuts down must not make the callback
+        raise CancelledError (printed as "exception calling callback for <Future ...>").
+        """
+        from proxy.proxy import _discard_future_result
+
+        cancelled = concurrent.futures.Future()
+        cancelled.cancel()
+        _discard_future_result(cancelled)            # must not raise
+        failed = concurrent.futures.Future()
+        failed.set_exception(RuntimeError('shutdown failed'))
+        _discard_future_result(failed)               # retrieved, must not raise
+
     def test_websocket_handshake_over_wss(self):
         client, headers = connect_ws(self.config.wss_port, tls=True, ca_file=self.ca_file,
                                      subprotocol='binary')
@@ -717,7 +929,8 @@ class ProxyEndToEndTests(unittest.TestCase):
             second.close()
 
     def test_status_page(self):
-        # /status is JSON for programs; / is the human-readable status page
+        # /status is JSON for programs; the human-readable page is the Web UI
+        # on its own port, so the game port answers 404 for everything else.
         result = http_get(self.config.ws_port, '/status')
         self.assertIn('200 OK', result['head'])
         data = json.loads(result['body'].decode('utf-8'))
@@ -728,15 +941,8 @@ class ProxyEndToEndTests(unittest.TestCase):
         self.assertEqual(data['target_source'], '127.0.0.1:%d' % self.backend.port)
 
         page = http_get(self.config.ws_port, '/')
-        self.assertIn('200 OK', page['head'])
-        self.assertIn('text/html', page['head'])
-        text = page['body'].decode('utf-8')
-        self.assertIn(tr('proxy.page.address'), text)
-        self.assertIn('127.0.0.1:%d' % self.backend.port, text)
-        # Hard requirement: the status page must never show the old hardcoded
-        # "服务器不在线" ("server is offline") wording; the literal is kept
-        # verbatim in this guard on purpose.
-        self.assertNotIn('服务器不在线', text)
+        self.assertIn('404 Not Found', page['head'])
+        self.assertIn('text/plain', page['head'])
 
     def test_base64_subprotocol_mode(self):
         client, headers = connect_ws(self.config.ws_port, subprotocol='base64')
