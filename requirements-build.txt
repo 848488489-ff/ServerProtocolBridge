@@ -1,0 +1,13 @@
+# Windows EXE build dependencies.
+#
+# Install these in a clean virtual environment, then run:
+#   py -3 -m pip install -r requirements-build.txt
+#   py -3 tools\build.py
+#
+# PyInstaller only produces Windows EXEs here. Linux/macOS users run the
+# source package directly with start.sh; no cross-compiled binaries are shipped.
+
+-r requirements.txt
+
+pyinstaller>=6.0
+pillow>=10

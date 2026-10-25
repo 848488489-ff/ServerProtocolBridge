@@ -1,0 +1,59 @@
+# Windows Version Information Resource for PyInstaller
+# Server Protocol Bridge v1.1.6
+#
+# Fields explained:
+#   FileVersion    - the version of this file
+#   ProductVersion - the version of the product
+#   FileOS         - 0x40004 = VOS_NT_WINDOWS32
+#   FileType       - 0x0000 = VFT_APP
+#
+# Translation codes:
+#   1033 = English (United States)
+#   2052 = Chinese (Simplified)
+#   1200 = Windows Unicode (UTF-16LE)
+
+VS_VERSION_INFO (
+  FixedFileInfo (
+    FileVersion=(1, 1, 6, 0),
+    ProductVersion=(1, 1, 6, 0),
+    FileFlagsMask=0x3f,
+    FileFlags=0x0,
+    FileOS=0x40004,
+    FileType=0x0000,
+    FileSubtype=0x0000
+  ),
+  StringFileInfo (
+    StringTable (
+      u'040904B0',
+      (
+        ('CompanyName', u'无'),
+        ('FileDescription', u'Server Protocol Bridge'),
+        ('FileVersion', u'1.1.6.0'),
+        ('InternalName', u'Server Protocol Bridge'),
+        ('LegalCopyright', u'Public Domain (Unlicense)'),
+        ('OriginalFilename', u'Server Protocol Bridge.exe'),
+        ('ProductName', u'Server Protocol Bridge'),
+        ('ProductVersion', u'1.1.6.0'),
+        ('Translation', [1033, 1200]),
+      )
+    ),
+    StringTable (
+      u'080404B0',
+      (
+        ('CompanyName', u'无'),
+        ('FileDescription', u'服务器协议转换'),
+        ('FileVersion', u'1.1.6.0'),
+        ('InternalName', u'Server Protocol Bridge'),
+        ('LegalCopyright', u'公有领域 (Unlicense)'),
+        ('OriginalFilename', u'Server Protocol Bridge.exe'),
+        ('ProductName', u'服务器协议转换'),
+        ('ProductVersion', u'1.1.6.0'),
+        ('Translation', [2052, 1200]),
+      )
+    ),
+  ),
+  VarFileInfo (
+    VarTranslation ([1033, 1200]),
+    VarTranslation ([2052, 1200]),
+  )
+)

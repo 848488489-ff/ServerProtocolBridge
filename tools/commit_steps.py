@@ -1,6 +1,6 @@
 """Step-by-step commit script: one commit per module, so the history is easy to trace.
 
-    py -3.14 tools\\commit_steps.py
+    py tools\\commit_steps.py
 """
 
 from __future__ import annotations
@@ -16,10 +16,10 @@ STEPS = [
     ('feat: implement SRV lookup and target server reachability probe', ['proxy/resolver.py']),
     ('feat: implement config load/save, address parsing and validation', ['proxy/config.py']),
     ('feat: implement the WebSocket-to-TCP forwarding core', ['proxy/proxy.py']),
-    ('feat: implement the tkinter GUI', ['proxy/gui.py']),
+    ('feat: implement the CustomTkinter GUI', ['proxy/gui_ctk.py']),
     ('feat: implement CLI mode and the program entry point', ['proxy/cli.py', 'main.py']),
     ('test: add self-tests (certificate handshake / frame codec / end-to-end relay)', ['tests/test_all.py']),
-    ('build: add PyInstaller + UPX + MPRESS packaging scripts', ['tools/build.py', 'tools/build.bat', 'start.bat']),
+    ('build: add single-file PyInstaller packaging scripts', ['tools/build.py', 'tools/build.bat', 'start.bat']),
     ('docs: write README, config example and dependency notes', ['README.md', 'config.example.json', 'requirements.txt']),
 ]
 
