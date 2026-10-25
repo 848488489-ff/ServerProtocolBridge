@@ -56,10 +56,16 @@ ERROR_WRONG_PACKET = 0x03
 ERROR_CUSTOM_MESSAGE = 0x08
 ERROR_AUTHENTICATION_REQUIRED = 0x09
 
-# We implement handshake protocols v2..v5; a client picks the highest one in its list
+# We implement handshake protocols v2..v5; a client picks the highest one in its
+# list.  A client that only lists newer revisions is answered with our newest
+# dialect instead of being turned away
 SUPPORTED_HANDSHAKE_PROTOCOLS = (2, 3, 4, 5)
-# Browser clients only speak 1.8, so this is the only protocol version supported
-SUPPORTED_MC_PROTOCOLS = (47,)
+# The game protocol is not filtered: whichever version the client picked is
+# forwarded to the target server untouched.  This is only the number used
+# before a version has been negotiated and the (purely informative) range the
+# ancient v1 handshake gets in its "outdated client" notice
+DEFAULT_MC_PROTOCOL = 47
+MC_PROTOCOL_RANGE = (47, 999)
 
 MARKER_CLASSIC = 0x01        # First byte: EaglercraftX 1.8
 MARKER_MODERN = 0x02         # Second byte: v2..v5 handshake
@@ -112,6 +118,25 @@ def _truncate_utf8(text: str, limit: int) -> str:
     return encoded[:limit].decode('utf-8', 'ignore')
 
 
+def _unwrap_json_strings(value, depth: int = 0):
+    """Decode a JSON value, following string-wrapped JSON (max 8 levels).
+
+    Some servers/proxies serialize an already-serialized chat component, so
+    the first ``json.loads`` returns a string containing the real object.
+    Keeping that string would make the client display a wall of JSON.
+    """
+    if depth >= 8 or not isinstance(value, str):
+        return value
+    value = value.strip().lstrip('\ufeff')
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return value
+    if isinstance(parsed, str) and parsed != value:
+        return _unwrap_json_strings(parsed, depth + 1)
+    return parsed
+
+
 def as_chat_json(raw: str, fallback: str = 'Kicked') -> str:
     """Turn a piece of text into chat-component JSON the client can parse.
 
@@ -119,15 +144,15 @@ def as_chat_json(raw: str, fallback: str = 'Kicked') -> str:
     packets as JSON (IChatComponent.Serializer.jsonToComponent); sending plain
     text makes it throw and show nothing but "Invalid packet received", wasting
     the kick reason the server gave. Kick reasons coming from vanilla servers
-    are already valid JSON and pass through unchanged.
+    are already valid JSON and pass through unchanged. Nested JSON strings are
+    unwrapped, because a double-encoded reason is otherwise shown verbatim.
     """
     text = (raw or '').strip() or fallback
-    try:
-        parsed = json.loads(text)
-    except ValueError:
-        return json.dumps({'text': text}, ensure_ascii=False)
+    parsed = _unwrap_json_strings(text)
     if isinstance(parsed, (dict, list)):
-        return text
+        return json.dumps(parsed, ensure_ascii=False)
+    if isinstance(parsed, str):
+        return json.dumps({'text': parsed}, ensure_ascii=False)
     return json.dumps({'text': text}, ensure_ascii=False)
 
 
@@ -166,16 +191,19 @@ class ClientVersion:
 
 
 def _looks_like_modern_marker(data: bytes) -> bool:
+    # data[1] is the handshake packet revision: 1 = v1, 2 = v2..v5; anything
+    # newer is still parsed as the v2 layout (take what we know)
     return (len(data) >= 8 and data[0] == MARKER_CLASSIC
-            and data[1] in (MARKER_MODERN, MARKER_LEGACY))
+            and data[1] >= MARKER_LEGACY)
 
 
 def parse_client_version(data: bytes) -> ClientVersion | None:
     """Parse the client's first packet; return None for formats we do not know
     (such traffic is forwarded as-is).
 
-    The protocol contract is strict: the frame must be consumed exactly, and a
-    single extra byte makes it invalid.
+    Parsing is deliberately lenient: a client newer than this proxy must still
+    be able to connect, so the fields that are understood are read and any
+    extra bytes after them (a newer revision's additions) are ignored.
     """
     if not _looks_like_modern_marker(data):
         return None
@@ -217,22 +245,29 @@ def parse_client_version(data: bytes) -> ClientVersion | None:
                 raise HandshakeError(tr('eagler.error.auth_username_out_of_range'))
             version.auth_username = data[pos:pos + length]
             pos += length
-        if pos != len(data):
-            raise HandshakeError(tr('eagler.error.trailing_bytes',
-                                    count=len(data) - pos))
+        # Anything after the fields we know is a newer revision's addition and
+        # is ignored on purpose (see above)
     except HandshakeError:
         return None
     return version
 
 
 def select_protocols(client: ClientVersion) -> tuple[int, int] | None:
-    """Pick the highest handshake and MC protocol versions both sides support."""
-    handshake = [item for item in client.handshake_protocols
-                 if item in SUPPORTED_HANDSHAKE_PROTOCOLS]
-    mc = [item for item in client.mc_protocols if item in SUPPORTED_MC_PROTOCOLS]
-    if not handshake or not mc:
+    """Pick the handshake dialect and the game protocol for this connection.
+
+    The game protocol is always the client's own choice (the highest number in
+    its list): the relay forwards it untouched and leaves cross-version
+    handling to the target server.  For the handshake dialect, the newest one
+    both sides know is used; a client that only lists newer revisions still
+    gets our newest dialect instead of a rejection.  None means there is no
+    version list at all -- the 2022-era v1 handshake.
+    """
+    if not client.handshake_protocols or not client.mc_protocols:
         return None
-    return max(handshake), max(mc)
+    known = [item for item in client.handshake_protocols
+             if item in SUPPORTED_HANDSHAKE_PROTOCOLS]
+    handshake = max(known) if known else max(SUPPORTED_HANDSHAKE_PROTOCOLS)
+    return handshake, max(client.mc_protocols)
 
 
 # ---------- Server replies ----------
@@ -284,15 +319,21 @@ def pack_allow_login(username: str, uuid_bytes: bytes, handshake_protocol: int,
     return bytes(out)
 
 
-def pack_deny_login(message: str, handshake_protocol: int) -> bytes:
+def pack_deny_login(message: str, handshake_protocol: int,
+                    chat_json: bool = True) -> bytes:
     """Deny login packet (0x06).
 
-    From v3 on the length field is a u16 and the client parses the body as JSON
-    (IChatComponent); below v3 the length is a u8 and the body is plain text.
+    From v3 on the length field is a u16.  Clients of the EaglercraftX family
+    parse the body as a chat component (IChatComponent / jsonToComponent) and
+    need JSON, so that is the default; other browser clients (Gaius, ...)
+    display whatever arrives verbatim, and ``chat_json=False`` sends the plain
+    text instead so the player sees the reason rather than a raw JSON blob.
+    Below v3 the length is a u8 and the body is plain text either way.
     """
     out = bytearray([PROTOCOL_SERVER_DENY_LOGIN])
     if handshake_protocol >= 3:
-        encoded = _truncate_utf8(as_chat_json(message), 65535).encode('utf-8')
+        body = as_chat_json(message) if chat_json else message
+        encoded = _truncate_utf8(body, 65535).encode('utf-8')
         out += _as_u16(len(encoded))
     else:
         encoded = _truncate_utf8(message, 255).encode('utf-8')
@@ -301,18 +342,21 @@ def pack_deny_login(message: str, handshake_protocol: int) -> bytes:
     return bytes(out)
 
 
-def pack_error(code: int, message: str, handshake_protocol: int) -> bytes:
+def pack_error(code: int, message: str, handshake_protocol: int,
+               chat_json: bool = True) -> bytes:
     """Error packet (0xFF).
 
     From v3 on the length field is a u16 (the client reads a u16), and the body
     of ERROR_CUSTOM_MESSAGE is parsed by jsonToComponent, so custom messages
     must be JSON; the client concatenates other error codes as plain text, which
     is therefore kept as-is. Below v3 the length is a u8 and the body is always
-    plain text.
+    plain text.  ``chat_json=False`` is for clients that show packet bodies
+    verbatim (see pack_deny_login); they get the custom message as plain text.
     """
     out = bytearray([PROTOCOL_SERVER_ERROR, code & 0xFF])
     if handshake_protocol >= 3:
-        body = as_chat_json(message) if code == ERROR_CUSTOM_MESSAGE else message
+        body = (as_chat_json(message)
+                if code == ERROR_CUSTOM_MESSAGE and chat_json else message)
         encoded = _truncate_utf8(body, 65535).encode('utf-8')
         out += _as_u16(len(encoded))
     else:

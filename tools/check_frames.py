@@ -1,8 +1,8 @@
 """Read proxy return data the way a real EaglercraftX client does, to verify "one frame = one vanilla packet".
 
 Usage:
-    py -3.14 -X utf8 tools\\check_frames.py
-    py -3.14 -X utf8 tools\\check_frames.py --url wss://127.0.0.1:1000 --seconds 20
+    py -X utf8 tools\\check_frames.py
+    py -X utf8 tools\\check_frames.py --url wss://127.0.0.1:1000 --seconds 20
 
 Why this tool exists: when the browser-side client reads WebSocket frames it takes the **first
 byte of the frame as the packet id directly** -- frames carry neither the vanilla [VarInt packet

@@ -33,19 +33,18 @@ class LanguageTests(unittest.TestCase):
     def test_default_language_is_english(self):
         i18n.set_language('')
         self.assertEqual(i18n.get_language(), 'en')
-        self.assertEqual(i18n.tr('proxy.query.target', address='a:1'),
-                         'Current server address: a:1')
+        self.assertEqual(i18n.tr('proxy.query.no_motd'),
+                         'The server did not return any MOTD information')
 
     def test_switch_to_chinese_and_back(self):
         self.assertEqual(i18n.set_language('zh'), 'zh')
         self.assertEqual(i18n.get_language(), 'zh')
-        self.assertEqual(i18n.tr('proxy.query.target', address='a:1'),
-                         '当前服务器地址: a:1')
+        self.assertEqual(i18n.tr('proxy.query.no_motd'), '服务器未返回MOTD信息')
         self.assertEqual(i18n.tr('translator.prefix'), '[协议转换器] ')
 
         i18n.set_language('en')
-        self.assertEqual(i18n.tr('proxy.query.target', address='a:1'),
-                         'Current server address: a:1')
+        self.assertEqual(i18n.tr('proxy.query.no_motd'),
+                         'The server did not return any MOTD information')
         self.assertEqual(i18n.tr('translator.prefix'), '[Protocol Adapter] ')
 
     def test_unknown_language_falls_back_to_default(self):
@@ -58,7 +57,7 @@ class LanguageTests(unittest.TestCase):
     def test_broken_template_does_not_crash(self):
         # Call sites must be able to format safely even if a value is missing.
         i18n.set_language('zh')
-        self.assertIn('%', i18n.tr('proxy.query.target'))
+        self.assertIn('%', i18n.tr('translator.log.protocols_selected'))
 
     def test_language_label_round_trip(self):
         for code in i18n.LANGUAGES:
@@ -75,6 +74,7 @@ class LanguageTests(unittest.TestCase):
 
     def test_config_carries_the_language(self):
         config = Config()
+        config.target = 'play.example.net'
         self.assertEqual(config.language, 'en')
         self.assertEqual(config.validate(), [])
         self.assertEqual(Config.from_dict({'language': 'zh'}).language, 'zh')
@@ -91,12 +91,23 @@ class LanguageTests(unittest.TestCase):
         config = apply_arguments(Config(), args)
         self.assertEqual(config.language, 'zh')
 
+    def test_code_retry_copy_does_not_claim_a_previous_attempt(self):
+        # The retry may happen on the very first code (for example after an SSL
+        # retry), so the text must describe Microsoft rejecting *this* code,
+        # not a previous one.
+        for code in ('en', 'zh'):
+            i18n.set_language(code)
+            text = i18n.tr('gui.accounts.ms.renewing').lower()
+            self.assertNotIn('previous', text)
+            self.assertNotIn('上一个', text)
+            self.assertTrue(i18n.tr('gui.accounts.ms.retrying_ssl'))
+
     def test_player_facing_messages_follow_the_language(self):
         """Protocol-layer text (here: a proxy error sent as 0xFF) is localised too."""
         i18n.set_language('zh')
         sent: list = []
         translator = EaglerTranslator(
-            target_host='mc244.com', target_port=25565, log=NullLogger(), tag='#1',
+            target_host='play.example.net', target_port=25565, log=NullLogger(), tag='#1',
             send_client=sent.append, send_backend=[].append, request_close=[].append)
         translator.feed_client(REAL_FIRST_PACKET)
         translator.feed_client(build_request_login(username='Tester'))

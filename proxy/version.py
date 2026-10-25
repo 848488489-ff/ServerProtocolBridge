@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from .i18n import tr
 
-# Internal identity of the program: used as the EXE name, the FastAPI title and
-# in other machine-facing places, so it is always English and never translated.
+# Internal identity of the program: used as the EXE name, the status page,
+# the WebSocket Server header and other machine-facing places, so it is always
+# English and never translated.
 APP_NAME = 'Server Protocol Bridge'
-VERSION = '1.0.0'
+VERSION = '1.1.6'
 
 # Service identifier that shows up in the status page / handshake
 SERVICE_NAME = 'server-protocol-bridge'

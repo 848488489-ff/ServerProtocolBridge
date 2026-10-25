@@ -18,6 +18,8 @@ EN = {
     'translator.denied_login': 'Target server refused login: %(reason)s',
     'translator.empty_content': '(empty)',
     'translator.kick_fallback': 'Kicked',
+    'translator.error.account_join_failed': 'Could not register the account session '
+                                            'join: %(error)s',
     'translator.error.aes_missing': 'The target server requires an encrypted handshake, '
                                     'but this machine has no usable AES library, so the '
                                     'proxy cannot stand in for the client \u2014 install '
@@ -34,12 +36,14 @@ EN = {
     'translator.error.login_request_parse_failed': 'Failed to parse the login request: %(error)s',
     'translator.error.login_success_parse_failed': "Could not parse the target server's login-success packet",
     'translator.error.unexpected_handshake_packet': 'Unexpected handshake packet 0x%(packet_id)02x',
-    'translator.error.unrecognized_client_version': "The client's first packet is not a recognized EaglercraftX handshake",
-    'translator.error.unsupported_mc_protocol': 'This proxy only supports Minecraft 1.8.8 (protocol 47); the client offered %(protocols)s',
+    'translator.error.unrecognized_client_version': "The client's first packet is not a recognized WebSocket client handshake",
 
     # --- Log lines (the connection tag is prepended at the call site) ---
     'translator.direction.downstream': 'downstream',
     'translator.direction.upstream': 'upstream',
+    'translator.log.account_joined': 'registered the account session join with the session service: %(label)s',
+    'translator.log.account_selected': 'using the selected account: %(label)s (UUID %(uuid)s)',
+
     'translator.log.backend_disconnect': 'target server closed the connection: %(reason)s',
     'translator.log.backend_login_ok': 'target server login succeeded: %(username)s (UUID %(uuid)s); the client has been told it may log in',
     'translator.log.brand_spoofed': 'declared client brand %(brand)r to the target server (client identification spoof)',
@@ -49,17 +53,24 @@ EN = {
     'translator.log.drop_client_brand': "dropping the client's own MC|Brand (spoofed as %(brand)r)",
     'translator.log.drop_injected_frame': 'dropping client injected-message frame, %(size)d bytes',
     'translator.log.drop_plugin_message': 'dropping client extension plugin message: channel %(channel)s',
+    'translator.log.drop_resource_pack': 'dropping resource pack prompt from the server',
     'translator.log.empty_username_fallback': 'login request carries no name; using the name from the client handshake packet %(name)r',
     'translator.log.encryption_done': 'completed the encrypted handshake on behalf of the client (server ID %(server_id)r, shared secret %(secret)s..., using %(backend)s); all traffic is now AES-128-CFB8',
     'translator.log.first_packet': '%(direction)s first-seen packet %(name)s (id 0x%(packet_id)02x)',
     'translator.log.flush_pending': 'sending the %(count)d game packets buffered during the handshake (%(size)d bytes) to the client',
+    'translator.log.forge_channels': 'declared the Forge channel list (REGISTER %(channels)s) after login (Forge spoof)',
+    'translator.log.forge_marker': 'attached the FML handshake marker to the upstream handshake (Forge spoof)',
     'translator.log.ignore_profile_data': 'ignoring client profile data (skins etc.), %(size)d bytes',
+    'translator.log.cookie_discarded': 'discarding %(size)d bytes of client login cookie',
     'translator.log.login_request': 'client login request: %(detail)s',
     'translator.log.protocols_selected': 'selected handshake protocol v%(handshake)d / MC protocol %(mc)d; waiting for the client login request',
     'translator.log.translation_done': 'protocol translation complete; passing game data through',
     'translator.log.unexpected_login_packet': 'unexpected packet %(packet)s during the login phase',
     'translator.log.username_sanitized': 'client username %(raw)r does not meet server requirements; using %(clean)r instead',
     'translator.log.vanilla_login_sent': 'sent vanilla login to the target server (username %(username)s, protocol %(protocol)d)',
+    'translator.log.resource_pack_prompt': 'resource pack prompt from server; mode=%(mode)s',
+    'translator.log.client_status_sent': 'sent client status %(status)d to the server',
+    'translator.log.unknown_resource_pack_mode': 'unknown resource pack mode %(mode)s; falling back to forward',
 
     # --- eagler.py: handshake parsing / descriptions ---
     'eagler.describe.auth_disabled': 'disabled',
@@ -109,6 +120,7 @@ ZH = {
     'translator.denied_login': '目标服务器拒绝登录: %(reason)s',
     'translator.empty_content': '(无内容)',
     'translator.kick_fallback': '被踢出',
+    'translator.error.account_join_failed': '账号会话加入失败: %(error)s',
     'translator.error.aes_missing': '目标服务器要求加密握手, 但本机没有可用的 AES 库, 代不了 —— '
                                     '请安装 cryptography (pip install cryptography), 或换离线模式服务器',
     'translator.error.backend_parse_failed': '解析目标服务器数据失败: %(error)s',
@@ -122,12 +134,14 @@ ZH = {
     'translator.error.login_request_parse_failed': '登录请求解析失败: %(error)s',
     'translator.error.login_success_parse_failed': '无法解析目标服务器的登录成功包',
     'translator.error.unexpected_handshake_packet': '意料之外的握手包 0x%(packet_id)02x',
-    'translator.error.unrecognized_client_version': '客户端首个数据包不是认识的 EaglercraftX 握手',
-    'translator.error.unsupported_mc_protocol': '本代理只支持 Minecraft 1.8.8 (协议 47), 客户端提供的是 %(protocols)s',
+    'translator.error.unrecognized_client_version': '客户端首个数据包不是认识的 WebSocket 客户端握手',
 
     # --- 日志文案(调用处会在前面拼上连接标识) ---
     'translator.direction.downstream': '下行',
     'translator.direction.upstream': '上行',
+    'translator.log.account_joined': '已向会话服务注册账号加入 (session join): %(label)s',
+    'translator.log.account_selected': '使用所选账号: %(label)s (UUID %(uuid)s)',
+
     'translator.log.backend_disconnect': '目标服务器断开连接: %(reason)s',
     'translator.log.backend_login_ok': '目标服务器登录成功: %(username)s (UUID %(uuid)s), 已通知客户端允许登录',
     'translator.log.brand_spoofed': '已向目标服务器声明客户端品牌 %(brand)r (客户端标识伪装)',
@@ -137,17 +151,24 @@ ZH = {
     'translator.log.drop_client_brand': '丢弃客户端自带的 MC|Brand (已伪装成 %(brand)r)',
     'translator.log.drop_injected_frame': '丢弃客户端注入消息帧 %(size)d 字节',
     'translator.log.drop_plugin_message': '丢弃客户端扩展插件消息: 通道 %(channel)s',
+    'translator.log.drop_resource_pack': '丢弃服务器发来的资源包提示',
     'translator.log.empty_username_fallback': '登录请求里没带名字, 改用客户端握手包里的名字 %(name)r',
     'translator.log.encryption_done': '已代做加密握手 (服务器 ID %(server_id)r, 共享密钥 %(secret)s..., 用 %(backend)s), 之后全程 AES-128-CFB8',
     'translator.log.first_packet': '%(direction)s首见包 %(name)s (id 0x%(packet_id)02x)',
     'translator.log.flush_pending': '把握手期间缓存的 %(count)d 个游戏包(共 %(size)d 字节)发给客户端',
+    'translator.log.forge_channels': '登录后声明了 Forge 通道列表 (REGISTER %(channels)s) (伪装 Forge)',
+    'translator.log.forge_marker': '已在上行握手地址附加 FML 标记 (伪装 Forge)',
     'translator.log.ignore_profile_data': '忽略客户端资料数据(皮肤等) %(size)d 字节',
+    'translator.log.cookie_discarded': '丢弃客户端登录 cookie %(size)d 字节',
     'translator.log.login_request': '客户端请求登录: %(detail)s',
     'translator.log.protocols_selected': '已选择握手协议 v%(handshake)d / 游戏协议 %(mc)d, 等待客户端登录请求',
     'translator.log.translation_done': '协议翻译完成, 进入游戏数据直通',
     'translator.log.unexpected_login_packet': '登录阶段收到意外包 %(packet)s',
     'translator.log.username_sanitized': '客户端用户名 %(raw)r 不符合服务器要求, 已改用 %(clean)r',
     'translator.log.vanilla_login_sent': '已向目标服务器发送原版登录 (用户名 %(username)s, 协议 %(protocol)d)',
+    'translator.log.resource_pack_prompt': '收到服务器资源包提示; 模式=%(mode)s',
+    'translator.log.client_status_sent': '已向服务器发送客户端状态 %(status)d',
+    'translator.log.unknown_resource_pack_mode': '未知资源包模式 %(mode)s; 回退到转发',
 
     # --- eagler.py: 握手解析 / 描述文本 ---
     'eagler.describe.auth_disabled': '否',

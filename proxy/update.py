@@ -3,14 +3,23 @@
 The program asks a small HTTPS endpoint for the latest published version and
 compares it with the version that is running:
 
-    GET https://<endpoint>/     ->  {"version": "1.1",
-                                     "download_page": "https://.../download"}
+    GET https://<endpoint>/     ->  {"version": "1.1.5",
+                                     "download_url": "https://.../setup.exe",
+                                     "source_url": "https://.../source.zip",
+                                     "min_version": "1.1.0",
+                                     "force_update": false,
+                                     "release_date": "2026-10-19",
+                                     "changelog": "...",
+                                     "sha256": "...",
+                                     "file_size": 28665610}
 
-Only the known fields are read (``version`` plus the optional download page and
-release notes); anything else in the document is ignored, and every optional
-field may be missing -- the endpoint can grow new fields or drop them without
-breaking older builds.  The link is opened in the browser and never fetched by
-this program itself.
+Only the known fields are read -- ``version``, the optional download and source
+links, release notes, and the update policy fields (``min_version``, which is
+the oldest build still supported, and ``force_update``, which marks this single
+release as mandatory).  Anything else in the document is ignored, and every
+optional field may be missing or hold junk, so the endpoint can grow new fields
+or drop them without breaking older builds.  The links are opened in the browser
+and never fetched by this program itself.
 
 Nothing is sent besides the request itself, there is no caching and no retry
 loop: one plain GET with a timeout.
@@ -23,17 +32,22 @@ import re
 import threading
 import urllib.error
 import urllib.request
+from urllib.parse import urljoin
 
-from .i18n import tr
+from .i18n import get_language, tr
 from .version import VERSION
 
 # Public endpoint that announces the newest release: a plain static file on
 # Cloudflare Pages (see the "云端版本检查" section of the README for the
 # expected document).  *.pages.dev is reachable from mainland China, unlike
-# *.workers.dev, which is DNS-poisoned there.  Several URLs may be listed,
-# separated by commas, and are tried in order (see check()), so a mirror that
-# works on the local network can be put in front of this one.
-PAGES_UPDATE_URL = 'https://banbengengxinjiancha.pages.dev/version.json'
+# *.workers.dev, which is DNS-poisoned there.
+#
+# This address is compiled into the program and is not a setting: it is never
+# read from config.json, and no window or command-line option edits it, so an
+# installed copy always asks the official endpoint.  Listing several URLs here
+# (comma separated, tried in order -- see check()) is a decision made when the
+# program is built, not something a user can influence.
+PAGES_UPDATE_URL = 'https://banbengengxinjiancha.pages.dev/api/version.json'
 DEFAULT_UPDATE_URL = PAGES_UPDATE_URL
 
 # The endpoint may sit on the other side of the planet, so give it room: the
@@ -45,13 +59,27 @@ MAX_ANSWER_BYTES = 64 * 1024
 # Known fields, with the spellings a hand-written endpoint is likely to use
 VERSION_KEYS = ('version', 'latest', 'latest_version', 'tag_name', 'name')
 PAGE_KEYS = ('download_page', 'page_url', 'download_url', 'page', 'url', 'html_url', 'download')
+SOURCE_KEYS = ('source_url', 'source_download', 'source_code', 'source_archive', 'source')
 NOTES_KEYS = ('notes', 'changelog', 'body', 'message', 'description')
+# A release note may be published once per language.  The check picks the one
+# that matches the interface and otherwise keeps the plain field (which is the
+# original, Chinese-only spelling).
+NOTES_EN_KEYS = ('changelog_en', 'notes_en', 'changelog_english', 'description_en')
+NOTES_ZH_KEYS = ('changelog_zh', 'notes_zh', 'changelog_chinese', 'description_zh')
+MIN_VERSION_KEYS = ('min_version', 'minimum_version', 'min_supported')
+FORCE_KEYS = ('force_update', 'force', 'required', 'mandatory')
+DATE_KEYS = ('release_date', 'date', 'published', 'published_at', 'released')
+SHA_KEYS = ('sha256', 'sha', 'checksum', 'digest')
+SIZE_KEYS = ('file_size', 'size', 'bytes', 'length')
 
 # Request identity: the public endpoint may gate on it, so it always mentions
 # "wss-proxy" (and still names the program, so server logs stay readable).
 USER_AGENT = 'wss-proxy (ServerProtocolBridge/%s)' % VERSION
 
 VERSION_TOKEN = re.compile(r'v?(\d+(?:\.\d+)*)')
+# A usable checksum is a full 64-character hexadecimal SHA256 digest; anything
+# shorter or with other characters is treated as "not published".
+SHA256_TOKEN = re.compile(r'[0-9a-f]{64}')
 
 
 class UpdateError(Exception):
@@ -89,6 +117,82 @@ def _first_string(payload: dict, keys) -> str:
     return ''
 
 
+def _localized_notes(payload: dict, fallback: str) -> str:
+    """The changelog in the language of the interface, else the plain field."""
+    keys = NOTES_ZH_KEYS if get_language() == 'zh' else NOTES_EN_KEYS
+    return _first_string(payload, keys) or fallback
+
+
+def _clean_url(value: str, base_url: str = '') -> str:
+    """Keep only an http(s) URL; resolve a same-site relative path against the
+    endpoint that published it.
+
+    The value ends up in the user's browser, so a malformed field or a
+    ``javascript:`` / ``file:`` scheme must not be passed through.  A plain
+    ``/downloads/build.zip`` is useful when the release and its downloads live on
+    the same static host; it is resolved into an absolute URL and never sent to
+    the browser still relative.
+    """
+    text = value.strip()
+    if re.fullmatch(r'https?://\S+', text, re.IGNORECASE):
+        return text
+    if text.startswith('/') and not text.startswith('//') and '\\' not in text \
+            and ':' not in text and re.fullmatch(r'[^\s"<>]+', text):
+        if base_url.startswith(('http://', 'https://')):
+            try:
+                resolved = urljoin(base_url, text)
+            except ValueError:
+                resolved = ''
+            if resolved.startswith(('http://', 'https://')):
+                return resolved
+    return ''
+
+
+def _first_bool(payload: dict, keys) -> bool:
+    """First flag among *keys*, accepting JSON booleans, numbers and words.
+
+    A site written by hand may publish ``"force_update": "true"`` or ``1``
+    instead of a real boolean, so the usual spellings count.  Junk means false:
+    a check must never force an update because of a typo.
+    """
+    for key in keys:
+        if key not in payload:
+            continue
+        value = payload[key]
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            return value.strip().lower() in ('true', 'yes', 'on', '1', 'required')
+        return False
+    return False
+
+
+def _first_int(payload: dict, keys) -> int:
+    """First non-negative whole number among *keys*; strings must be plain digits."""
+    for key in keys:
+        if key not in payload:
+            continue
+        value = payload[key]
+        if isinstance(value, bool):
+            return 0
+        if isinstance(value, int):
+            return max(0, value)
+        if isinstance(value, float):
+            return max(0, int(value))
+        if isinstance(value, str) and value.strip().replace(',', '').isdigit():
+            return int(value.strip().replace(',', ''))
+        return 0
+    return 0
+
+
+def _clean_digest(value: str) -> str:
+    """Keep a full SHA256 digest (lower case); '' when it does not look like one."""
+    text = value.strip().lower()
+    return text if SHA256_TOKEN.fullmatch(text) else ''
+
+
 def split_urls(text) -> list[str]:
     """Split a configured endpoint list (commas, spaces or newlines separate).
 
@@ -106,8 +210,11 @@ def split_urls(text) -> list[str]:
 def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
     """Fetch and parse the endpoint.
 
-    Returns ``{'version': str, 'page': str, 'notes': str}``; the optional
-    entries are empty strings when the endpoint does not send them.
+    Returns the release document as a dictionary with ``version``, ``page``,
+    ``source``, ``notes`` and the policy fields ``min_version``,
+    ``force_update``, ``release_date``, ``sha256`` and ``file_size``.  Optional
+    entries fall back to ``''`` / ``0`` / ``False`` when the endpoint does not
+    send them.
     """
     request = urllib.request.Request(
         url, headers={'User-Agent': USER_AGENT,
@@ -128,7 +235,9 @@ def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
     if not text:
         raise UpdateError(tr('update.error.empty', url=url))
 
-    version, page, notes = '', '', ''
+    version, page, source, notes = '', '', '', ''
+    min_version, release_date, digest, file_size = '', '', '', 0
+    force_update = False
     try:
         payload = json.loads(text)
     except ValueError:
@@ -136,7 +245,13 @@ def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
     if isinstance(payload, dict):
         version = _first_string(payload, VERSION_KEYS)
         page = _first_string(payload, PAGE_KEYS)
-        notes = _first_string(payload, NOTES_KEYS)
+        source = _clean_url(_first_string(payload, SOURCE_KEYS), base_url=url)
+        notes = _localized_notes(payload, _first_string(payload, NOTES_KEYS))
+        min_version = _first_string(payload, MIN_VERSION_KEYS)
+        release_date = _first_string(payload, DATE_KEYS)
+        digest = _clean_digest(_first_string(payload, SHA_KEYS))
+        file_size = _first_int(payload, SIZE_KEYS)
+        force_update = _first_bool(payload, FORCE_KEYS)
     else:
         # Plain text (e.g. a file holding nothing but "1.1")
         version = text.splitlines()[0].strip()
@@ -144,7 +259,36 @@ def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
     if not version:
         raise UpdateError(tr('update.error.no_version', url=url))
     parse_version(version)                     # reject junk right away
-    return {'version': version, 'page': page, 'notes': notes}
+    if min_version:
+        try:
+            parse_version(min_version)
+        except UpdateError:
+            min_version = ''                   # a broken floor must not block updates
+    return {'version': version, 'page': page, 'source': source, 'notes': notes,
+            'min_version': min_version, 'force_update': force_update,
+            'release_date': release_date, 'sha256': digest,
+            'file_size': file_size}
+
+
+def _must_update(latest: dict, current: str) -> bool:
+    """Decide whether the running build has to be replaced.
+
+    The site has two independent ways to insist: ``force_update`` for this one
+    release, and ``min_version`` -- the oldest build that is still supported, so
+    anything older than that must update no matter what the release says.  A
+    failed comparison is not an order to update.
+    """
+    if not latest.get('newer'):
+        return False
+    if latest.get('force_update'):
+        return True
+    minimum = latest.get('min_version') or ''
+    if not minimum:
+        return False
+    try:
+        return is_newer(minimum, current)
+    except UpdateError:
+        return False
 
 
 def check(urls: str = DEFAULT_UPDATE_URL, current: str = VERSION,
@@ -155,10 +299,12 @@ def check(urls: str = DEFAULT_UPDATE_URL, current: str = VERSION,
     are tried in order and the first one that answers wins, so a mirror that is
     reachable locally can be put in front of a host that is blocked there.
 
-    Returns ``{'version', 'page', 'notes', 'current', 'newer', 'url'}``, where
-    ``url`` is the endpoint that answered.  Raises UpdateError when none of them
-    can be reached or understood -- callers decide how loud to be about that (a
-    failed check is not an error of the program itself).
+    Returns the release dictionary from :func:`fetch_latest` plus ``current``,
+    ``newer`` (is the published version later than the running one), ``url``
+    (the endpoint that answered) and ``must_update`` (the published policy says
+    this build is no longer acceptable).  Raises UpdateError when none of the
+    endpoints can be reached or understood -- callers decide how loud to be
+    about that (a failed check is not an error of the program itself).
     """
     candidates = split_urls(urls)
     if not candidates:
@@ -173,6 +319,7 @@ def check(urls: str = DEFAULT_UPDATE_URL, current: str = VERSION,
         latest['url'] = url
         latest['current'] = current
         latest['newer'] = is_newer(latest['version'], current)
+        latest['must_update'] = _must_update(latest, current)
         return latest
     if len(candidates) == 1:
         raise last_error
@@ -184,8 +331,10 @@ def check_async(url: str = DEFAULT_UPDATE_URL, current: str = VERSION, timeout: 
     """Run :func:`check` in a daemon thread and hand the outcome to *callback*.
 
     The callback receives either the result dictionary or the UpdateError, so a
-    failing check can never take the program down with it.  Returns the thread
-    (already started), mostly so tests can join it.
+    failing check can never take the program down with it.  Call sites pass it
+    as ``callback=...``: handed over as the *timeout*, the check ran and nobody
+    was ever told about the answer.  Returns the thread (already started),
+    mostly so tests can join it.
     """
     def worker() -> None:
         try:

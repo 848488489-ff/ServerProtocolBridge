@@ -38,13 +38,40 @@ LOGIN_ENCRYPTION_REQUEST = 0x01
 LOGIN_ENCRYPTION_RESPONSE = 0x01
 LOGIN_SUCCESS = 0x02
 LOGIN_SET_COMPRESSION = 0x03
+# The ids below only exist since 1.13 / 1.20.5; answering them keeps a login
+# from stalling on modded or forwarding-server targets (an answer is expected
+# either way)
+LOGIN_PLUGIN_REQUEST = 0x04     # clientbound (1.13+)
+LOGIN_PLUGIN_RESPONSE = 0x02    # serverbound (1.13+)
+LOGIN_COOKIE_REQUEST = 0x05     # clientbound (1.20.5+)
+LOGIN_COOKIE_RESPONSE = 0x04    # serverbound (1.20.5+)
+
+# 1.20.2 split login and play with a "configuration" phase: the server stays in
+# the login state after Login Success until the client acknowledges it
+LOGIN_ACKNOWLEDGED = 0x03       # serverbound (1.20.2+), no content
 
 # Play-phase packet ids that matter to us (1.8.8)
 PLAY_KEEP_ALIVE = 0x00
 PLAY_JOIN_GAME = 0x01
+PLAY_WINDOW_CONFIRMATION = 0x32  # server -> client
+PLAY_RESOURCE_PACK_SEND = 0x48  # server -> client (hash, url)
 PLAY_PLUGIN_MESSAGE = 0x3F      # server -> client
 PLAY_DISCONNECT = 0x40
+# Client -> server: the single "Client Status" packet carries the player's
+# decision on the resource pack prompt.  In 1.8 the status byte is
+# 0 = DECLINED, 1 = ACCEPTED, 2 = ACKNOWLEDGED (only for downloads started
+# by the server, not for the initial prompt).
+CLIENT_STATUS = 0x02
+CLIENT_STATUS_DECLINED = 0
+CLIENT_STATUS_ACCEPTED = 1
+CLIENT_STATUS_ACKNOWLEDGED = 2
 
+CLIENT_PLAYER = 0x03            # client -> server (on-ground flag only)
+CLIENT_PLAYER_POSITION = 0x04
+CLIENT_PLAYER_LOOK = 0x05
+CLIENT_PLAYER_POSITION_LOOK = 0x06
+CLIENT_HELD_ITEM_CHANGE = 0x09
+CLIENT_CONFIRM_TRANSACTION = 0x0F
 CLIENT_PLUGIN_MESSAGE = 0x17    # client -> server
 
 # "Injected message" frames from the client (the path skins/extension messages
@@ -112,6 +139,12 @@ def read_u16(data: bytes, pos: int = 0) -> tuple[int, int]:
     return int.from_bytes(data[pos:pos + 2], 'big'), pos + 2
 
 
+def write_string(text: str) -> bytes:
+    """Encode a string with its VarInt length prefix (the inverse of read_string)."""
+    raw = str(text).encode('utf-8')
+    return write_varint(len(raw)) + raw
+
+
 def pack(packet_id: int, body: bytes = b'') -> bytes:
     """Build one complete uncompressed frame (length prefix + packet id + body)."""
     payload = write_varint(packet_id) + body
@@ -138,11 +171,28 @@ class Decoder:
     """
 
     def __init__(self, threshold: int = 0):
-        self.buffer = b''
+        # A read from the target often contains many packets.  Keeping unread
+        # bytes behind an offset avoids copying the tail of the buffer for every
+        # packet (the old ``buffer = buffer[end:]`` was quadratic on a burst).
+        self.buffer = bytearray()
+        self._pos = 0
         self.threshold = threshold
 
+    @property
+    def pending(self) -> int:
+        """Number of bytes that still belong to the current/next packet."""
+        return len(self.buffer) - self._pos
+
     def push(self, data: bytes) -> None:
-        self.buffer += data
+        if not data:
+            return
+        if self._pos:
+            if self._pos >= len(self.buffer):
+                self.buffer.clear()
+            else:
+                del self.buffer[:self._pos]
+            self._pos = 0
+        self.buffer.extend(data)
 
     def feed(self, data: bytes) -> list[Packet]:
         self.push(data)
@@ -157,16 +207,23 @@ class Decoder:
         """Take the next complete packet; return None when more data is needed
         (it stays in the buffer for the next call)."""
         buffer = self.buffer
+        start = self._pos
         try:
-            length, pos = read_varint(buffer, 0)
+            length, pos = read_varint(buffer, start)
         except NeedMoreData:
             return None
         if length <= 0 or length > MAX_PACKET_BYTES:
             raise ProtocolError(tr('vanilla.error.bad_packet_length', length=length))
-        if len(buffer) < pos + length:
+        end = pos + length
+        if len(buffer) < end:
             return None
-        body = buffer[pos:pos + length]
-        self.buffer = buffer[pos + length:]
+        body = bytes(buffer[pos:end])
+        self._pos = end
+        if end == len(buffer):
+            # The read is fully consumed: release it instead of carrying a dead
+            # prefix until the next push.
+            buffer.clear()
+            self._pos = 0
         if self.threshold > 0:
             try:
                 uncompressed, offset = read_varint(body, 0)

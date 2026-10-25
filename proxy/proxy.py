@@ -1,10 +1,11 @@
 """Forwarding core: bridges a local wss:// / ws:// WebSocket connection to the
 target Minecraft server's TCP connection.
 
-The HTTP and WebSocket layer is delegated to FastAPI + uvicorn -- fragment
-reassembly, heartbeats (PING/PONG), subprotocol negotiation, the closing
-handshake and frame size limits are all left to that mature implementation.
-This module only does three things:
+The HTTP and WebSocket layer is handled directly by the ``websockets`` library:
+fragment reassembly, heartbeats (PING/PONG), subprotocol negotiation, the
+closing handshake and frame size limits are all left to that implementation.
+There is no ASGI layer and no FastAPI/uvicorn process in front of the game
+traffic.  This module only does three things:
 
 * move the messages coming from the client over to the target server's TCP
   connection verbatim, and the other way around;
@@ -14,7 +15,7 @@ This module only does three things:
   text frame ``Accept: MOTD``), otherwise it would keep showing "unable to
   connect".
 
-On top of that, FastAPI serves a status page: opening
+On top of that the same listener serves a status page: opening
 http://<listen address>:<ws port>/ in a browser shows the "current server
 address", the target server status, the connection count and the traffic.
 """
@@ -23,35 +24,58 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import html
+import concurrent.futures
 import json
 import socket
+import ssl
 import threading
 import time
+from collections.abc import Callable
 
-import uvicorn
-from fastapi import FastAPI, Request, WebSocket
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from websockets.asyncio.server import ServerConnection, serve
+from websockets.datastructures import Headers
+from websockets.exceptions import ConnectionClosed
+from websockets.http11 import Request, Response
 
-from . import certs, eagler, handshake, resolver, wsproto
+from . import accounts, certs, eagler, handshake, resolver, vanilla, wsproto
 from .config import Config, parse_address
-from .i18n import get_language, tr
+from .i18n import tr
 from .logger import NullLogger
-from .translator import EaglerTranslator, chat_to_text, note
+from .translator import EaglerTranslator, chat_to_legacy, chat_to_text, note
 from .utils import human_bytes
 from .version import SERVICE_NAME, VERSION
 
-RECV_SIZE = 65536
+RECV_SIZE = 262144           # one TCP read often contains a whole burst of game packets
+WS_MAX_QUEUE = 32            # incoming message queue: absorb bursts without backpressure
+WS_WRITE_LIMIT = 262144      # outgoing high-water mark: do not pause on every small packet
 CLOSE_GRACE = 0.35           # finish the closing words before disconnecting; give the client time to read them
+PLAIN_WATCH_BYTES = 64 * 1024   # how far a plain session's login stage is watched before giving up on it
 FIRST_MESSAGE_WAIT = 1.0     # how long to wait for the client's first message (tells list queries and game handshakes apart)
 CONNECT_FAIL_WAIT = 1.0      # when the target is down, wait a bit longer for the client's first packet (we need its handshake version)
 QUERY_IDLE_SECONDS = 300.0   # max idle time of a "server list" query connection
-STATUS_MAX_AGE = 5.0         # cache lifetime of target server status queries in seconds
-STATUS_TIMEOUT = 4.0         # timeout of the status page's query to the target server
+STATUS_TIMEOUT = 4.0         # timeout of a live target status query
 
 
 class _SessionClosed(Exception):
     """This connection should wind down now (not a failure)."""
+
+
+class _NoDelayServerConnection(ServerConnection):
+    """Server connection that disables Nagle before the first game packet.
+
+    Game packets are small and latency-sensitive; batching them in the kernel
+    adds avoidable delay.  The TCP socket is only reachable from the transport,
+    so this is done at connection setup rather than in the message handler.
+    """
+
+    def connection_made(self, transport) -> None:
+        super().connection_made(transport)
+        try:
+            sock = transport.get_extra_info('socket')
+            if sock is not None:
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except (OSError, AttributeError):
+            pass
 
 
 def describe_connect_error(exc: BaseException) -> str:
@@ -80,9 +104,13 @@ def describe_connect_error(exc: BaseException) -> str:
     return text or exc.__class__.__name__
 
 
-def motd_lines(raw, limit: int = 2) -> list[str]:
-    """Split the server's title screen (chat components) into at most ``limit`` plain-text lines."""
-    text = chat_to_text(raw)
+def motd_lines(raw, limit: int = 2, legacy: bool = True) -> list[str]:
+    """Split the server's title screen into at most ``limit`` lines.
+
+    The server-list query expects the legacy ``§`` colour codes in its MOTD
+    strings; the status page and logs use ``legacy=False`` to get plain text.
+    """
+    text = chat_to_legacy(raw) if legacy else chat_to_text(raw)
     lines = [line.strip() for line in text.split('\n')]
     return [line for line in lines if line][:limit]
 
@@ -122,11 +150,17 @@ class Stats:
             }
 
 
-def _discard_task_result(task: asyncio.Task) -> None:
-    """Drop the task result (handled elsewhere) but retrieve any exception, so no
-    unhandled-exception warning is left behind."""
-    if not task.cancelled():
-        task.exception()
+def _discard_future_result(future: asyncio.Future | concurrent.futures.Future) -> None:
+    """Drop a task/future result (handled elsewhere) but retrieve any exception, so
+    no unhandled-exception warning is left behind.
+
+    A cancelled one raises CancelledError from .exception(), and a future scheduled
+    onto an event loop is cancelled when that loop shuts down, so the state is
+    checked first -- otherwise the done callback itself blows up with "exception
+    calling callback for <Future ... state=cancelled>" during a normal shutdown.
+    """
+    if not future.cancelled():
+        future.exception()
 
 
 def _set_socket_options(writer: asyncio.StreamWriter) -> None:
@@ -155,7 +189,7 @@ class Bridge:
     _flush_to_server the same way.
     """
 
-    def __init__(self, server: 'ProxyServer', websocket: WebSocket, path: str,
+    def __init__(self, server: 'ProxyServer', websocket: ServerConnection, path: str,
                  scheme: str, addr, log, subprotocol: str | None = None):
         self.server = server
         self.config = server.config
@@ -192,12 +226,36 @@ class Bridge:
         self.protocol_checked = False        # whether the first upstream data frame was already checked for the client type
         self.query_mode = False              # this is only a server list query, not joining the game
         self.translator: EaglerTranslator | None = None
+        # During login the translator may block in accounts.join_session(), so
+        # its calls run in a worker thread.  Once the game is running the
+        # translation is tiny and latency-sensitive; calling it on the event
+        # loop avoids a thread-pool round trip (and its GIL contention) for
+        # every packet.  ``_translator_inflight`` closes the race where one
+        # pump is still in a worker while the other switches to the fast path.
+        self._translator_direct = False
+        self._translator_inflight = 0
 
         self._outbox: list[bytes] = []       # payloads to send to the client (one frame each)
         self._to_server: list[bytes] = []    # bytes to write to the target server
+        # The translation layer may queue backend bytes from a worker thread
+        # (login/transaction replies) while a pump drains the queue on the
+        # event loop.  Copy-and-clear must be atomic with respect to appends,
+        # otherwise a reply can be appended between the copy and the clear and
+        # silently disappear.
+        self._to_server_lock = threading.Lock()
         self._close_after_flush = False
         self._ws_closed = False
         self._first_task: asyncio.Task | None = None
+
+        # Plain (untranslated) sessions: the login stage is followed just far
+        # enough to know which goodbye packet would be legal if the service
+        # stops later on.  Nothing is modified or held back on the way.
+        self.plain_playing = False
+        self.plain_compressed = False
+        self.plain_encrypted = False
+        self.plain_watch_done = False
+        self._plain_down: vanilla.Decoder | None = None
+        self._plain_up: vanilla.Decoder | None = None
 
     # ---------- lifecycle ----------
     async def run(self) -> None:
@@ -215,14 +273,157 @@ class Bridge:
             await self._cleanup()
 
     async def shutdown(self, reason: str) -> None:
-        """Server-initiated disconnect (called while the listeners stop): send the
-        close frame first so the client doesn't only see the connection cut."""
+        """Server-initiated disconnect (called while the listeners stop): say goodbye
+        in the client's own protocol first, so it does not only see the cut."""
         if not self.close_reason:
             self.close_reason = reason
         self.close_code = 1001
         self.close_text = 'server stopping'
+        if getattr(self.config, 'auto_exit', True):
+            await self._say_goodbye(reason)
         await self._close_ws()
         self._close_writer()
+
+    async def _say_goodbye(self, reason: str) -> None:
+        """Tell the client the session is over before the socket closes.
+
+        A raw close is what a game client shows as an ended data stream; a real
+        disconnect packet lets it name the reason instead.  Only states this
+        bridge can vouch for are used: the translation layer knows its phase, and
+        a plain session is only answered while it is in the login stage or was
+        seen starting the game.
+        """
+        if self._ws_closed:
+            return
+        translator = self.translator
+        if translator is not None:
+            try:
+                if translator.login_done:
+                    # Playing: the client speaks vanilla over the WebSocket, so a
+                    # bare play Disconnect packet is what it expects.
+                    await self._send_payload(self._chat_packet(vanilla.PLAY_DISCONNECT,
+                                                               reason))
+                else:
+                    # Still in the login stages: there the client listens for the
+                    # transport's own error packet.
+                    translator.fail(reason)
+                    await self._drain_outbox()
+            except _SessionClosed:
+                return
+            self.log.debug(tr('proxy.log.goodbye_sent', id=self.id))
+            await asyncio.sleep(CLOSE_GRACE)
+            return
+        if self.query_mode or self.plain_encrypted:
+            # a server list query has nobody in the game, and into an encrypted
+            # session a plaintext packet would only be garbage
+            return
+        info = self.handshake_info
+        if not info or info.get('next_state') != 2:
+            return
+        try:
+            if self.plain_playing:
+                protocol = int(info.get('protocol') or 0)
+                if protocol != 47:
+                    # The play-phase disconnect packet moved around between
+                    # versions; guessing would hand the client a packet it
+                    # cannot read, so nothing is sent.
+                    self.log.debug(tr('proxy.log.goodbye_skipped', id=self.id,
+                                      protocol=protocol))
+                    return
+                encoder = vanilla.Encoder(1 if self.plain_compressed else 0)
+                await self._send_payload(encoder.frame(
+                    self._chat_packet(vanilla.PLAY_DISCONNECT, reason)))
+            else:
+                # Login stage: 0x00 means the same thing in every protocol version.
+                await self._send_payload(vanilla.pack(vanilla.LOGIN_DISCONNECT,
+                                                      self._chat_body(reason)))
+        except _SessionClosed:
+            return
+        self.log.debug(tr('proxy.log.goodbye_sent', id=self.id))
+        await asyncio.sleep(CLOSE_GRACE)
+
+    def _chat_body(self, reason: str) -> bytes:
+        """The chat component a Disconnect packet carries."""
+        text = note(reason or tr('proxy.reason.service_stopped'))
+        return vanilla.write_string(json.dumps({'text': text}, ensure_ascii=False))
+
+    def _chat_packet(self, packet_id: int, reason: str) -> bytes:
+        """One bare packet (id + body), the form the WebSocket side uses."""
+        return vanilla.write_varint(packet_id) + self._chat_body(reason)
+
+    def _watch_plain_login(self, data: bytes) -> None:
+        """Follow the login stage of a plain (untranslated) session.
+
+        Two packets matter: Set Compression (it changes the framing of everything
+        after it) and Login Success (after it the client is in the game).  The
+        answer is only used to pick a goodbye packet if the service stops later;
+        the watcher steps aside for good once the game starts or the stream stops
+        looking like the vanilla protocol.
+        """
+        if self.plain_watch_done:
+            return
+        if self._plain_down is None:
+            self._plain_down = vanilla.Decoder(0)
+        self._plain_down.push(data)
+        while True:
+            try:
+                packet = self._plain_down.next_packet()
+            except vanilla.ProtocolError:
+                self._stop_plain_watch()
+                return
+            if packet is None:
+                return
+            if packet.packet_id == vanilla.LOGIN_SET_COMPRESSION:
+                try:
+                    threshold, _ = vanilla.read_varint(packet.body, 0)
+                except vanilla.ProtocolError:
+                    threshold = 0
+                self.plain_compressed = True
+                self._plain_down.threshold = max(1, threshold)
+                if self._plain_up is not None:
+                    self._plain_up.threshold = max(1, threshold)
+            elif packet.packet_id == vanilla.LOGIN_SUCCESS:
+                self.plain_playing = True
+                self._stop_plain_watch()
+                return
+            elif packet.packet_id == vanilla.LOGIN_DISCONNECT:
+                self._stop_plain_watch()
+                return
+            if self._plain_down.pending > PLAIN_WATCH_BYTES:
+                self._stop_plain_watch()
+                return
+
+    def _watch_plain_login_sent(self, data: bytes) -> None:
+        """Client side of _watch_plain_login: notice encryption being switched on.
+
+        From that moment on no plaintext packet may go into the session, so a
+        goodbye would be garbage and is left out.
+        """
+        if self.plain_watch_done or self.translator is not None or not data:
+            return
+        if self._plain_up is None:
+            self._plain_up = vanilla.Decoder(0)
+        self._plain_up.push(data)
+        while True:
+            try:
+                packet = self._plain_up.next_packet()
+            except vanilla.ProtocolError:
+                self._stop_plain_watch()
+                return
+            if packet is None:
+                return
+            if packet.packet_id == vanilla.LOGIN_ENCRYPTION_RESPONSE:
+                self.plain_encrypted = True
+                self._stop_plain_watch()
+                return
+            if self._plain_up.pending > PLAIN_WATCH_BYTES:
+                self._stop_plain_watch()
+                return
+
+    def _stop_plain_watch(self) -> None:
+        self.plain_watch_done = True
+        self._plain_down = None
+        self._plain_up = None
 
     async def _handle(self) -> None:
         config = self.config
@@ -231,7 +432,6 @@ class Bridge:
         self.route_host = route['host']
         self.target_text = (route['source'] or config.target or '').strip()
 
-        await self.ws.accept(subprotocol=self.subprotocol)
         self.log.info(tr('proxy.log.accepted', id=self.id, scheme=self.scheme.upper(),
                          host=self.addr[0], port=self.addr[1],
                          source=route['source'], label=route['label']))
@@ -254,7 +454,7 @@ class Bridge:
 
         try:
             reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port),
+                asyncio.open_connection(host, port, limit=RECV_SIZE),
                 timeout=max(1.0, float(config.connect_timeout)))
         except Exception as exc:
             await self._report_connect_failure(host, port, exc, first)
@@ -283,24 +483,19 @@ class Bridge:
         """Receive one message from the client, returning (payload, is_text);
         None when the peer disconnects."""
         try:
-            while True:
-                message = await self.ws.receive()
-                kind = message.get('type')
-                if kind == 'websocket.disconnect':
-                    code = message.get('code')
-                    if not self.close_reason:
-                        self.close_reason = tr('proxy.reason.client_closed_code', code=code) \
-                            if code else tr('proxy.reason.client_closed')
-                    self.close_code = 1001
-                    return None
-                if kind != 'websocket.receive':
-                    continue
-                payload = message.get('bytes')
-                if payload is None:
-                    return (message.get('text') or '').encode('utf-8'), True
-                return payload, False
+            message = await self.ws.recv()
+        except ConnectionClosed:
+            code = self.ws.close_code
+            if not self.close_reason:
+                self.close_reason = tr('proxy.reason.client_closed_code', code=code) \
+                    if code else tr('proxy.reason.client_closed')
+            self.close_code = 1001
+            return None
         except Exception:
             return None
+        if isinstance(message, str):
+            return message.encode('utf-8'), True
+        return message, False
 
     async def _wait_first_message(self, timeout: float) -> tuple[bytes, bool] | None:
         """Wait for the client's first message after it connects.
@@ -311,7 +506,7 @@ class Bridge:
         """
         if self._first_task is None:
             self._first_task = asyncio.ensure_future(self._receive_one())
-            self._first_task.add_done_callback(_discard_task_result)
+            self._first_task.add_done_callback(_discard_future_result)
         try:
             return await asyncio.wait_for(asyncio.shield(self._first_task), timeout=timeout)
         except asyncio.TimeoutError:
@@ -338,7 +533,7 @@ class Bridge:
             return
         message = note(tr('proxy.error.connect_note', host=host, port=port, reason=reason))
         try:
-            await self.ws.send_bytes(
+            await self.ws.send(
                 eagler.pack_error_pre_version(eagler.ERROR_CUSTOM_MESSAGE, message))
             self.log.info(tr('proxy.log.failure_sent', id=self.id))
             await asyncio.sleep(CLOSE_GRACE)
@@ -356,13 +551,14 @@ class Bridge:
         Its ServerQueryImpl sends only one text frame, ``Accept: MOTD``, right
         after connecting, then waits for a JSON text frame. Without an answer it
         would keep showing "cannot connect to the server", so this answers
-        locally and also puts the "current server address" into its details (the
-        players list).
+        locally with the target server's status.
         """
         self.query_mode = True
+        await self._answer_query(payload)
+        # Log after the reply: the client times this exchange as its ping, and
+        # a synchronous console/file write must not sit in front of the answer.
         self.log.info(tr('proxy.log.query_received', id=self.id, scheme=self.scheme.upper(),
                          payload=payload[:80].decode('utf-8', 'replace')))
-        await self._answer_query(payload)
         deadline = time.time() + QUERY_IDLE_SECONDS
         while True:
             remaining = deadline - time.time()
@@ -391,19 +587,26 @@ class Bridge:
         if wants and 'MOTD' not in wants:
             return
         route = self.server.resolve_route(self.path)
+        # A cache hit is returned immediately; a miss performs one live status
+        # query in a worker thread.  The old code answered a miss with a
+        # placeholder, which made the client show "no MOTD" even though the
+        # target was reachable.  Waiting for the first query is the only way to
+        # return the real MOTD without sending a second, unsolicited answer.
         try:
-            host, port = await asyncio.to_thread(
-                self.server.resolve_endpoint, route['host'], route['port'])
-        except Exception as exc:
-            self.log.warn(tr('proxy.log.query_resolve_failed', id=self.id, error=exc))
-            host, port = None, None
-        status = None
-        if host:
             status = await asyncio.to_thread(
-                self.server.target_status, host, port, STATUS_TIMEOUT, STATUS_MAX_AGE)
+                self.server.status_for_query, route['host'], route['port'],
+                STATUS_TIMEOUT)
+        except Exception as exc:
+            status = {
+                'ok': False,
+                'ms': None,
+                'status': None,
+                'error': describe_connect_error(exc),
+                'time': time.time(),
+            }
         data = self._build_query_response(status)
         try:
-            await self.ws.send_text(json.dumps(data, ensure_ascii=False))
+            await self.ws.send(json.dumps(data, ensure_ascii=False))
         except Exception as exc:
             self.log.debug(tr('proxy.log.query_send_failed', id=self.id, error=exc))
             raise _SessionClosed()
@@ -417,12 +620,13 @@ class Bridge:
         data.players is what the list shows as "details" on hover.
         """
         config = self.config
-        detail = [tr('proxy.query.target', address=self.target_text or config.describe_target())]
+        detail: list[str] = []
         motd: list[str] = []
         online = 0
         max_players = 0
         version_name = '1.8.8'
         raw = (status or {}).get('status') or {}
+        query_error = str((status or {}).get('error') or '').strip()
         if raw:
             motd = motd_lines(raw.get('description'))
             version = raw.get('version') or {}
@@ -434,11 +638,12 @@ class Bridge:
             except (TypeError, ValueError):
                 online = max_players = 0
             for item in (players.get('sample') or [])[:12]:
-                name = chat_to_text(item.get('name') if isinstance(item, dict) else item).strip()
+                name = chat_to_legacy(item.get('name') if isinstance(item, dict) else item).strip()
                 if name:
                     detail.append(name)
         if not motd:
-            motd = ['%s %s' % (tr('core.app_name'), VERSION)]
+            motd = [tr('proxy.query.status_error', error=query_error)
+                    if query_error else tr('proxy.query.no_motd')]
         brand = (config.server_brand or SERVICE_NAME).strip() or SERVICE_NAME
         # the "version" column in the client's list: use the configured value when
         # one is set, otherwise show the version name reported by the target server
@@ -490,7 +695,7 @@ class Bridge:
             raise _SessionClosed()
         data = self._decode_payload(payload, is_text)
         if self.translator is not None:
-            to_server = self.translator.feed_client(data)
+            to_server = await self._feed_translator_client(data)
         else:
             if not self.protocol_checked and data:
                 self.protocol_checked = True
@@ -500,7 +705,8 @@ class Bridge:
                     data = self.translator.feed_client(data) if self.translator else data
             to_server = self._inspect_handshake(data)
         if to_server:
-            self._to_server.append(to_server)
+            self._watch_plain_login_sent(to_server)
+            self._queue_to_backend(to_server)
         await self._flush_to_server()
         await self._drain_outbox()
 
@@ -520,6 +726,44 @@ class Bridge:
                           size=len(payload), decoded=len(data)))
         return data
 
+    async def _feed_translator_client(self, data: bytes) -> bytes:
+        translator = self.translator
+        if translator is None:
+            return data
+        return await self._translator_call(translator.feed_client, data, translator)
+
+    async def _feed_translator_server(self, data: bytes) -> list[bytes]:
+        translator = self.translator
+        if translator is None:
+            return []
+        return await self._translator_call(translator.feed_server, data, translator)
+
+    async def _translator_call(self, func: Callable[[bytes], object], data: bytes,
+                               translator: EaglerTranslator):
+        """Run one translator direction on the cheapest safe execution path.
+
+        Login can perform a blocking Microsoft session join, so it stays in a
+        worker thread.  Play traffic is parsed packet by packet and must not pay
+        a thread-pool hand-off per frame: that adds jitter, and the GIL is
+        already released by the C parts that matter (TLS, AES, zlib).  The
+        switch happens only after every in-flight worker call has returned, so
+        the two pumps never race on the translator's state.
+        """
+        if self._translator_direct:
+            return func(data)
+        self._translator_inflight += 1
+        completed = False
+        try:
+            result = await asyncio.to_thread(func, data)
+            completed = True
+            return result
+        finally:
+            self._translator_inflight -= 1
+            if (completed and self._translator_inflight == 0
+                    and translator.phase == 'play'
+                    and translator.login_done):
+                self._translator_direct = True
+
     def _start_translator(self) -> None:
         """The peer turned out to be a browser client: set up the protocol translation layer."""
         config = self.config
@@ -534,9 +778,33 @@ class Bridge:
             request_close=self._translator_close,
             brand=(config.server_brand or SERVICE_NAME).strip() or SERVICE_NAME,
             brand_version=(config.server_brand_version or '').strip() or VERSION,
-            spoof_brand=getattr(config, 'spoof_brand', ''),
+            spoof_client=getattr(config, 'spoof_client', 'off'),
+            spoof_brand=config.spoof_brand_value(),
+            login_ack=bool(getattr(config, 'login_ack', True)),
+            resource_pack_mode=getattr(config, 'resource_pack_mode', 'forward'),
+            account=self._selected_account(),
         )
         self.log.info(tr('proxy.log.translator_enabled', id=self.id))
+
+    def _selected_account(self):
+        """The account selected in the settings, or None.
+
+        accounts.json is read at connect time, so picking another account in
+        the account manager applies to the very next client without restarting
+        the service.  A broken store is logged and treated as "no account": it
+        must never keep people from connecting.
+        """
+        selection = str(getattr(self.config, 'account_override', '') or '').strip()
+        try:
+            if selection:
+                account = accounts.find_account(selection)
+                if account is None:
+                    self.log.warn(tr('proxy.log.account_not_found', name=selection))
+                return account
+            return accounts.active_account()
+        except Exception as exc:               # unreadable file, bad JSON, ...
+            self.log.warn(tr('proxy.log.account_load_failed', error=exc))
+            return None
 
     def _queue_to_client(self, data: bytes) -> None:
         """Translator callback: queue one frame to be sent to the client (sent one
@@ -544,8 +812,9 @@ class Bridge:
         self._outbox.append(data)
 
     def _queue_to_backend(self, data: bytes) -> None:
-        """Translator callback: queue a chunk of bytes to write to the target server."""
-        self._to_server.append(data)
+        """Queue a chunk of bytes for the target server (thread-safe)."""
+        with self._to_server_lock:
+            self._to_server.append(data)
 
     def _translator_close(self, reason: str) -> None:
         """The translator asks to wind down: let it send what it has to say first,
@@ -610,13 +879,14 @@ class Bridge:
             self.server.stats.add_bytes(to_client=len(data))
             translator = self.translator
             if translator is not None:
-                frames = translator.feed_server(data)
+                frames = await self._feed_translator_server(data)
                 if translator.close_reason and not self.close_reason:
                     self.close_reason = translator.close_reason
                 await self._send_payloads(frames)
                 await self._flush_to_server()
                 await self._drain_outbox()
             else:
+                self._watch_plain_login(data)
                 await self._send_payload(data)
         if not self.close_reason:
             self.close_reason = tr('proxy.reason.target_closed')
@@ -631,14 +901,15 @@ class Bridge:
 
     # ---------- send/receive queues ----------
     async def _flush_to_server(self) -> None:
-        if not self._to_server:
-            return
-        # Note: the list must be cleared in place. The translation layer holds
+        # Note: the list must be drained in place. The translation layer holds
         # _to_server.append as its callback; swapping the attribute for a fresh
         # list would send every later append into an orphaned list nobody reads,
         # and not a single byte would go out.
-        chunks = list(self._to_server)
-        self._to_server.clear()
+        with self._to_server_lock:
+            if not self._to_server:
+                return
+            chunks = list(self._to_server)
+            self._to_server.clear()
         writer = self.writer
         if writer is None:
             return
@@ -678,9 +949,9 @@ class Bridge:
             return
         try:
             if self.base64_mode:
-                await self.ws.send_text(base64.b64encode(data).decode('ascii'))
+                await self.ws.send(base64.b64encode(data).decode('ascii'))
             else:
-                await self.ws.send_bytes(data)
+                await self.ws.send(data)
         except Exception as exc:
             self.log.debug(tr('proxy.log.send_client_failed', id=self.id, error=exc))
             self.close_code = 1001
@@ -747,7 +1018,7 @@ class Bridge:
 
 
 class ProxyServer:
-    """uvicorn listeners + connection management + status page."""
+    """WebSocket listeners + connection management + status page."""
 
     def __init__(self, config: Config, logger=None):
         self.config = config
@@ -755,12 +1026,13 @@ class ProxyServer:
         self.stats = Stats()
         self.certificate: dict | None = None
         self.running = False
-        self.app: FastAPI | None = None
-        self._servers: list[tuple[uvicorn.Server, threading.Thread]] = []
+        self._servers: list[dict] = []
         self._connections: set[Bridge] = set()
         self._lock = threading.Lock()
         self._srv_cache: dict[str, tuple[str, int, float]] = {}
         self._status_cache: dict[str, dict] = {}
+        self._status_refreshing: set[str] = set()
+        self._status_warming: set[str] = set()
         self._id_counter = 0
 
     # ---------- public API ----------
@@ -775,7 +1047,7 @@ class ProxyServer:
         if problems:
             raise ValueError(tr('proxy.error.bad_config', problems='; '.join(problems)))
 
-        ssl_options: dict = {}
+        ssl_context: ssl.SSLContext | None = None
         if config.tls_enabled:
             self.certificate = certs.ensure_certificate(
                 config.resolved_cert_dir,
@@ -786,24 +1058,38 @@ class ProxyServer:
                 regenerate=False,
                 logger=self.log,
             )
-            ssl_options = {
-                'ssl_certfile': self.certificate['cert_path'],
-                'ssl_keyfile': self.certificate['key_path'],
-            }
+            ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+            ssl_context.minimum_version = ssl.TLSVersion.TLSv1_2
+            ssl_context.options |= ssl.OP_NO_COMPRESSION
+            ssl_context.load_cert_chain(
+                self.certificate['cert_path'], self.certificate['key_path'])
 
-        self.app = self._build_app(config)
         listeners: list[str] = []
         self.running = True
         try:
             if config.tls_enabled and int(config.wss_port) > 0:
-                listeners.append(self._start_listener(int(config.wss_port), 'wss', ssl_options))
+                listeners.append(self._start_listener(
+                    int(config.wss_port), 'wss', ssl_context))
             if int(config.ws_port) > 0:
-                listeners.append(self._start_listener(int(config.ws_port), 'ws', {}))
+                listeners.append(self._start_listener(int(config.ws_port), 'ws', None))
         except Exception:
             self.running = False
             self._shutdown_servers()
             raise
         self.log.info(tr('proxy.log.listeners_ready', listeners=', '.join(listeners)))
+        # Warm the server-list status cache off the event loop.  A cache hit
+        # answers immediately; a cache miss waits for one live target query so
+        # the client sees the real MOTD instead of a placeholder.  Prewarming
+        # makes that wait unlikely for the first browser connection.
+        if config.status_cache:
+            addresses = [config.target]
+            addresses.extend((config.routes or {}).values())
+            for address in addresses:
+                try:
+                    host_name, target_port = parse_address(address)
+                except (TypeError, ValueError):
+                    continue
+                self.warm_status_async(host_name, target_port)
         return self.describe()
 
     def stop(self) -> None:
@@ -821,7 +1107,7 @@ class ProxyServer:
             try:
                 future = asyncio.run_coroutine_threadsafe(
                     bridge.shutdown(tr('proxy.reason.service_stopped')), loop)
-                future.add_done_callback(lambda fut: fut.exception())
+                future.add_done_callback(_discard_future_result)
             except Exception:
                 pass
         deadline = time.time() + 1.0
@@ -849,7 +1135,10 @@ class ProxyServer:
             'wss_url': config.wss_url() if self.running else None,
             'server_brand': config.server_brand,
             'server_brand_version': config.server_brand_version or VERSION,
-            'spoof_brand': config.spoof_brand,
+            'spoof_client': getattr(config, 'spoof_client', 'off'),
+            'spoof_brand': config.spoof_brand_value(),
+            'status_cache': bool(config.status_cache),
+            'status_cache_ttl': int(config.status_cache_ttl),
             'certificate': None,
         }
         if self.certificate:
@@ -877,7 +1166,7 @@ class ProxyServer:
         if with_target:
             host, port = self._resolve_for_status()
             if host:
-                info = self.target_status(host, port, STATUS_TIMEOUT, STATUS_MAX_AGE)
+                info = self.target_status(host, port, STATUS_TIMEOUT)
                 status = info.get('status') or {}
                 data['target_probe'] = {
                     'ok': bool(info.get('ok')),
@@ -885,7 +1174,7 @@ class ProxyServer:
                     'port': port,
                     'ping_ms': round(info['ms'], 1) if info.get('ms') else None,
                     'error': info.get('error', ''),
-                    'motd': motd_lines(status.get('description')),
+                    'motd': motd_lines(status.get('description'), legacy=False),
                     'version': (status.get('version') or {}).get('name', ''),
                     'players': status.get('players') or {},
                 }
@@ -929,6 +1218,66 @@ class ProxyServer:
         self._srv_cache[host] = (resolved[0], resolved[1], now + 300.0)
         return resolved
 
+    def cached_endpoint(self, host: str, port: int | None) -> tuple[str, int] | None:
+        """Return an endpoint only when no live DNS query is needed.
+
+        The server-list answer is timed by the browser as ping, so callers on
+        that path must not block on SRV/DNS.  An explicit port is always
+        immediate; a bare hostname is returned only from the resolve cache.
+        """
+        if port:
+            return host, int(port)
+        cached = self._srv_cache.get(host)
+        if cached and cached[2] > time.time():
+            return cached[0], cached[1]
+        return None
+
+    def warm_status_async(self, host: str, port: int | None) -> None:
+        """Resolve and refresh a target status in a daemon thread."""
+        host = (host or '').strip()
+        if not host:
+            return
+        token = '%s:%s' % (host, port or 0)
+        with self._lock:
+            if token in self._status_warming:
+                return
+            self._status_warming.add(token)
+
+        def worker() -> None:
+            try:
+                resolved_host, resolved_port = self.resolve_endpoint(host, port)
+                self._start_status_refresh(resolved_host, resolved_port)
+            except Exception as exc:
+                self.log.debug('status warm-up failed: %s' % exc)
+            finally:
+                with self._lock:
+                    self._status_warming.discard(token)
+
+        threading.Thread(target=worker, daemon=True, name='mcjs-status-warm').start()
+
+    def _start_status_refresh(self, host: str, port: int,
+                              timeout: float = STATUS_TIMEOUT) -> None:
+        key = '%s:%d' % (host, int(port))
+        with self._lock:
+            if key in self._status_refreshing:
+                return
+            self._status_refreshing.add(key)
+
+        def worker() -> None:
+            try:
+                result = resolver.query_status(host, int(port), timeout=timeout)
+                result['time'] = time.time()
+                if self.config.status_cache:
+                    with self._lock:
+                        self._status_cache[key] = result
+            except Exception as exc:
+                self.log.debug('status refresh failed: %s' % exc)
+            finally:
+                with self._lock:
+                    self._status_refreshing.discard(key)
+
+        threading.Thread(target=worker, daemon=True, name='mcjs-status').start()
+
     def _resolved_target(self) -> str:
         """Already-resolved target address (report the cache only, no live DNS lookup)."""
         try:
@@ -953,239 +1302,295 @@ class ProxyServer:
             self.log.debug(tr('proxy.log.status_resolve_failed', error=exc))
             return host, int(port or 25565)
 
-    def target_status(self, host: str, port: int, timeout: float = STATUS_TIMEOUT,
-                      max_age: float = STATUS_MAX_AGE) -> dict:
-        """Query the target server status once (cached); used by both the status page and the server list."""
-        key = '%s:%d' % (host, int(port))
-        now = time.time()
-        with self._lock:
-            cached = self._status_cache.get(key)
-            if cached and now - cached['time'] < max_age:
+    def status_for_query(self, host: str, port: int | None,
+                         timeout: float = STATUS_TIMEOUT) -> dict:
+        """Return the status used for an ``Accept: MOTD`` answer.
+
+        This runs in a worker thread.  With caching enabled a fresh result is
+        returned immediately, a stale result is returned while a refresh runs
+        in the background, and a miss performs one live query.  With caching
+        disabled every call queries the target and nothing is stored.
+        """
+        resolved_host, resolved_port = self.resolve_endpoint(host, port)
+        resolved_port = int(resolved_port)
+        key = '%s:%d' % (resolved_host, resolved_port)
+        if self.config.status_cache:
+            now = time.time()
+            with self._lock:
+                cached = self._status_cache.get(key)
+            if cached:
+                if now - cached['time'] < int(self.config.status_cache_ttl):
+                    return cached
+                self._start_status_refresh(resolved_host, resolved_port, timeout)
                 return cached
-        result = resolver.query_status(host, int(port), timeout=timeout)
+        result = resolver.query_status(resolved_host, resolved_port, timeout=timeout)
         result['time'] = time.time()
-        with self._lock:
-            self._status_cache[key] = result
+        if self.config.status_cache:
+            with self._lock:
+                self._status_cache[key] = result
         return result
 
-    # ---------- FastAPI ----------
-    def _build_app(self, config: Config) -> FastAPI:
-        app = FastAPI(title=tr('core.app_name'), docs_url=None, redoc_url=None, openapi_url=None)
+    def target_status(self, host: str, port: int, timeout: float = STATUS_TIMEOUT,
+                      max_age: float | None = None, wait: bool = True) -> dict:
+        """Return the target server status.
 
-        @app.get('/status', include_in_schema=False)
-        @app.get('/status.json', include_in_schema=False)
-        async def status_json(request: Request):
-            return JSONResponse(self.status(request.url.path))
+        ``wait=True`` is for the status page: it may block for a fresh live
+        query.  ``wait=False`` is the non-blocking variant: it returns a cached
+        value immediately (even if stale) and refreshes it in the background,
+        or returns a placeholder while the first refresh runs.
+        """
+        if max_age is None:
+            max_age = float(self.config.status_cache_ttl)
+        key = '%s:%d' % (host, int(port))
+        now = time.time()
+        cached_result = None
+        needs_refresh = False
+        if self.config.status_cache:
+            with self._lock:
+                cached = self._status_cache.get(key)
+                if cached:
+                    fresh = now - cached['time'] < max_age
+                    if fresh or not wait:
+                        cached_result = cached
+                        needs_refresh = not fresh
+        if cached_result is not None:
+            if needs_refresh:
+                self._start_status_refresh(host, int(port), timeout)
+            return cached_result
+        if not wait:
+            if self.config.status_cache:
+                self._start_status_refresh(host, int(port), timeout)
+            return {
+                'ok': False,
+                'ms': None,
+                'status': None,
+                'error': '',
+                'time': now,
+                'refreshing': True,
+            }
+        result = resolver.query_status(host, int(port), timeout=timeout)
+        result['time'] = time.time()
+        if self.config.status_cache:
+            with self._lock:
+                self._status_cache[key] = result
+        return result
 
-        @app.get('/favicon.ico', include_in_schema=False)
-        async def favicon():
-            return Response(status_code=204)
+    # ---------- HTTP / WebSocket transport ----------
+    @staticmethod
+    def _http_response(status: int, reason: str, body: bytes,
+                       content_type: str = '') -> Response:
+        headers = Headers()
+        if content_type:
+            headers['Content-Type'] = content_type
+        headers['Content-Length'] = str(len(body))
+        headers['Cache-Control'] = 'no-store'
+        headers['X-Content-Type-Options'] = 'nosniff'
+        # The status page is a diagnostic endpoint, not a browser application:
+        # closing the connection keeps the response bounded and avoids keeping
+        # idle HTTP sockets around on the game port.
+        headers['Connection'] = 'close'
+        return Response(status, reason, headers, body)
 
-        @app.get('/', include_in_schema=False)
-        @app.get('/{path:path}', include_in_schema=False)
-        async def status_page(path: str = ''):
-            return HTMLResponse(self.status_page_html('/' + path if path else '/'))
+    async def _process_http(self, connection: ServerConnection,
+                            request: Request) -> Response | None:
+        """Serve diagnostic HTTP on the same port, hand WebSocket upgrades on.
 
-        @app.websocket('/')
-        @app.websocket('/{path:path}')
-        async def websocket_route(websocket: WebSocket, path: str = ''):
-            await self.handle_websocket(websocket, '/' + path if path else '/')
+        Returning None lets ``websockets`` complete the WebSocket handshake.
+        Everything else is answered here without touching the game path.
+        """
+        if request.headers.get('Upgrade', '').lower() == 'websocket':
+            return None
 
-        return app
+        path = (request.path or '/').split('?', 1)[0] or '/'
+        # websockets 15 only parses GET handshake requests and has no method
+        # attribute; 17 adds one.  Treat the absent attribute as GET.
+        method = getattr(request, 'method', 'GET')
+        head = method == 'HEAD'
+        if method not in ('GET', 'HEAD'):
+            return self._http_response(
+                405, 'Method Not Allowed', b'',
+                'text/plain; charset=utf-8')
 
-    async def handle_websocket(self, websocket: WebSocket, path: str) -> None:
-        scope = websocket.scope
-        scheme = 'wss' if str(scope.get('scheme', 'ws')).lower() in ('wss', 'https') else 'ws'
-        client = scope.get('client')
-        addr = (client[0], client[1]) if client else ('?', 0)
-        subprotocols = [item.strip() for item in (scope.get('subprotocols') or []) if item.strip()]
-        bridge = Bridge(self, websocket, path, scheme, addr, self.log,
-                        subprotocols[0] if subprotocols else None)
+        if path in ('/status', '/status.json'):
+            body = json.dumps(self.status(path), ensure_ascii=False).encode('utf-8')
+            return self._http_response(
+                200, 'OK', b'' if head else body,
+                'application/json; charset=utf-8')
+        if path == '/favicon.ico':
+            return self._http_response(204, 'No Content', b'')
+        return self._http_response(
+            404, 'Not Found', b'Not Found\n', 'text/plain; charset=utf-8')
+
+    @staticmethod
+    def _select_subprotocol(connection: ServerConnection,
+                            subprotocols: list[str]) -> str | None:
+        # Preserve the previous gateway's behaviour: use the first protocol the
+        # client offered, so ``base64`` remains an explicit opt-in.
+        return subprotocols[0] if subprotocols else None
+
+    async def handle_websocket(self, connection: ServerConnection, scheme: str) -> None:
+        request = connection.request
+        path = ((request.path if request is not None else '/') or '/').split('?', 1)[0] or '/'
+        if request is not None:
+            # Some browser clients attach a Cookie header to the WebSocket
+            # upgrade.  The Eagler protocol has no use for it and it must never
+            # leak into a backend handshake or a log line, so drop it before
+            # anything else can see it.
+            try:
+                del request.headers['Cookie']
+            except KeyError:
+                pass
+        client = connection.remote_address or ('?', 0)
+        addr = (client[0], client[1])
+        bridge = Bridge(self, connection, path, scheme, addr, self.log,
+                        connection.subprotocol)
         with self._lock:
             self._connections.add(bridge)
             self.stats.connection_opened()
         await bridge.run()
 
-    # ---------- status page ----------
-    def status_page_html(self, path: str = '/') -> str:
-        data = self.status(path, with_target=True)
-        probe = data.get('target_probe') or {}
-        rows: list[tuple[str, str]] = []
-
-        def add(key: str, value: str) -> None:
-            rows.append((key, value))
-
-        def code(text: str) -> str:
-            return '<code>%s</code>' % html.escape(str(text))
-
-        address = data.get('target_source') or data.get('target') or ''
-        resolved = data.get('target_resolved')
-        address_html = code(address)
-        if resolved and resolved != address:
-            address_html += '<br><span class="dim">%s</span>' % html.escape(
-                tr('proxy.page.resolved', address=resolved))
-        add(tr('proxy.page.address'), address_html)
-
-        if probe.get('ok'):
-            detail = tr('proxy.page.online', ping=probe.get('ping_ms'))
-            motd = probe.get('motd') or []
-            if motd:
-                detail += ' · %s' % '<br>'.join(html.escape(line) for line in motd)
-            players = probe.get('players') or {}
-            if players:
-                detail += '<br><span class="dim">%s</span>' % html.escape(
-                    tr('proxy.page.players', online=players.get('online', 0),
-                       max=players.get('max', 0)))
-            add(tr('proxy.page.target_status'), '<span class="ok">%s</span>' % detail)
-        else:
-            add(tr('proxy.page.target_status'),
-                '<span class="warn">%s</span>'
-                '<br><span class="dim">%s</span>' % (
-                    tr('proxy.page.unreachable'), html.escape(probe.get('error') or '')))
-
-        listeners = data.get('listeners') or []
-        if data.get('wss_url'):
-            add(tr('proxy.page.wss_url'), code(data['wss_url']))
-        others = [item for item in listeners if item != data.get('wss_url')]
-        if others:
-            add(tr('proxy.page.alt_addresses'), code(' , '.join(others)))
-        add(tr('proxy.page.app'), code('%s %s' % (tr('core.app_name'), VERSION)))
-        state = tr('proxy.page.running') if data.get('running') else tr('proxy.page.stopped')
-        add(tr('proxy.page.state'),
-            '<span class="ok">%s</span>' % state if data.get('running') else state)
-        add(tr('proxy.page.uptime'),
-            code(tr('proxy.page.uptime_value', seconds=data.get('uptime_seconds', 0))))
-        add(tr('proxy.page.connections'),
-            code(tr('proxy.page.connections_value',
-                    active=data.get('active_connections'),
-                    total=data.get('total_connections'))))
-        add(tr('proxy.page.traffic'),
-            code(tr('proxy.page.traffic_value',
-                    up=data.get('bytes_to_server_human'),
-                    down=data.get('bytes_to_client_human'))))
-        add(tr('proxy.page.server_brand'),
-            code('%s %s' % (data.get('server_brand'), data.get('server_brand_version'))))
-        add(tr('proxy.page.spoof_brand'),
-            code(data.get('spoof_brand') or tr('proxy.page.spoof_off')))
-        if data.get('routes'):
-            items = '<br>'.join('%s → %s' % (html.escape(str(k)), html.escape(str(v)))
-                                for k, v in data['routes'].items())
-            add(tr('proxy.page.routes'), '<code>%s</code>' % items)
-        cert = data.get('certificate') or {}
-        if cert:
-            add(tr('proxy.page.cert_thumbprint'), code(cert.get('thumbprint', '')))
-
-        body = '\n'.join('  <tr><td class="k">%s</td><td>%s</td></tr>' % (html.escape(k), v)
-                         for k, v in rows)
-        return STATUS_PAGE.format(
-            lang=html.escape(get_language()),
-            title=html.escape(tr('proxy.page.title', app=tr('core.app_name'))),
-            app=html.escape(tr('core.app_name')),
-            subtitle=html.escape(tr('proxy.page.subtitle', version=VERSION, state=state)),
-            rows=body,
-            details=html.escape(tr('proxy.page.details')),
-            json_text=html.escape(json.dumps(data, ensure_ascii=False, indent=2)))
-
     # ---------- listeners ----------
-    def _start_listener(self, port: int, scheme: str, ssl_options: dict) -> str:
+    def _start_listener(self, port: int, scheme: str,
+                        ssl_context: ssl.SSLContext | None) -> str:
         """Create the listening socket first (a busy port surfaces right away),
-        then hand it to uvicorn.
+        then hand it to a dedicated ``websockets`` event loop.
 
-        The socket is already listening, so client connections can arrive as soon
-        as start() returns and the kernel queues them until uvicorn's event loop
-        is up and processing -- no extra "ready" wait is needed.
+        The socket is already listening, so client connections can arrive as
+        soon as start() returns; the kernel queues them until the loop is up.
         """
         config = self.config
         host = config.listen_host or '127.0.0.1'
-        listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        family = socket.AF_INET6 if ':' in host else socket.AF_INET
+        listener = socket.socket(family, socket.SOCK_STREAM)
         listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             listener.bind((host, int(port)))
+            listener.listen(128)
         except OSError as exc:
             listener.close()
             raise OSError(tr('proxy.error.listen_failed',
                              host=host, port=int(port), error=exc))
-        listener.listen(64)
 
-        heartbeat = max(0, int(config.heartbeat_sec))
-        uvicorn_config = uvicorn.Config(
-            app=self.app,
-            host=host,
-            port=int(port),
-            log_config=None,
-            log_level='warning',
-            access_log=False,
-            ws_max_size=int(config.max_payload_bytes),
-            ws_ping_interval=float(heartbeat) if heartbeat else None,
-            ws_ping_timeout=float(max(1, heartbeat)) * 2 if heartbeat else None,
-            timeout_graceful_shutdown=3,
-            **ssl_options,
-        )
-        uvicorn_config.load()     # certificate / logging / protocol implementation problems surface here
-        server = uvicorn.Server(uvicorn_config)
-        thread = threading.Thread(target=self._serve, args=(server, listener),
-                                  daemon=True, name='mcjs-%s' % scheme)
-        self._servers.append((server, thread))
+        entry = {
+            'server': None,
+            'loop': None,
+            'serve_task': None,
+            'thread': None,
+            'listener': listener,
+            'ready': threading.Event(),
+            'error': None,
+        }
+        thread = threading.Thread(
+            target=self._serve, args=(entry, scheme, ssl_context),
+            daemon=True, name='mcjs-%s' % scheme)
+        entry['thread'] = thread
+        self._servers.append(entry)
         thread.start()
+        # Waiting for the loop to install the server means a failure inside
+        # the thread is raised from start() instead of disappearing into it.
+        if not entry['ready'].wait(5.0):
+            try:
+                listener.close()
+            except OSError:
+                pass
+            raise RuntimeError(tr('proxy.error.listener_failed', scheme=scheme))
+        if entry['error'] is not None:
+            thread.join(1.0)
+            raise entry['error']
         display_host = host if host not in ('0.0.0.0', '') else '127.0.0.1'
         return '%s://%s:%d' % (scheme, display_host, int(port))
 
-    @staticmethod
-    def _serve(server: uvicorn.Server, listener: socket.socket) -> None:
+    def _serve(self, entry: dict, scheme: str,
+               ssl_context: ssl.SSLContext | None) -> None:
+        async def main() -> None:
+            config = self.config
+            heartbeat = max(0, int(config.heartbeat_sec))
+            try:
+                server = await serve(
+                    lambda connection: self.handle_websocket(connection, scheme),
+                    sock=entry['listener'],
+                    ssl=ssl_context,
+                    process_request=self._process_http,
+                    select_subprotocol=self._select_subprotocol,
+                    compression=None,       # avoid per-message latency and CPU
+                    max_size=int(config.max_payload_bytes),
+                    max_queue=WS_MAX_QUEUE,
+                    write_limit=WS_WRITE_LIMIT,
+                    ping_interval=float(heartbeat) if heartbeat else None,
+                    ping_timeout=float(max(1, heartbeat)) * 2 if heartbeat else None,
+                    close_timeout=2,
+                    server_header='%s/%s' % (SERVICE_NAME, VERSION),
+                    create_connection=_NoDelayServerConnection,
+                )
+            except BaseException as exc:
+                entry['error'] = exc
+                entry['ready'].set()
+                return
+            entry['server'] = server
+            entry['loop'] = asyncio.get_running_loop()
+            serve_task = asyncio.create_task(server.serve_forever())
+            entry['serve_task'] = serve_task
+            entry['ready'].set()
+            try:
+                await serve_task
+            except asyncio.CancelledError:
+                pass
+            finally:
+                server.close()
+                await server.wait_closed()
+
         try:
-            asyncio.run(server.serve(sockets=[listener]))
+            asyncio.run(main())
+        except asyncio.CancelledError:
+            pass
         except Exception:      # errors in a thread cannot be raised to the caller; record them
             import traceback
             traceback.print_exc()
+            entry['error'] = entry['error'] or True
 
     def _shutdown_servers(self) -> None:
         servers = self._servers
         self._servers = []
-        for server, _thread in servers:
-            server.should_exit = True
+        # Ask each loop to close its listener and terminate the remaining
+        # connections.  Server.close() is thread-safe only through the loop.
+        for entry in servers:
+            loop = entry.get('loop')
+            server = entry.get('server')
+            serve_task = entry.get('serve_task')
+            if loop is not None and server is not None and not loop.is_closed():
+                try:
+                    loop.call_soon_threadsafe(server.close)
+                except RuntimeError:
+                    pass
+            if loop is not None and serve_task is not None and not loop.is_closed():
+                # asyncio.Server.serve_forever() only returns when cancelled;
+                # close() stops accepting but leaves the wait itself pending.
+                try:
+                    loop.call_soon_threadsafe(serve_task.cancel)
+                except RuntimeError:
+                    pass
         deadline = time.time() + 3.0
-        for _server, thread in servers:
-            thread.join(max(0.1, deadline - time.time()))
-        for server, thread in servers:
-            if thread.is_alive():
-                server.force_exit = True
-        for _server, thread in servers:
-            thread.join(2.0)
-
-
-STATUS_PAGE = """<!doctype html>
-<html lang="{lang}">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title>
-<style>
-  body {{ margin: 0; padding: 26px 20px 40px; background: #14171c; color: #e6e9ef;
-         font: 15px/1.65 "Microsoft YaHei", system-ui, sans-serif; }}
-  h1 {{ font-size: 20px; margin: 0 0 4px; }}
-  .sub {{ color: #8b95a5; font-size: 13px; margin-bottom: 18px; }}
-  table {{ border-collapse: collapse; width: 100%; max-width: 820px; background: #1b2028;
-           border-radius: 10px; overflow: hidden; }}
-  td {{ padding: 11px 16px; border-top: 1px solid #262d38; vertical-align: top; }}
-  tr:first-child td {{ border-top: none; }}
-  td.k {{ color: #9aa6b8; width: 200px; white-space: nowrap; }}
-  code {{ font-family: Consolas, "Courier New", monospace; font-size: 13px;
-          word-break: break-all; }}
-  .ok {{ color: #4ade80; }}
-  .warn {{ color: #fbbf24; }}
-  .dim {{ color: #8b95a5; font-size: 13px; }}
-  details {{ margin-top: 18px; max-width: 820px; color: #9aa6b8; }}
-  pre {{ background: #1b2028; padding: 14px; border-radius: 10px; overflow: auto;
-         font-size: 12px; line-height: 1.5; }}
-</style>
-</head>
-<body>
-<h1>{app}</h1>
-<div class="sub">{subtitle}</div>
-<table>
-{rows}
-</table>
-<details><summary>{details}</summary><pre>{json_text}</pre></details>
-</body>
-</html>
-"""
+        for entry in servers:
+            thread = entry.get('thread')
+            if thread is not None:
+                thread.join(max(0.1, deadline - time.time()))
+        # A handler stuck in a blocking call would keep its loop alive; stop
+        # the loop so the process can still exit cleanly.
+        for entry in servers:
+            thread = entry.get('thread')
+            loop = entry.get('loop')
+            if thread is not None and thread.is_alive() and loop is not None:
+                try:
+                    loop.call_soon_threadsafe(loop.stop)
+                except RuntimeError:
+                    pass
+        for entry in servers:
+            thread = entry.get('thread')
+            if thread is not None:
+                thread.join(2.0)
+            listener = entry.get('listener')
+            try:
+                if listener is not None:
+                    listener.close()
+            except OSError:
+                pass
