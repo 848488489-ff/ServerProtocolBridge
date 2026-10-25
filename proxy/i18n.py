@@ -77,7 +77,18 @@ def language_code(label: str) -> str:
 
 def tr(key: str, **values) -> str:
     """Translate ``key`` into the active language and fill in ``values``."""
-    text = _TABLES[_current].get(key)
+    return tr_in(_current, key, **values)
+
+
+def tr_in(language_code: str, key: str, **values) -> str:
+    """Translate ``key`` into *language_code* without changing the active language.
+
+    This is for small reverse lookups -- a combobox may still hold a label
+    rendered in the previous language for one event, and mapping it back must
+    not depend on which language happens to be active at that instant.
+    """
+    table = _TABLES.get((language_code or '').strip().lower(), _TABLES[DEFAULT_LANGUAGE])
+    text = table.get(key)
     if text is None:
         text = EN.get(key, key)
     if values:

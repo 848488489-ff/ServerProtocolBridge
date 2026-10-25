@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
+import locale
 import shutil
 import socket
 import subprocess
@@ -82,10 +83,13 @@ def _openssl_generate(cert_path: Path, key_path: Path, common_name: str,
         '-addext', 'subjectAltName=%s' % subject_alt_name,
     ]
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=180)
+        completed = subprocess.run(command, capture_output=True, timeout=180)
     except Exception:
         return False
-    return completed.returncode == 0 and cert_path.exists() and key_path.exists()
+    if completed.returncode != 0:
+        _decode_command_output(completed.stdout, completed.stderr)
+        return False
+    return cert_path.exists() and key_path.exists()
 
 
 def _write_certificate_files(cert_path: Path, key_path: Path, certificate: dict) -> None:
@@ -222,6 +226,13 @@ def ensure_certificate(cert_dir: Path, common_name: str = 'localhost', extra_nam
     return info
 
 
+def _decode_command_output(stdout: bytes, stderr: bytes) -> str:
+    """Decode command output with the system code page, without crashing on odd bytes."""
+    encoding = locale.getpreferredencoding(False) or 'utf-8'
+    return ((stdout or b'').decode(encoding, errors='replace') +
+            (stderr or b'').decode(encoding, errors='replace'))
+
+
 def install_to_trust_store(cert_path: Path, logger=None) -> tuple[bool, str]:
     """Import the certificate into the current user's "Trusted Root Certification Authorities" store (Windows)."""
     cert_path = Path(cert_path)
@@ -231,10 +242,10 @@ def install_to_trust_store(cert_path: Path, logger=None) -> tuple[bool, str]:
         return False, tr('certs.windows_only')
     command = ['certutil', '-user', '-addstore', 'root', str(cert_path)]
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=60)
+        completed = subprocess.run(command, capture_output=True, timeout=60)
     except Exception as exc:
         return False, tr('certs.certutil_failed', error=exc)
-    output = ((completed.stdout or '') + (completed.stderr or '')).strip()
+    output = _decode_command_output(completed.stdout, completed.stderr).strip()
     ok = completed.returncode == 0
     if logger is not None:
         if ok:

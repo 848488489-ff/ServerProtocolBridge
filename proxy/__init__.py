@@ -1,11 +1,12 @@
 """Server Protocol Bridge.
 
 Turns an ordinary Minecraft server (plain TCP, e.g. Hypixel) into a local
-wss:// endpoint for browser clients such as MCJS: browsers only accept wss://
+wss:// or ws:// endpoint for WebSocket clients: browsers only accept wss://
 WebSocket connections, so this tool unwraps WebSocket frames back into the
 original TCP byte stream locally and forwards data in both directions.
 
-Game packets are never parsed or modified along the way.
+Native Java clients are forwarded byte for byte.  WebSocket clients go through
+the handshake and protocol translation their connection requires.
 """
 
 from .version import APP_NAME, VERSION, app_name, tagline

@@ -1,8 +1,8 @@
 """Probe a target Minecraft server: send a vanilla login and print the server's raw replies.
 
-    python tools/probe.py mc244.com                 :: probe each SRV node
-    python tools/probe.py mc244.com:25565 --protocol 47,340,754
-    python tools/probe.py mc244.com --address 127.0.0.1  :: override the address in the handshake
+    python tools/probe.py play.example.net          :: probe each SRV node
+    python tools/probe.py play.example.net:25565 --protocol 47,340,754
+    python tools/probe.py play.example.net --address 127.0.0.1  :: override the address in the handshake
                                                            (to test routing / forwarding setups)
 
 The output classifies the outcome explicitly: login success / kicked (verbatim text) / online-mode
@@ -304,7 +304,7 @@ def eagler_probe(host: str, port: int, username_bytes: bytes = b'nopp') -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description='probe how a target Minecraft server responds to a vanilla login')
-    parser.add_argument('target', help='target, e.g. mc244.com or mc244.com:25565')
+    parser.add_argument('target', help='target, e.g. play.example.net or play.example.net:25565')
     parser.add_argument('--protocol', default='47', help='protocol versions to try, comma separated (default 47)')
     parser.add_argument('--address', help='server address placed in the handshake packet (defaults to the node hostname)')
     parser.add_argument('--username', default='MCJSTestProbe', help='username used for the login')

@@ -1,3 +1,30 @@
-# 运行时依赖: 无 —— 只使用 Python 标准库(socket / ssl / tkinter / hashlib 等)
-# 打包成 EXE 时才需要 PyInstaller:
-pyinstaller>=6.0
+# Server Protocol Bridge - runtime dependencies
+#
+# Windows:
+#   py -3 -m pip install -r requirements.txt
+#   py -3 main.py
+#
+# Linux/macOS:
+#   python3 -m pip install -r requirements.txt
+#   sh start.sh
+#
+# Windows EXE build dependencies live in requirements-build.txt.
+
+# Core networking and protocol
+websockets>=15
+cryptography>=42
+
+# GUI (CustomTkinter provides modern widgets on top of Tkinter)
+customtkinter>=5.2
+
+# Web UI (Flask for the browser-based interface - lighter than FastAPI)
+flask>=3.0
+
+# Account authentication
+mcauth3>=1.1
+
+# HTTP client (for server status queries, update checks)
+requests>=2.31
+
+# Optional AES fallback when the cryptography wheel is unavailable:
+# pycryptodome>=3.20

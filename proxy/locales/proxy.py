@@ -11,6 +11,7 @@ EN = {
     # -- configuration / listener errors (raised towards the GUI) --
     'proxy.error.bad_config': 'Invalid configuration: %(problems)s',
     'proxy.error.listen_failed': 'cannot listen on %(host)s:%(port)d (%(error)s)',
+    'proxy.error.listener_failed': 'the %(scheme)s WebSocket listener did not start',
 
     # -- connection failure reasons (logged and sent to the player) --
     'proxy.error.timeout': 'Connection timed out; the server may be offline',
@@ -30,6 +31,9 @@ EN = {
 
     # -- close reasons (shown in the log / GUI) --
     'proxy.reason.service_stopped': 'local service stopped',
+    'proxy.log.goodbye_sent': '#%(id)d disconnect packet sent to the client',
+    'proxy.log.goodbye_skipped': '#%(id)d stopping: no known disconnect packet for '
+                                 'protocol %(protocol)s',
     'proxy.reason.client_closed': 'client closed the connection',
     'proxy.reason.client_closed_code': 'client closed the connection (code=%(code)s)',
     'proxy.reason.query_idle_timeout': 'server list query connection idle timeout',
@@ -53,8 +57,8 @@ EN = {
     'proxy.diag.protocol_unsupported': '  · client protocol version %(version)d is not '
                                        'supported by that server (servers sometimes just '
                                        'disconnect without sending a message)',
-    'proxy.diag.policy': '  · the server requires a premium account / whitelist / a '
-                         'specific port, or it blocks connections based on where they '
+    'proxy.diag.policy': '  · the server requires a Microsoft account sign-in / whitelist / '
+                         'a specific port, or it blocks connections based on where they '
                          'come from',
 
     # -- frame kinds --
@@ -88,8 +92,13 @@ EN = {
                             'bytes (starts with: %(preview)r)',
     'proxy.log.base64_decoded': '#%(id)d text frame of %(size)d bytes -> %(decoded)d '
                                 'bytes after base64 decoding',
-    'proxy.log.translator_enabled': '#%(id)d browser client detected (EaglercraftX '
-                                    'handshake), enabling the protocol translation layer',
+    'proxy.log.translator_enabled': '#%(id)d WebSocket client detected, enabling the '
+                                    'protocol translation layer',
+
+    'proxy.log.account_not_found': '#%(id)d account %(name)r is not in the account '
+                                   'list; connecting without one',
+    'proxy.log.account_load_failed': '#%(id)d could not read the account list '
+                                     '(%(error)s); connecting without one',
     'proxy.log.handshake_incomplete': '#%(id)d handshake packet is still %(missing)d '
                                       'bytes short, buffering until it is complete',
     'proxy.log.not_handshake': '#%(id)d first inbound packet is not a handshake, '
@@ -107,44 +116,20 @@ EN = {
     'proxy.log.bad_route': 'route %(path)s has an invalid target (%(error)s), using the '
                            'default target',
     'proxy.log.status_resolve_failed': 'failed to resolve the target address for the '
-                                       'status page: %(error)s',
+                                       'status request: %(error)s',
 
-    # -- status page --
-    'proxy.page.title': '%(app)s · Status',
-    'proxy.page.subtitle': 'Version %(version)s · %(state)s',
-    'proxy.page.details': 'Full information (JSON)',
-    'proxy.page.address': 'Current server address',
-    'proxy.page.resolved': 'resolved to %(address)s',
-    'proxy.page.target_status': 'Target server status',
-    'proxy.page.online': 'online · %(ping)s ms',
-    'proxy.page.players': 'players %(online)s/%(max)s',
-    'proxy.page.unreachable': 'temporarily unreachable',
-    'proxy.page.wss_url': 'Address to enter in the browser client',
-    'proxy.page.alt_addresses': 'Alternative addresses',
-    'proxy.page.app': 'Program',
-    'proxy.page.state': 'Status',
-    'proxy.page.running': 'Running',
-    'proxy.page.stopped': 'Stopped',
-    'proxy.page.uptime': 'Uptime',
-    'proxy.page.uptime_value': '%(seconds).1f seconds',
-    'proxy.page.connections': 'Connections',
-    'proxy.page.connections_value': 'active %(active)s / total %(total)s',
-    'proxy.page.traffic': 'Traffic',
-    'proxy.page.traffic_value': 'up %(up)s · down %(down)s',
-    'proxy.page.server_brand': 'Server brand (shown to clients)',
-    'proxy.page.spoof_brand': 'Client brand spoof (shown to the target server)',
-    'proxy.page.spoof_off': 'off, no MC|Brand is sent',
-    'proxy.page.routes': 'Path routes',
-    'proxy.page.cert_thumbprint': 'Certificate thumbprint',
+    # -- status endpoint --
 
     # -- server list ("Accept: MOTD") response --
-    'proxy.query.target': 'Current server address: %(address)s',
+    'proxy.query.no_motd': 'The server did not return any MOTD information',
+    'proxy.query.status_error': 'Could not read the server status: %(error)s',
 }
 
 ZH = {
     # -- configuration / listener errors --
     'proxy.error.bad_config': '配置有误: %(problems)s',
     'proxy.error.listen_failed': '无法监听 %(host)s:%(port)d (%(error)s)',
+    'proxy.error.listener_failed': '%(scheme)s WebSocket 监听器未能启动',
 
     # -- connection failure reasons --
     'proxy.error.timeout': '连接超时, 服务器可能不在线',
@@ -160,6 +145,8 @@ ZH = {
 
     # -- close reasons --
     'proxy.reason.service_stopped': '本地服务已停止',
+    'proxy.log.goodbye_sent': '#%(id)d 已通知客户端断开(正常退出服务器)',
+    'proxy.log.goodbye_skipped': '#%(id)d 服务停止: 协议 %(protocol)s 没有已知的断开数据包',
     'proxy.reason.client_closed': '客户端关闭了连接',
     'proxy.reason.client_closed_code': '客户端关闭了连接 (code=%(code)s)',
     'proxy.reason.query_idle_timeout': '列表查询连接空闲超时',
@@ -180,7 +167,7 @@ ZH = {
                                    '—— 可以试试打开"握手地址改写"',
     'proxy.diag.protocol_unsupported': '  · 客户端协议版本 %(version)d 不被该服务器支持'
                                        '(服务端有时直接断开而不发提示)',
-    'proxy.diag.policy': '  · 该服务器要求正版/白名单/特定端口, 或按访问来源做了拦截',
+    'proxy.diag.policy': '  · 该服务器要求微软账号验证/白名单/特定端口, 或按访问来源做了拦截',
 
     # -- frame kinds --
     'proxy.frame.text': '文本帧',
@@ -207,8 +194,10 @@ ZH = {
                             '(开头: %(preview)r)',
     'proxy.log.base64_decoded': '#%(id)d 文本帧 %(size)d 字节 -> base64 解码出 '
                                 '%(decoded)d 字节',
-    'proxy.log.translator_enabled': '#%(id)d 检测到浏览器端客户端 (EaglercraftX 握手), '
-                                    '启用协议翻译层',
+    'proxy.log.translator_enabled': '#%(id)d 检测到 WebSocket 客户端, 启用协议翻译层',
+
+    'proxy.log.account_not_found': '#%(id)d 账号列表里没有 %(name)r, 本次不使用账号连接',
+    'proxy.log.account_load_failed': '#%(id)d 读取账号列表失败(%(error)s), 本次不使用账号连接',
     'proxy.log.handshake_incomplete': '#%(id)d 握手包还差 %(missing)d 字节, 先缓存等收齐',
     'proxy.log.not_handshake': '#%(id)d 上行首包不是握手包, 原样转发; 前 64 字节: '
                                '%(preview)s',
@@ -221,36 +210,11 @@ ZH = {
     'proxy.log.listeners_ready': '监听就绪: %(listeners)s',
     'proxy.log.stopped': '服务已停止',
     'proxy.log.bad_route': '路径映射 %(path)s 的目标无效(%(error)s), 使用默认目标',
-    'proxy.log.status_resolve_failed': '状态页解析目标地址失败: %(error)s',
+    'proxy.log.status_resolve_failed': '状态请求解析目标地址失败: %(error)s',
 
     # -- status page --
-    'proxy.page.title': '%(app)s · 运行状态',
-    'proxy.page.subtitle': '版本 %(version)s · %(state)s',
-    'proxy.page.details': '完整信息 (JSON)',
-    'proxy.page.address': '当前服务器地址',
-    'proxy.page.resolved': '解析到 %(address)s',
-    'proxy.page.target_status': '目标服务器状态',
-    'proxy.page.online': '在线 · %(ping)s ms',
-    'proxy.page.players': '玩家 %(online)s/%(max)s',
-    'proxy.page.unreachable': '暂时连不上',
-    'proxy.page.wss_url': '浏览器客户端填这个地址',
-    'proxy.page.alt_addresses': '备用地址',
-    'proxy.page.app': '程序',
-    'proxy.page.state': '运行状态',
-    'proxy.page.running': '运行中',
-    'proxy.page.stopped': '已停止',
-    'proxy.page.uptime': '运行时长',
-    'proxy.page.uptime_value': '%(seconds).1f 秒',
-    'proxy.page.connections': '连接数',
-    'proxy.page.connections_value': '当前 %(active)s 条 / 累计 %(total)s 条',
-    'proxy.page.traffic': '流量',
-    'proxy.page.traffic_value': '上行 %(up)s · 下行 %(down)s',
-    'proxy.page.server_brand': '服务器品牌(给客户端看)',
-    'proxy.page.spoof_brand': '客户端标识伪装(给目标服看)',
-    'proxy.page.spoof_off': '已关闭, 不发送 MC|Brand',
-    'proxy.page.routes': '路径映射',
-    'proxy.page.cert_thumbprint': '证书指纹',
 
     # -- server list ("Accept: MOTD") response --
-    'proxy.query.target': '当前服务器地址: %(address)s',
+    'proxy.query.no_motd': '服务器未返回MOTD信息',
+    'proxy.query.status_error': '无法读取服务器状态: %(error)s',
 }

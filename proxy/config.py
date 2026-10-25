@@ -7,7 +7,6 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .i18n import LANGUAGES, tr
-from .update import DEFAULT_UPDATE_URL, split_urls
 from .utils import app_dir, resolve_path
 
 CONFIG_FILENAME = 'config.json'
@@ -70,17 +69,42 @@ def parse_routes_text(text: str) -> dict:
     return routes
 
 
+# Client identity spoof presets for the upstream (target server) side, split by
+# the Minecraft era: the identity a client flavour leaves on the wire differs
+# with the version the target server runs (see translator.py).
+# SPOOF_DEFAULT_BRANDS is the MC|Brand value each preset reports by default.
+# Forge up to 1.12.2 speaks the legacy FML handshake and reports "fml,forge";
+# Forge 1.13+ reports "forge"; NeoForge (1.20.2+) "neoforge".  The brand stays
+# user-editable (spoof_brand) for cases the presets do not cover.
+SPOOF_CLIENTS = ('off', 'vanilla', 'forge-1.8', 'forge-1.13', 'neoforge', 'fabric')
+RESOURCE_PACK_MODES = ('forward', 'accept', 'reject', 'spoof')
+THEME_MODES = ('light', 'dark', 'system')
+SPOOF_DEFAULT_BRANDS = {
+    'off': '',
+    'vanilla': 'vanilla',
+    'forge-1.8': 'fml,forge',     # Forge 1.8.x - 1.12.2 (legacy FML handshake)
+    'forge-1.13': 'forge',        # Forge 1.13 and newer
+    'neoforge': 'neoforge',       # NeoForge 1.20.2 and newer
+    'fabric': 'fabric',
+}
+
+
 @dataclass
 class Config:
     """Every configurable option; maps one-to-one onto config.json."""
+
+    # Schema marker.  Old files predate this key; it lets from_dict() migrate
+    # settings whose meaning changed without touching choices made afterwards.
+    config_version: int = 2
 
     # Listening
     listen_host: str = '127.0.0.1'
     wss_port: int = 8443          # wss:// (TLS) listen port
     ws_port: int = 8080           # ws:// (plaintext fallback) listen port; 0 = disabled
 
-    # Forward target
-    target: str = 'mc244.com'
+    # Forward target.  Empty on purpose: every user connects to a different
+    # server, so the app must not ship with a default address.
+    target: str = ''
     routes: dict = field(default_factory=dict)   # {'/path': 'host:port'}
     use_srv: bool = True
     # Rewrite the server address in the upstream handshake to the real target
@@ -89,17 +113,42 @@ class Config:
     # Protocol translation for browser clients (EaglercraftX family, e.g. MCJS):
     # autodetect them and answer their private handshake on the server's behalf
     eagler_translate: bool = True
+    # 1.20.2+ targets hold the connection in the login state until the client
+    # acknowledges the login result, which browser clients never do (their
+    # login phase is the EaglercraftX handshake); send that acknowledge in
+    # their place so the target can leave the login state (see translator.py).
+    # Off = nothing is sent and everything passes through untouched.
+    login_ack: bool = True
+    # How the proxy handles the server's resource pack prompt. The choices are
+    # 'forward' (pass the prompt through), 'accept' (answer accept and drop the
+    # prompt), 'reject' (answer reject and drop the prompt), or 'spoof' (answer
+    # accept but still drop the prompt so the client never sees it).
+    resource_pack_mode: str = 'forward'
+
+    # UI theme: 'light' (always light), 'dark' (always dark), 'system' (follow
+    # the OS setting)
+    theme: str = 'system'
 
     # Identity spoofing
     # Server brand: the "server identity" browser clients see after connecting
     # (shown in their debug info)
-    server_brand: str = 'MCJS-Proxy'
+    server_brand: str = 'ServerProtocolBridge'
     # Server version: same as above; empty = use the program version
     server_brand_version: str = ''
-    # Spoofed client brand: MC|Brand value sent to the target server after login;
-    # empty = do not send.  A vanilla 1.8.8 client sends "vanilla"; use another
-    # brand name (e.g. forge/1.8.8) to pretend to be a different client
-    spoof_brand: str = 'vanilla'
+    # Client identity spoof preset: which client flavour the proxy imitates at
+    # the target server.  'off' is the default and spoofs nothing; 'vanilla'
+    # reports a vanilla brand; 'forge-1.8' reproduces the legacy Forge
+    # fingerprints (FML marker in the handshake address, REGISTER channel list,
+    # "fml,forge" brand); 'forge-1.13' / 'neoforge' / 'fabric' report their own
+    # brand.  All of it applies to 1.8 connections only: the plugin-message
+    # packet ids change per game version, and this proxy does not guess packet
+    # numbers it cannot know (see translator.py).
+    spoof_client: str = 'off'
+    # Spoofed client brand: MC|Brand value sent to the target server after
+    # login; empty = the preset's default (SPOOF_DEFAULT_BRANDS).  The value
+    # differs per Minecraft version (Forge 1.8.x "fml,forge", 1.13+ "forge"),
+    # so it can be written out exactly as needed
+    spoof_brand: str = ''
 
     # Certificates
     tls_enabled: bool = True
@@ -112,16 +161,30 @@ class Config:
     # Run-time options
     # Language for all user-visible text: 'en' (English, default) or 'zh' (Chinese)
     language: str = 'en'
+    # Web UI: the browser interface the window starts automatically.  It binds
+    # to loopback by default; set web_host to 0.0.0.0 to expose it on the LAN.
+    # web_port 0 lets the operating system pick a free port.
+    web_host: str = '127.0.0.1'
+    web_port: int = 8765
     connect_timeout: float = 10.0
     heartbeat_sec: int = 30       # WebSocket heartbeat interval in seconds; 0 = disabled
     max_payload_mb: int = 16      # Max size of a single frame
+    # Server-list (Accept: MOTD) status cache.  When enabled, a fresh cached
+    # answer is returned immediately and a stale one is refreshed in the
+    # background.  When disabled, every list query asks the target server.
+    status_cache: bool = True
+    status_cache_ttl: int = 30    # seconds a cached status stays fresh
     log_level: str = 'info'
+    # Before the service stops -- or the program closes -- tell every connected
+    # client why the session is over, using the game's own disconnect packet:
+    # a bare socket close is what clients show as an ended data stream
+    auto_exit: bool = True
 
-    # Cloud version check: on startup the program asks the endpoint(s) below for
-    # the newest release and says so when a newer one exists; several URLs may be
-    # listed (comma/space separated) and are tried in order, empty = disabled
+    # Cloud version check: on startup the program asks its update endpoint for
+    # the newest release and reports a newer one.  The endpoint is compiled into
+    # the program (proxy/update.py) and is deliberately not a setting: it is not
+    # read from this file and no window or option offers to edit it.
     update_check: bool = True
-    update_url: str = DEFAULT_UPDATE_URL
 
     # ---------- Serialization ----------
     def to_dict(self) -> dict:
@@ -133,6 +196,25 @@ class Config:
         if not isinstance(data, dict):
             return config
         known = {item.name: item for item in fields(cls)}
+        data = dict(data)
+        try:
+            legacy = int(data.get('config_version', 1)) < 2
+        except (TypeError, ValueError):
+            legacy = True
+        if 'spoof_client' not in data:
+            # Configurations written before the spoof presets existed carry no
+            # preset key; back then the built-in brand default was literally
+            # "vanilla", so an untouched value is cleared here to let the
+            # current default provide it.  A user-chosen value never changes.
+            if str(data.get('spoof_brand', '')).strip().lower() == 'vanilla':
+                data['spoof_brand'] = ''
+        elif (legacy
+              and str(data.get('spoof_client', '')).strip().lower() == 'forge-1.8'
+              and not str(data.get('spoof_brand', '')).strip()):
+            # The legacy Forge preset was the old default; migrate the old
+            # default silently.  A custom brand means the user chose Forge
+            # deliberately, so that file is left alone.
+            data['spoof_client'] = 'off'
         for name, value in data.items():
             if name not in known:
                 continue
@@ -167,6 +249,22 @@ class Config:
     @property
     def max_payload_bytes(self) -> int:
         return max(1, int(self.max_payload_mb)) * 1024 * 1024
+
+    # ---------- Spoofing ----------
+    def spoof_brand_value(self) -> str:
+        """The exact MC|Brand value to send upstream; empty = send none.
+
+        ``spoof_brand`` overrides the preset default, and the ``off`` preset
+        means "no spoofing at all", so it suppresses the brand regardless of
+        the override.
+        """
+        preset = (self.spoof_client or 'off').strip().lower()
+        if preset == 'off':
+            return ''
+        override = (self.spoof_brand or '').strip()
+        if override:
+            return override
+        return SPOOF_DEFAULT_BRANDS.get(preset, '')
 
     # ---------- Load / save ----------
     @classmethod
@@ -220,12 +318,15 @@ class Config:
             problems.append(tr('core.config.tls_needs_ws_port'))
         if self.tls_enabled and int(self.wss_port) > 0 and int(self.ws_port) == int(self.wss_port):
             problems.append(tr('core.config.ports_conflict'))
-        try:
-            host, _ = parse_address(self.target)
-            if not host:
-                problems.append(tr('core.config.target_empty'))
-        except ValueError as exc:
-            problems.append(tr('core.config.target_invalid', error=exc))
+        if not (self.target or '').strip():
+            problems.append(tr('core.config.target_empty'))
+        else:
+            try:
+                host, _ = parse_address(self.target)
+                if not host:
+                    problems.append(tr('core.config.target_empty'))
+            except ValueError as exc:
+                problems.append(tr('core.config.target_invalid', error=exc))
         for path, target in (self.routes or {}).items():
             try:
                 parse_address(target)
@@ -250,21 +351,22 @@ class Config:
                 continue
             if len(text) > limit:
                 problems.append(tr('core.config.brand_too_long', name=name, limit=limit))
+        preset = (self.spoof_client or '').strip().lower()
+        if preset not in SPOOF_CLIENTS:
+            problems.append(tr('core.config.spoof_client_invalid',
+                               choices=' / '.join(SPOOF_CLIENTS)))
         if int(self.max_payload_mb) <= 0:
             problems.append(tr('core.config.max_payload_positive'))
         if float(self.connect_timeout) <= 0:
             problems.append(tr('core.config.connect_timeout_positive'))
         if int(self.heartbeat_sec) < 0:
             problems.append(tr('core.config.heartbeat_non_negative'))
+        if not 1 <= int(self.status_cache_ttl) <= 86400:
+            problems.append(tr('core.config.status_cache_ttl_range'))
         if self.log_level not in ('debug', 'info', 'warn', 'error'):
             problems.append(tr('core.config.log_level_invalid'))
         if (self.language or '').strip().lower() not in LANGUAGES:
             problems.append(tr('core.config.language_invalid'))
-        if self.update_check:
-            for url in split_urls(self.update_url):
-                if not url.lower().startswith(('https://', 'http://')):
-                    problems.append(tr('core.config.update_url_invalid'))
-                    break
         return problems
 
     # ---------- Display ----------
@@ -283,6 +385,24 @@ class Config:
         if int(self.ws_port) > 0:
             result.append('ws://%s:%d' % (host, int(self.ws_port)))
         return result
+
+    def web_url(self) -> str:
+        """The URL a browser on this machine should open for the Web UI."""
+        host = (self.web_host or '127.0.0.1').strip() or '127.0.0.1'
+        if host in ('0.0.0.0', '::', '[::]'):
+            host = '127.0.0.1'
+        if ':' in host and not host.startswith('['):
+            host = '[%s]' % host
+        return 'http://%s:%d/' % (host, int(self.web_port))
+
+    def validate_web(self) -> list[str]:
+        """Problems that only concern the Web UI listener (never the proxy)."""
+        problems: list[str] = []
+        if not (self.web_host or '').strip():
+            problems.append(tr('core.config.web_host_empty'))
+        if not 0 <= int(self.web_port) <= 65535:
+            problems.append(tr('core.config.web_port_range'))
+        return problems
 
     def wss_url(self) -> str | None:
         host = self.listen_host or '127.0.0.1'

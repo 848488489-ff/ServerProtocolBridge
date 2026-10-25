@@ -12,6 +12,7 @@ import json
 import sys
 import threading
 import unittest
+from unittest import mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -19,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from proxy import update  # noqa: E402
 from proxy.config import Config  # noqa: E402
-from proxy.i18n import tr  # noqa: E402
+from proxy.i18n import set_language, tr  # noqa: E402
 from proxy.logger import NullLogger  # noqa: E402
 
 # path -> (status, body); the handler answers 404 for anything not listed
@@ -239,51 +240,218 @@ class AsyncTests(_ServerTest):
         self.assertTrue(done.wait(5), 'the check never called back')
         self.assertIsInstance(collected[0], update.UpdateError)
 
+    def test_call_sites_name_the_callback(self):
+        """The GUI and the CLI must hand the callback over as ``callback=``.
+
+        Passed as the third positional argument it landed in *timeout*: the
+        request went out, the answer was thrown away, and the window that had
+        logged "checking for the newest release ..." stayed silent forever.
+        """
+        import inspect
+
+        from proxy import cli, gui_ctk
+
+        for module in (cli, gui_ctk):
+            source = inspect.getsource(module)
+            self.assertIn('callback=lambda outcome', source,
+                          '%s does not name the check callback' % module.__name__)
+
 
 class CliTests(_ServerTest):
     def test_parser_and_config_wiring(self):
         from proxy.cli import apply_arguments, build_parser
 
-        args = build_parser().parse_args(
-            ['--check-update', '--update-url', 'https://example.invalid/', '--no-update-check'])
+        args = build_parser().parse_args(['--check-update', '--no-update-check'])
         self.assertTrue(args.check_update)
         config = apply_arguments(Config(), args)
-        self.assertEqual(config.update_url, 'https://example.invalid/')
         self.assertFalse(config.update_check)
 
     def test_check_update_exit_codes(self):
         from proxy.cli import run_update_check
+        from proxy.version import VERSION
 
-        REPLIES['/new.json'] = (200, '{"version": "1.1"}')
-        REPLIES['/same.json'] = (200, '{"version": "1.0.0"}')
+        # The announced release is derived from the running version, so the
+        # test keeps working when the program version is bumped.
+        major = int(VERSION.split('.')[0])
+        REPLIES['/new.json'] = (200, json.dumps({'version': '%d.0' % (major + 1)}))
+        REPLIES['/same.json'] = (200, json.dumps({'version': VERSION}))
         logger = NullLogger()
         with _Server() as base:
-            config = Config()
-            config.update_url = base + '/new.json'
-            self.assertEqual(run_update_check(config, logger), 1)   # newer release exists
-            config.update_url = base + '/same.json'
-            self.assertEqual(run_update_check(config, logger), 0)   # up to date
-            config.update_url = base + '/missing.json'
-            self.assertEqual(run_update_check(config, logger), 2)   # check failed
+            # The endpoint is compiled in, so the test points the constant at
+            # the throwaway server instead of at a configuration field.
+            for path, expected in (('/new.json', 1), ('/same.json', 0), ('/missing.json', 2)):
+                with mock.patch.object(update, 'DEFAULT_UPDATE_URL', base + path):
+                    self.assertEqual(run_update_check(Config(), logger), expected)
+
+
+class ReleaseFieldsTests(_ServerTest):
+    """The richer document the site publishes: policy, notes and download data."""
+
+    def test_full_document(self):
+        REPLIES['/v.json'] = (200, json.dumps({
+            'version': '1.2.0',
+            'download_url': 'https://example.invalid/setup.exe',
+            'source_url': 'https://example.invalid/source.zip',
+            'min_version': '1.1.0',
+            'force_update': False,
+            'release_date': '2026-10-18T09:00:00Z',
+            'changelog': 'New settings window\nFixed the checkbox mark',
+            'sha256': 'CDCDDD109CC921037229DE2B580F6FDAE4F45FF1699FC921316E39D2CA2EC798',
+            'file_size': 28665610,
+        }))
+        with _Server() as base:
+            result = update.check(base + '/v.json', '1.1.1')
+        self.assertEqual(result['version'], '1.2.0')
+        self.assertEqual(result['page'], 'https://example.invalid/setup.exe')
+        self.assertEqual(result['source'], 'https://example.invalid/source.zip')
+        self.assertEqual(result['min_version'], '1.1.0')
+        self.assertEqual(result['release_date'], '2026-10-18T09:00:00Z')
+        self.assertEqual(result['notes'], 'New settings window\nFixed the checkbox mark')
+        self.assertEqual(result['sha256'],
+                         'cdcddd109cc921037229de2b580f6fdae4f45ff1699fc921316e39d2ca2ec798')
+        self.assertEqual(result['file_size'], 28665610)
+        self.assertTrue(result['newer'])
+        self.assertFalse(result['must_update'])
+
+    def test_force_update_flag(self):
+        REPLIES['/v.json'] = (200, json.dumps({'version': '1.2.0', 'force_update': True}))
+        with _Server() as base:
+            result = update.check(base + '/v.json', '1.1.1')
+        self.assertTrue(result['force_update'])
+        self.assertTrue(result['must_update'])
+
+    def test_old_build_below_min_version_must_update(self):
+        REPLIES['/v.json'] = (200, json.dumps({'version': '1.2.0', 'min_version': '1.1.0'}))
+        with _Server() as base:
+            result = update.check(base + '/v.json', '1.0.9')
+        self.assertTrue(result['must_update'])
+
+    def test_supported_build_is_not_forced(self):
+        REPLIES['/v.json'] = (200, json.dumps({'version': '1.2.0', 'min_version': '1.1.0'}))
+        with _Server() as base:
+            result = update.check(base + '/v.json', '1.1.1')
+        self.assertFalse(result['must_update'])
+
+    def test_up_to_date_build_never_must_update(self):
+        REPLIES['/v.json'] = (200, json.dumps({'version': '1.1.1', 'force_update': True,
+                                               'min_version': '9.0'}))
+        with _Server() as base:
+            result = update.check(base + '/v.json', '1.1.1')
+        self.assertFalse(result['newer'])
+        self.assertFalse(result['must_update'])
+
+    def test_optional_fields_may_be_missing(self):
+        REPLIES['/v.json'] = (200, '{"version": "1.2.0"}')
+        with _Server() as base:
+            result = update.check(base + '/v.json', '1.1.1')
+        self.assertEqual(result['min_version'], '')
+        self.assertEqual(result['source'], '')
+        self.assertEqual(result['release_date'], '')
+        self.assertEqual(result['sha256'], '')
+        self.assertEqual(result['file_size'], 0)
+        self.assertFalse(result['force_update'])
+        self.assertFalse(result['must_update'])
+
+    def test_junk_optional_fields_do_not_force_an_update(self):
+        REPLIES['/v.json'] = (200, json.dumps({
+            'version': '1.2.0', 'force_update': 'maybe', 'min_version': 'soon',
+            'sha256': 'not-a-digest', 'file_size': 'big'}))
+        with _Server() as base:
+            result = update.check(base + '/v.json', '1.0.0')
+        self.assertFalse(result['force_update'])
+        self.assertFalse(result['must_update'])
+        self.assertEqual(result['min_version'], '')
+        self.assertEqual(result['sha256'], '')
+        self.assertEqual(result['file_size'], 0)
+
+    def test_words_and_digit_strings_are_understood(self):
+        REPLIES['/v.json'] = (200, json.dumps({
+            'version': '1.2.0', 'force_update': 'true', 'file_size': '28,665,610'}))
+        with _Server() as base:
+            result = update.check(base + '/v.json', '1.0.0')
+        self.assertTrue(result['must_update'])
+        self.assertEqual(result['file_size'], 28665610)
+
+    def test_source_link_rejects_non_http_schemes(self):
+        for bad in ('javascript:alert(1)', 'file:///C:/secret.txt', 'not a link',
+                    '//cdn.example.invalid/source.zip'):
+            REPLIES['/v.json'] = (200, json.dumps({'version': '1.2.0', 'source_url': bad}))
+            with _Server() as base:
+                result = update.check(base + '/v.json', '1.0.0')
+            self.assertEqual(result['source'], '', bad)
+
+    def test_source_link_resolves_a_same_site_path_against_the_endpoint(self):
+        REPLIES['/v.json'] = (200, json.dumps({
+            'version': '1.2.0',
+            'source_url': '/downloads/ServerProtocolBridge-1.1.5.1-source.zip?token=a%2Bb',
+        }))
+        with _Server() as base:
+            result = update.check(base + '/v.json', '1.0.0')
+        self.assertEqual(result['source'],
+                         base + '/downloads/ServerProtocolBridge-1.1.5.1-source.zip?token=a%2Bb')
+
+    def test_source_link_keeps_query_tokens(self):
+        link = 'https://files.example.invalid/source.zip?token=a%2Bb&share=123'
+        REPLIES['/v.json'] = (200, json.dumps({'version': '1.2.0', 'source_url': link}))
+        with _Server() as base:
+            result = update.check(base + '/v.json', '1.0.0')
+        self.assertEqual(result['source'], link)
+
+
+class LocalizedNotesTests(_ServerTest):
+    """The changelog follows the interface language when both are published."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(set_language, 'en')
+
+    def _check(self, payload):
+        REPLIES['/v.json'] = (200, json.dumps(payload))
+        with _Server() as base:
+            return update.check(base + '/v.json', '1.1.1')
+
+    def test_english_interface_prefers_english_notes(self):
+        set_language('en')
+        result = self._check({'version': '1.2.0', 'changelog': '中文日志',
+                              'changelog_en': 'English notes'})
+        self.assertEqual(result['notes'], 'English notes')
+
+    def test_chinese_interface_prefers_chinese_notes(self):
+        set_language('zh')
+        result = self._check({'version': '1.2.0', 'changelog': '中文日志',
+                              'changelog_zh': '中文细分日志'})
+        self.assertEqual(result['notes'], '中文细分日志')
+
+    def test_missing_translation_falls_back_to_the_plain_field(self):
+        set_language('en')
+        result = self._check({'version': '1.2.0', 'changelog': '中文日志'})
+        self.assertEqual(result['notes'], '中文日志')
+
+    def test_blank_translation_is_treated_as_missing(self):
+        set_language('en')
+        result = self._check({'version': '1.2.0', 'changelog': '中文日志',
+                              'changelog_en': '   '})
+        self.assertEqual(result['notes'], '中文日志')
 
 
 class ConfigTests(unittest.TestCase):
-    def test_update_url_validation(self):
-        config = Config()
-        self.assertNotIn(tr('core.config.update_url_invalid'), config.validate())
-        config.update_url = 'ftp://example.invalid/'
-        self.assertIn(tr('core.config.update_url_invalid'), config.validate())
-        # With the check switched off the URL is never used, so it may be anything.
-        config.update_check = False
-        self.assertNotIn(tr('core.config.update_url_invalid'), config.validate())
+    def test_update_endpoint_is_not_a_setting(self):
+        """The endpoint is compiled in: no config key, no option, no field."""
+        from dataclasses import fields
 
-    def test_update_url_list_validation(self):
-        config = Config()
-        config.update_url = 'https://one.invalid/ , https://two.invalid/version.json'
-        self.assertNotIn(tr('core.config.update_url_invalid'), config.validate())
-        # One bad entry in the list is enough to report the list as bad.
-        config.update_url = 'https://one.invalid/, ftp://two.invalid/'
-        self.assertIn(tr('core.config.update_url_invalid'), config.validate())
+        from proxy.cli import build_parser
+
+        self.assertTrue(update.DEFAULT_UPDATE_URL.startswith('https://'))
+        self.assertNotIn('update_url', {item.name for item in fields(Config)})
+        with self.assertRaises(SystemExit):
+            build_parser().parse_args(['--update-url', 'https://example.invalid/'])
+
+    def test_old_update_url_key_is_ignored(self):
+        """A config.json from an older build cannot redirect the check."""
+        config = Config.from_dict({'update_url': 'https://evil.invalid/',
+                                   'update_check': False})
+        self.assertFalse(config.update_check)
+        self.assertFalse(hasattr(config, 'update_url'))
 
 
 if __name__ == '__main__':

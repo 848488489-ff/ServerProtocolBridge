@@ -21,32 +21,68 @@ in-game would stall, so it has no practical value.
 
 from __future__ import annotations
 
+import threading
+
 from .i18n import tr
 
-# Backend implementation: 'cryptography' / 'pycryptodome' / '' (neither available)
+# Backend implementation: 'cryptography' / 'pycryptodome' / '' (neither available).
+# Both packages pull in native libraries, so the probe runs on the first
+# encrypted handshake instead of while the window is opening.  A plain bridge
+# session against an offline-mode server never pays for it.
 _BACKEND = ''
+_BACKEND_PROBED = False
+_BACKEND_LOCK = threading.Lock()
+serialization = None
+_asym_padding = None
+_Cipher = None
+_cipher_algorithms = None
+_Cfb8 = None
+_PyCryptoAes = None
+_PyCryptoPkcs1 = None
+_PyCryptoRsa = None
 
-try:                                                    # cryptography first
-    from cryptography.hazmat.primitives import serialization
-    from cryptography.hazmat.primitives.asymmetric import padding as _asym_padding
-    from cryptography.hazmat.primitives.ciphers import Cipher as _Cipher
-    from cryptography.hazmat.primitives.ciphers import algorithms as _cipher_algorithms
 
-    try:                                                # cryptography >= 45 moved this to decrepit
-        from cryptography.hazmat.decrepit.ciphers.modes import CFB8 as _Cfb8
-    except ImportError:                                 # older versions keep it in place
-        from cryptography.hazmat.primitives.ciphers.modes import CFB8 as _Cfb8
+def _load_backend() -> None:
+    global _BACKEND, _BACKEND_PROBED
+    global serialization, _asym_padding, _Cipher, _cipher_algorithms, _Cfb8
+    global _PyCryptoAes, _PyCryptoPkcs1, _PyCryptoRsa
+    if _BACKEND_PROBED:
+        return
+    with _BACKEND_LOCK:
+        if _BACKEND_PROBED:
+            return
+        _BACKEND_PROBED = True
+        try:                                            # cryptography first
+            from cryptography.hazmat.primitives import serialization as _serialization
+            from cryptography.hazmat.primitives.asymmetric import padding as _padding
+            from cryptography.hazmat.primitives.ciphers import Cipher as _cipher
+            from cryptography.hazmat.primitives.ciphers import algorithms as _algorithms
 
-    _BACKEND = 'cryptography'
-except Exception:                                       # pragma: no cover - environment dependent
-    try:
-        from Crypto.Cipher import AES as _PyCryptoAes
-        from Crypto.Cipher import PKCS1_v1_5 as _PyCryptoPkcs1
-        from Crypto.PublicKey import RSA as _PyCryptoRsa
-
+            try:                                        # cryptography >= 45 moved this to decrepit
+                from cryptography.hazmat.decrepit.ciphers.modes import CFB8 as _cfb8
+            except ImportError:                         # older versions keep it in place
+                from cryptography.hazmat.primitives.ciphers.modes import CFB8 as _cfb8
+        except Exception:                               # pragma: no cover - environment dependent
+            pass
+        else:
+            serialization = _serialization
+            _asym_padding = _padding
+            _Cipher = _cipher
+            _cipher_algorithms = _algorithms
+            _Cfb8 = _cfb8
+            _BACKEND = 'cryptography'
+            return
+        try:
+            from Crypto.Cipher import AES as _aes
+            from Crypto.Cipher import PKCS1_v1_5 as _pkcs1
+            from Crypto.PublicKey import RSA as _rsa
+        except Exception:
+            _BACKEND = ''
+            return
+        _PyCryptoAes = _aes
+        _PyCryptoPkcs1 = _pkcs1
+        _PyCryptoRsa = _rsa
         _BACKEND = 'pycryptodome'
-    except Exception:
-        _BACKEND = ''
 
 
 class CryptoUnavailable(RuntimeError):
@@ -54,14 +90,17 @@ class CryptoUnavailable(RuntimeError):
 
 
 def available() -> bool:
+    _load_backend()
     return bool(_BACKEND)
 
 
 def backend_name() -> str:
+    _load_backend()
     return _BACKEND
 
 
 def _require() -> None:
+    _load_backend()
     if not _BACKEND:
         raise CryptoUnavailable(tr('crypto.missing_backend'))
 

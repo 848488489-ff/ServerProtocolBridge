@@ -7,9 +7,9 @@ people (or agents) work on the translations without touching each other.
 
 from __future__ import annotations
 
-from . import core, gui, proxy, tls, translator, update
+from . import core, gui, proxy, tls, translator, update, web
 
-LOCALE_MODULES = (core, gui, proxy, translator, tls, update)
+LOCALE_MODULES = (core, gui, proxy, translator, tls, update, web)
 
 EN: dict = {}
 ZH: dict = {}
