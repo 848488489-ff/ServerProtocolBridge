@@ -749,8 +749,18 @@ class WebAuthTests(unittest.TestCase):
         app.testing = True
         owner = app.test_client()
         self.assertEqual(owner.get('/api/status').status_code, 200)
+        changed = owner.post('/api/auth', json={
+            'enabled': True, 'password': 'abcd1234'})
+        self.assertEqual(changed.status_code, 200)
+        self.assertTrue(changed.get_json()['reauth'])
+        # Enabling the password invalidates the session that enabled it, so the
+        # page cannot keep working as if nothing happened.
+        self.assertEqual(owner.get('/api/status').status_code, 401)
+        self.assertEqual(owner.post('/login', data={
+            'password': 'abcd1234'}).status_code, 302)
+        self.assertEqual(owner.get('/api/status').status_code, 200)
         self.assertEqual(owner.post('/api/auth', json={
-            'enabled': True, 'password': 'abcd1234'}).status_code, 200)
+            'enabled': True, 'password': 'abc'}).status_code, 400)
 
         anonymous = app.test_client()
         self.assertEqual(anonymous.get('/api/status').status_code, 401)
