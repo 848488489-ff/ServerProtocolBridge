@@ -156,13 +156,38 @@ def wire_manifest(files: list[Path], root: Path) -> list[dict[str, object]]:
     return entries
 
 
+# Files that must never be folded into the archive: they are themselves
+# archives or release binaries, and nesting one of these inside its own source
+# package is how the export starts shipping downloads/ forever.
+ARCHIVE_SKIP_SUFFIXES = {
+    ".7z",
+    ".zip",
+    ".rar",
+    ".tar",
+    ".gz",
+    ".tgz",
+    ".bz2",
+    ".xz",
+    ".exe",
+    ".msi",
+}
+
+
 def build_zip(source_root: Path, zip_path: Path) -> None:
     if zip_path.exists():
         zip_path.unlink()
+    skipped: list[str] = []
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for path in sorted(source_root.rglob("*")):
-            if path.is_file():
-                archive.write(path, path.relative_to(source_root).as_posix())
+            if not path.is_file():
+                continue
+            name = path.name.lower()
+            if name.endswith(tuple(ARCHIVE_SKIP_SUFFIXES)) or "downloads" in name:
+                skipped.append(path.name)
+                continue
+            archive.write(path, path.relative_to(source_root).as_posix())
+    for name in sorted(set(skipped)):
+        log(f"      excluded {name} (archive or binary, kept out of the package)")
 
 
 def sanitize_packaged_version(web_root_dest: Path) -> None:
@@ -199,6 +224,212 @@ def update_version_json(version_json: Path, zip_path: Path | None, version: str)
         json.dumps(data, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
     )
+
+
+def _join_url(base: str, relative: str) -> str:
+    """Combine the site origin with a manifest path.
+
+    ``download_url`` and ``source_url`` are usually paths relative to the site
+    root, but either field may already be an absolute link, so only prefix when
+    it actually needs one.
+    """
+    origin = (base or "").strip().rstrip("/")
+    path = (relative or "").strip()
+    if not origin:
+        return path
+    if path.startswith(("http://", "https://")):
+        return path
+    return origin + (path if path.startswith("/") else "/" + path)
+
+
+def build_readme(version: str, generated_at: str, version_json: Path) -> str:
+    """Package README, Chinese first then English.
+
+    The archive deliberately holds no binaries and no ``downloads`` directory --
+    that folder is served by the release site, and shipping it inside its own
+    source archive would nest the package forever.  The README points to the
+    site instead.
+    """
+    data: dict = {}
+    if version_json.is_file():
+        data = json.loads(version_json.read_text(encoding="utf-8-sig"))
+    page = str(data.get("page_url") or "").strip()
+    exe_url = _join_url(page, str(data.get("download_url") or ""))
+    # Derive the archive name from the version instead of reading
+    # ``source_name`` / ``source_url`` off the manifest: export_source only
+    # rewrites the size and hash fields, so those two still point at the
+    # previous release until the archive is uploaded.
+    zip_name = "ServerProtocolBridge-{v}-source.zip".format(v=version)
+    zip_url = _join_url(page, "/downloads/" + zip_name)
+
+    return f"""Server Protocol Bridge {version} - 源码包 / source package
+生成时间 / Generated: {generated_at}
+
+================================================================
+一、中文说明
+================================================================
+
+1. 怎么获取发布的程序
+
+   本源码包不包含任何可执行文件, 也不包含网站的 downloads 目录。
+   发布文件(Windows 程序、源码压缩包)托管在发布站点上, 按下面的地址下载:
+
+     发布页面
+       {page}
+
+     Windows 程序
+       {exe_url}
+
+     源码压缩包 {zip_name}
+       {zip_url}
+
+   发布站点的 api/version.json 是权威清单:
+     version        版本号
+     sha256         程序的 SHA-256
+     file_size      程序的字节数
+     source_sha256  源码压缩包的 SHA-256
+     source_size    源码压缩包的字节数
+   下载后核对哈希; 不一致说明文件被改动过, 请重新下载。
+
+
+2. 目录结构
+
+   procedure/    Python 应用源码。
+   web/          静态发布/下载页面的源码。
+   LICENSE       许可证全文(Unlicense, 公有领域)。
+   README.txt    本说明。
+   SOURCE-MANIFEST.json  每个文件的 SHA-256。
+
+
+3. 运行 procedure
+
+   准备 Python 3.10 或更高版本, 然后:
+       py -3 -m pip install -r requirements.txt
+       py -3 main.py
+
+   Linux / macOS 用 python3 代替 py, 或直接运行:
+       sh start.sh
+
+   PyInstaller 不支持交叉编译, 所以在 Linux / macOS 上从源码运行是
+   支持的用法; 需要 Windows 程序时在 Windows 上打包。
+
+   在 Windows 上自行打包(可选):
+       py -3 -m pip install -r requirements-build.txt
+       py -3 tools/build.py
+
+   第三方组件及其完整许可证文本见 THIRD_PARTY_NOTICES.txt,
+   可用下面的命令重新生成:
+       py -3 tools/collect_licenses.py
+
+
+4. 运行 web
+
+   web/index.html 是静态发布页面, 可以直接用浏览器打开, 也可以用任意
+   静态文件服务器托管整个目录。发布数据来自 api/version.json, 常见问题
+   来自 api/faq.json, 接口文档是 api/index.html。
+
+   包内 api/version.json 故意省略了 source_size、source_sha256 与
+   source_updated: 压缩包无法包含自己的最终哈希。这三个字段以线上站点
+   的 api/version.json 为准。
+
+
+5. 本包故意不包含的内容
+
+   - build/、dist/、*.exe 等发布产物
+   - web 的 downloads/ 目录(发布站点才有的部署内容, 放进自己的源码包
+     会无限套娃)
+   - certs/(本地 TLS 私钥)
+   - config.json、日志、缓存、__pycache__
+   - 独立的 admin.html 测试页面
+
+   要重新导出源码包, 在仓库根目录运行:
+       py -3 tools/export_source.py
+
+
+================================================================
+二、English
+================================================================
+
+1. Where to get the released program
+
+   This archive contains no binaries and no downloads directory.  The
+   release files are hosted by the release site:
+
+     Release page
+       {page}
+
+     Windows program
+       {exe_url}
+
+     Source archive {zip_name}
+       {zip_url}
+
+   The site's api/version.json is the authoritative manifest:
+     version        release number
+     sha256         SHA-256 of the program
+     file_size      size of the program in bytes
+     source_sha256  SHA-256 of this archive
+     source_size    size of this archive in bytes
+   Verify the hash after downloading; a mismatch means the file changed, so
+   download it again.
+
+
+2. Layout
+
+   procedure/    Python application source.
+   web/          Source of the static release page.
+   LICENSE       Licence text (Unlicense, public-domain dedication).
+   README.txt    This file.
+   SOURCE-MANIFEST.json  SHA-256 of every file.
+
+
+3. Running procedure
+
+   Python 3.10 or newer, then:
+       py -3 -m pip install -r requirements.txt
+       py -3 main.py
+
+   On Linux / macOS use python3 instead of py, or run:
+       sh start.sh
+
+   PyInstaller cannot cross-compile, so running from source is the supported
+   way on Linux / macOS.  Build the Windows program on Windows:
+       py -3 -m pip install -r requirements-build.txt
+       py -3 tools/build.py
+
+   Third-party components and their full licence texts are in
+   THIRD_PARTY_NOTICES.txt.  Regenerate that file with:
+       py -3 tools/collect_licenses.py
+
+
+4. Running web
+
+   web/index.html is the static release page.  Open it directly in a browser,
+   or serve the folder with any static file server.  Release data comes from
+   api/version.json, FAQ content from api/faq.json, and the API reference is
+   api/index.html.
+
+   The packaged api/version.json omits source_size, source_sha256 and
+   source_updated on purpose: an archive cannot contain its own final hash.
+   The live site's api/version.json is authoritative for those fields.
+
+
+5. Deliberately not included
+
+   - build/, dist/, *.exe and other release binaries
+   - web's downloads/ directory (deployment content that only the release
+     site has; shipping it inside its own source archive would nest the
+     package forever)
+   - certs/ (local TLS private keys)
+   - config.json, logs, caches and __pycache__
+   - the standalone admin.html test page
+
+   To export the source package again, run from the repository root:
+       py -3 tools/export_source.py
+
+
+See SOURCE-MANIFEST.json for every file and its SHA-256.
+"""
 
 
 def main() -> int:
@@ -279,49 +510,7 @@ def main() -> int:
         encoding="utf-8",
     )
 
-    readme = f"""Server Protocol Bridge {version} - source package
-Generated: {generated_at}
-
-procedure/
-  Python application source. Run it with:
-      py -3 -m pip install -r requirements.txt
-      py -3 main.py
-
-  Linux/macOS: use python3 instead of py, or run:
-      sh start.sh
-  PyInstaller cannot cross-compile, so the source package is the supported
-  way to run the app on those platforms.
-
-  Windows EXE build (optional; Windows only):
-      py -3 -m pip install -r requirements-build.txt
-      py -3 tools/build.py
-
-  Third-party components and their full license texts are listed in
-  THIRD_PARTY_NOTICES.txt.  Regenerate that file with:
-      py -3 tools/collect_licenses.py
-
-License
-  This project is released under the Unlicense (public-domain dedication).
-  The full text is in LICENSE at the package root and in procedure/LICENSE.
-  See https://unlicense.org/ for the canonical text.
-
-web/
-  The static release/download page. Open index.html directly, or serve the
-  folder with any static file server. Release data comes from api/version.json
-  and FAQ content comes from api/faq.json. The API reference is api/index.html.
-
-  The packaged api/version.json omits source_size, source_sha256 and
-  source_updated on purpose: an archive cannot contain its own final hash.
-  The live site's api/version.json is authoritative for those fields.
-
-The following are intentionally not part of this package:
-  - build/, dist/, *.exe and other release binaries
-  - certs/ (local TLS private keys)
-  - config.json, logs, caches and __pycache__ directories
-  - the standalone admin.html prank page
-
-See SOURCE-MANIFEST.json for every file and its SHA-256.
-"""
+    readme = build_readme(version, generated_at, web_root / "api" / "version.json")
     (DEST_ROOT / "README.txt").write_text(readme, encoding="utf-8")
 
     log(f"      application files: {len(copied_app)}")

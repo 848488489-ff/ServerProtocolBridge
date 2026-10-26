@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Windows Version Information Resource for PyInstaller
-# Server Protocol Bridge v1.1.7
+# Server Protocol Bridge v1.1.6
 #
 # This file is evaluated as Python by PyInstaller.  It must produce a
 # VSVersionInfo instance, so the class names below are the ones defined in
@@ -16,8 +16,8 @@
 
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(1, 1, 7, 0),
-    prodvers=(1, 1, 7, 0),
+    filevers=(1, 1, 6, 0),
+    prodvers=(1, 1, 6, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -33,12 +33,12 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'无'),
             StringStruct(u'FileDescription', u'Server Protocol Bridge'),
-            StringStruct(u'FileVersion', u'1.1.7.0'),
+            StringStruct(u'FileVersion', u'1.1.6.0'),
             StringStruct(u'InternalName', u'Server Protocol Bridge'),
             StringStruct(u'LegalCopyright', u'Public Domain (Unlicense)'),
             StringStruct(u'OriginalFilename', u'Server Protocol Bridge.exe'),
             StringStruct(u'ProductName', u'Server Protocol Bridge'),
-            StringStruct(u'ProductVersion', u'1.1.7.0'),
+            StringStruct(u'ProductVersion', u'1.1.6.0'),
           ]
         ),
         StringTable(
@@ -46,12 +46,12 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'无'),
             StringStruct(u'FileDescription', u'服务器协议转换'),
-            StringStruct(u'FileVersion', u'1.1.7.0'),
+            StringStruct(u'FileVersion', u'1.1.6.0'),
             StringStruct(u'InternalName', u'Server Protocol Bridge'),
             StringStruct(u'LegalCopyright', u'公有领域 (Unlicense)'),
             StringStruct(u'OriginalFilename', u'Server Protocol Bridge.exe'),
             StringStruct(u'ProductName', u'服务器协议转换'),
-            StringStruct(u'ProductVersion', u'1.1.7.0'),
+            StringStruct(u'ProductVersion', u'1.1.6.0'),
           ]
         ),
       ]
