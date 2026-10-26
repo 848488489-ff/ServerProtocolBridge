@@ -14,7 +14,6 @@ import tkinter as tk
 from . import webauth
 from .gui_ctk import (MUTED, SUCCESS, WARN, _open_url)
 from .i18n import tr
-from .utils import app_dir
 from pathlib import Path
 from tkinter import messagebox
 class BridgeWeb:
@@ -157,8 +156,6 @@ class BridgeWeb:
             if not self._closing:
                 messagebox.showerror(tr('gui.web.title'),
                                      tr('gui.web.failed', error=error), parent=self)
-    def _open_workdir(self) -> None:
-        self._open_path(app_dir())
     def _open_path(self, path: Path) -> None:
         def run() -> None:
             try:

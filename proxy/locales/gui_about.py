@@ -6,7 +6,7 @@ EN = {
     'gui.about.blurb': 'A local wss:// or ws:// relay for Minecraft clients. '
                        'Game traffic runs directly on the websockets transport, without '
                        'an ASGI gateway. The open-source components below are included in '
-                       'this build.',
+                       'this build. Configuration directory: %(workdir)s',
     'gui.about.project_license': 'License: Unlicense (public domain). '
                                  'Full text: LICENSE in the source package; '
                                  'https://unlicense.org/',
@@ -41,15 +41,6 @@ For more information, please refer to <https://unlicense.org>""",
     'gui.about.column_project': 'Project',
     'gui.about.hint': 'Click any row to open the official site or GitHub repository.',
     'gui.about.close': 'Close',
-    'gui.about.text': """%(name)s v%(version)s
-
-Turns a plain Minecraft server (Hypixel, for example) into a local
-wss:// or ws:// endpoint so WebSocket clients can connect -- browsers
-only allow wss:// connections.
-
-Native Java clients are forwarded byte for byte. WebSocket clients go
-through the handshake and protocol translation their connection requires.
-Working directory: %(workdir)s""",
 }
 
 ZH = {
@@ -57,7 +48,7 @@ ZH = {
     'gui.about.subtitle': '关于此版本',
     'gui.about.blurb': '面向 Minecraft 客户端的本地 wss:// 或 ws:// 中继。'
                        '游戏流量直接走 websockets 传输层, 不再经过 ASGI 网关。'
-                       '此构建包含以下开源组件。',
+                       '此构建包含以下开源组件。配置目录: %(workdir)s',
     'gui.about.project_license': '许可证: Unlicense (公有领域)。'
                                  '完整文本见源码包内的 LICENSE; '
                                  'https://unlicense.org/',
@@ -86,12 +77,4 @@ ZH = {
     'gui.about.column_project': '项目地址',
     'gui.about.hint': '点击任意一行打开官网或 GitHub 仓库。',
     'gui.about.close': '关闭',
-    'gui.about.text': """%(name)s v%(version)s
-
-把普通 Minecraft 服务器(例如 Hypixel)转换为本地 wss:// 或 ws:// 端点,
-让 WebSocket 客户端可以连接 —— 浏览器只允许建立 wss:// 连接。
-
-原版 Java 客户端按字节原样转发; WebSocket 客户端会经过其连接所需的
-握手与协议转换。
-工作目录: %(workdir)s""",
 }

@@ -32,7 +32,7 @@ class BridgeShell:
                             else 'system')
         ctk.set_appearance_mode(self._appearance)
 
-        self.title('%s  v%s' % (tr('core.app_name'), VERSION))
+        self.title(self._window_title())
         self.geometry('1160x790')
         self.minsize(1020, 690)
         self.configure(fg_color=APP_BG)
@@ -217,6 +217,10 @@ class BridgeShell:
         self.settings_tab_builders = {
             key: getattr(self, '_settings_tab_' + key) for key, _label in SETTINGS_TABS
         }
+    def _window_title(self) -> str:
+        """Title bar text; recomputed on every language switch, since the bar
+        is not part of the widget tree that ``_refresh_shell`` rebuilds."""
+        return '%s  v%s' % (tr('core.app_name'), VERSION)
     def _build_sidebar(self) -> None:
         self.sidebar.grid_columnconfigure(0, weight=1)
         self.sidebar.grid_rowconfigure(2, weight=1)

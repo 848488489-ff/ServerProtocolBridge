@@ -19,7 +19,7 @@ from .config import Config, SPOOF_CLIENTS, parse_address
 from .i18n import LANGUAGES, set_language, tr
 from .logger import Logger
 from .proxy import ProxyServer
-from .utils import app_dir, human_bytes
+from .utils import config_dir, human_bytes
 from .version import VERSION, app_name
 
 
@@ -121,7 +121,7 @@ def run_check(config: Config, logger: Logger) -> int:
     problems = config.validate()
     for problem in problems:
         logger.error(tr('core.cli.config_problem', problem=problem))
-    logger.info(tr('core.cli.work_dir', path=app_dir()))
+    logger.info(tr('core.cli.config_dir', path=config_dir()))
     logger.info(tr('core.cli.target_line', target=config.describe_target()))
 
     if config.tls_enabled:
@@ -169,7 +169,7 @@ def run_selftest(config: Config, logger: Logger) -> int:
     logger.info('Python: %s (%s)' % (platform.python_version(), platform.machine()))
     mode = tr('core.cli.run_mode_frozen') if frozen else tr('core.cli.run_mode_source')
     logger.info(tr('core.cli.run_mode', mode=mode))
-    logger.info(tr('core.cli.work_dir', path=app_dir()))
+    logger.info(tr('core.cli.config_dir', path=config_dir()))
     if crypto.available():
         logger.info(tr('core.cli.crypto_ok', backend=crypto.backend_name()))
     else:
