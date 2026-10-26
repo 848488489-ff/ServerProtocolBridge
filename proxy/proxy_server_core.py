@@ -166,7 +166,7 @@ class ProxyCore:
                     'port': port,
                     'ping_ms': round(info['ms'], 1) if info.get('ms') else None,
                     'error': info.get('error', ''),
-                    'motd': motd_lines(status.get('description'), legacy=False),
+                    'motd': motd_lines(status.get('description')),
                     'version': (status.get('version') or {}).get('name', ''),
                     'players': status.get('players') or {},
                 }

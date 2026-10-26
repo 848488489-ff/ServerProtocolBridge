@@ -25,7 +25,8 @@ from proxy.i18n import tr  # noqa: E402
 from proxy.logger import NullLogger  # noqa: E402
 import proxy.proxy as proxy_core  # noqa: E402
 from proxy.proxy import Bridge, ProxyServer  # noqa: E402
-from proxy.translator import EaglerTranslator, chat_to_legacy, chat_to_text  # noqa: E402
+from proxy.eagler import chat_passthrough  # noqa: E402
+from proxy.translator import EaglerTranslator, chat_to_text  # noqa: E402
 from test_all import WsClient, connect_ws, free_port  # noqa: E402
 
 # First data packet observed from a real browser client (37 bytes), kept as a regression sample
@@ -666,9 +667,13 @@ class TranslatorUnitTests(unittest.TestCase):
         length = int.from_bytes(sent[-1][1:3], 'big')
         self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), reason)
 
-    def test_kick_body_is_plain_text_for_clients_that_show_it_verbatim(self):
-        """All browser clients get flattened text: several display the deny
-        body literally, even when their brand looks like EaglercraftX."""
+    def test_kick_body_is_forwarded_verbatim_regardless_of_brand(self):
+        """The deny body is whatever the server sent, byte for byte.
+
+        There is no per-brand flattening any more: a browser client gets the
+        JSON component as JSON or a ``§``-coded string as plain text, whichever
+        the content is, so no brand heuristic is consulted.
+        """
         translator, sent, _closed, _backend = self.make()
         translator.feed_client(build_client_version(brand='Gaius', version='26.3'))
         translator.feed_client(build_request_login())
@@ -677,22 +682,21 @@ class TranslatorUnitTests(unittest.TestCase):
         length = int.from_bytes(sent[-1][1:3], 'big')
         self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), '服务器已满')
 
-    def test_double_encoded_kick_reason_is_flattened(self):
-        inner = json.dumps({'extra': [{'color': 'gray', 'text': 'Kicked by admin'}]})
-        raw = json.dumps(inner)
-        body = vanilla.write_varint(len(raw.encode())) + raw.encode()
+    def test_json_kick_reason_stays_json(self):
+        component = json.dumps({'text': 'Kicked by admin', 'color': 'gray'})
+        body = vanilla.write_varint(len(component.encode())) + component.encode()
         translator, sent, _closed, _backend = self.make()
         translator.feed_client(REAL_FIRST_PACKET)
         translator.feed_client(build_request_login())
         translator.feed_server(vanilla.pack(vanilla.LOGIN_DISCONNECT, body))
         self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_DENY_LOGIN)
         length = int.from_bytes(sent[-1][1:3], 'big')
-        self.assertEqual(sent[-1][3:3 + length].decode('utf-8'),
-                         '\u00a7r\u00a77Kicked by admin\u00a7r')
+        self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), component)
 
-    def test_double_encoded_kick_reason_is_flattened_for_verbatim_clients(self):
-        inner = json.dumps({'extra': [{'color': 'gray', 'text': 'Kicked by admin'}]})
-        raw = json.dumps(inner)
+    def test_double_encoded_kick_reason_is_unwrapped_not_flattened(self):
+        """A twice-serialized component is decoded to the component, not flattened."""
+        component = json.dumps({'text': 'Kicked by admin', 'color': 'gray'})
+        raw = json.dumps(component)
         body = vanilla.write_varint(len(raw.encode())) + raw.encode()
         translator, sent, _closed, _backend = self.make()
         translator.feed_client(build_client_version(brand='Gaius', version='26.3'))
@@ -700,22 +704,21 @@ class TranslatorUnitTests(unittest.TestCase):
         translator.feed_server(vanilla.pack(vanilla.LOGIN_DISCONNECT, body))
         self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_DENY_LOGIN)
         length = int.from_bytes(sent[-1][1:3], 'big')
-        self.assertEqual(sent[-1][3:3 + length].decode('utf-8'),
-                         '\u00a7r\u00a77Kicked by admin\u00a7r')
+        self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), component)
 
-    def test_play_disconnect_body_is_flattened(self):
+    def test_play_disconnect_body_is_forwarded_verbatim(self):
         translator, _sent, _closed, _backend = self.make()
         translator.feed_client(REAL_FIRST_PACKET)
         translator.phase = 'play'
-        raw = json.dumps({'extra': [{'color': 'gray', 'text': 'Kicked by admin'}]})
-        packet = vanilla.Decoder(0).feed(build_play_disconnect(raw))[0]
+        component = json.dumps({'text': 'Kicked by admin', 'color': 'gray'})
+        packet = vanilla.Decoder(0).feed(build_play_disconnect(component))[0]
         frames = []
         translator._handle_play_packet(packet, frames)
         self.assertEqual(len(frames), 1)
         packet_id, pos = vanilla.read_varint(frames[0], 0)
         self.assertEqual(packet_id, vanilla.PLAY_DISCONNECT)
         body, _ = vanilla.read_string(frames[0], pos)
-        self.assertEqual(body, '\u00a7r\u00a77Kicked by admin\u00a7r')
+        self.assertEqual(body, component)
 
     def test_legacy_kick_reason_keeps_its_codes(self):
         reason = '\u00a77You were \u00a7ckicked'
@@ -727,29 +730,34 @@ class TranslatorUnitTests(unittest.TestCase):
         length = int.from_bytes(sent[-1][1:3], 'big')
         self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), reason)
 
-    def test_chat_to_legacy_preserves_colors_and_styles(self):
-        component = {
-            'text': 'Hello ',
-            'color': 'gold',
-            'bold': True,
-            'extra': [{'text': 'world', 'color': 'aqua', 'bold': False}],
-        }
-        body = chat_to_legacy(json.dumps(component))
-        self.assertIn('\u00a7r\u00a76\u00a7lHello ', body)
-        self.assertIn('\u00a7r\u00a7bworld', body)
-        self.assertTrue(body.endswith('\u00a7r'))
+    def test_chat_passthrough_keeps_a_component_as_json(self):
+        """A JSON body goes out as JSON: the colour field stays exactly what the
+        server sent, including an arbitrary hex rather than a near palette match."""
+        component = json.dumps({'text': 'hi', 'color': '#ff5500'})
+        body, chat_json = chat_passthrough(component, 'Kicked')
+        self.assertTrue(chat_json)
+        self.assertEqual(body, component)
 
-    def test_chat_to_legacy_prefixes_every_code_with_a_section_sign(self):
-        self.assertEqual(chat_to_legacy({'text': 'Kicked', 'color': 'gray'}),
-                         '\u00a7r\u00a77Kicked\u00a7r')
+    def test_chat_passthrough_keeps_legacy_codes_as_plain_text(self):
+        body, chat_json = chat_passthrough('\u00a7aGreen', 'Kicked')
+        self.assertFalse(chat_json)
+        self.assertEqual(body, '\u00a7aGreen')
 
-    def test_chat_to_legacy_unwraps_double_encoded_component(self):
-        inner = json.dumps({'text': 'Kicked', 'color': 'red'})
-        self.assertEqual(chat_to_legacy(json.dumps(inner)),
-                         '\u00a7r\u00a7cKicked\u00a7r')
+    def test_chat_passthrough_wraps_nothing_around_plain_text(self):
+        body, chat_json = chat_passthrough('You were kicked', 'Kicked')
+        self.assertFalse(chat_json)
+        self.assertEqual(body, 'You were kicked')
 
-    def test_chat_to_legacy_keeps_existing_codes(self):
-        self.assertEqual(chat_to_legacy('\u00a7aGreen'), '\u00a7aGreen')
+    def test_chat_passthrough_unwraps_double_encoded_component(self):
+        component = json.dumps({'text': 'Kicked', 'color': 'red'})
+        body, chat_json = chat_passthrough(json.dumps(component), 'Kicked')
+        self.assertTrue(chat_json)
+        self.assertEqual(json.loads(body), {'text': 'Kicked', 'color': 'red'})
+
+    def test_chat_passthrough_falls_back_on_empty_input(self):
+        body, chat_json = chat_passthrough('', 'Kicked')
+        self.assertFalse(chat_json)
+        self.assertEqual(body, 'Kicked')
 
     def test_chat_to_text_unwraps_nested_json(self):
         inner = json.dumps({'extra': [{'color': 'gray', 'text': 'hello'}]})

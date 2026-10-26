@@ -28,7 +28,7 @@ import socket
 import threading
 import time
 from .i18n import tr
-from .translator import (chat_to_legacy, chat_to_text)
+from .translator import chat_to_text
 from websockets.asyncio.server import ServerConnection
 RECV_SIZE = 262144           # one TCP read often contains a whole burst of game packets
 WS_MAX_QUEUE = 32            # incoming message queue: absorb bursts without backpressure
@@ -89,13 +89,14 @@ def describe_connect_error(exc: BaseException) -> str:
     return text or exc.__class__.__name__
 
 
-def motd_lines(raw, limit: int = 2, legacy: bool = True) -> list[str]:
+def motd_lines(raw, limit: int = 2) -> list[str]:
     """Split the server's title screen into at most ``limit`` lines.
 
-    The server-list query expects the legacy ``§`` colour codes in its MOTD
-    strings; the status page and logs use ``legacy=False`` to get plain text.
+    ``chat_to_text`` flattens a JSON description to its text while leaving a
+    ``§``-coded description byte for byte, which is what the server-list query
+    wants: no colour is invented here, the client sees what the server sent.
     """
-    text = chat_to_legacy(raw) if legacy else chat_to_text(raw)
+    text = chat_to_text(raw)
     lines = [line.strip() for line in text.split('\n')]
     return [line for line in lines if line][:limit]
 

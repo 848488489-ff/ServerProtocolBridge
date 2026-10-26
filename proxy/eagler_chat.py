@@ -43,3 +43,23 @@ def as_chat_json(raw: str, fallback: str = 'Kicked') -> str:
     if isinstance(parsed, str):
         return json.dumps({'text': parsed}, ensure_ascii=False)
     return json.dumps({'text': text}, ensure_ascii=False)
+
+
+def chat_passthrough(raw: str, fallback: str = 'Kicked') -> tuple[str, bool]:
+    """Return a chat body together with the mode that matches its content.
+
+    A server's chat string is forwarded the way the client reads it: a JSON
+    component is sent as JSON (``chat_json=True``, so jsonToComponent renders
+    its colour fields) and a ``§``-coded or plain string is sent verbatim as
+    plain text (``chat_json=False``, so the client's plain-text renderer draws
+    the codes).  Double-encoded components are unwrapped either way.
+
+    Nothing is converted in either direction: a JSON component is never
+    collapsed onto the 16-colour legacy palette, and a legacy string is never
+    parsed back into component fields.
+    """
+    text = (raw or '').strip()
+    parsed = _unwrap_json_strings(text)
+    if isinstance(parsed, (dict, list)):
+        return json.dumps(parsed, ensure_ascii=False), True
+    return text or fallback, False

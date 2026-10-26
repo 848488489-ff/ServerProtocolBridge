@@ -126,7 +126,7 @@ def _truncate_utf8(text: str, limit: int) -> str:
     return encoded[:limit].decode('utf-8', 'ignore')
 
 
-from .eagler_chat import as_chat_json, _unwrap_json_strings  # noqa: F401  (split for size)
+from .eagler_chat import as_chat_json, chat_passthrough, _unwrap_json_strings  # noqa: F401  (split for size)
 
 
 def offline_uuid(username: str) -> bytes:

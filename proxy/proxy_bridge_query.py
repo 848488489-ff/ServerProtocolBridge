@@ -10,7 +10,7 @@ import time
 from . import (vanilla, wsproto)
 from .i18n import tr
 from .proxy import (PLAIN_WATCH_BYTES, QUERY_IDLE_SECONDS, STATUS_TIMEOUT, _SessionClosed, describe_connect_error, motd_lines)
-from .translator import (chat_to_legacy, note)
+from .translator import (chat_to_text, note)
 from .utils import human_bytes
 from .version import SERVICE_NAME
 class BridgeQuery:
@@ -188,7 +188,7 @@ class BridgeQuery:
             except (TypeError, ValueError):
                 online = max_players = 0
             for item in (players.get('sample') or [])[:12]:
-                name = chat_to_legacy(item.get('name') if isinstance(item, dict) else item).strip()
+                name = chat_to_text(item.get('name') if isinstance(item, dict) else item).strip()
                 if name:
                     detail.append(name)
         if not motd:
