@@ -14,6 +14,7 @@ import uuid
 from . import (accounts, certs, config as config_module, eagler, third_party, update, webauth)
 from .i18n import (LANGUAGES, get_language, tr)
 from .runtime import get_manager
+from .utils import config_dir
 from .version import VERSION
 from .web_helpers import (_account_payload, _cert_payload, _config_options, _i18n_payload, _jobs, _jobs_lock, _ms_worker, _prune_jobs, _save_body, _schedule_web_restart, _web_info)
 from .web_html import INDEX_HTML
@@ -334,7 +335,7 @@ def register(app, fail):
         return jsonify({
             'ok': True,
             'version': VERSION,
-            'blurb': tr('gui.about.blurb'),
+            'blurb': tr('gui.about.blurb', workdir=config_dir()),
             'license': tr('gui.about.project_license'),
             'components': [
                 {'name': item['name'], 'license': item['license'],

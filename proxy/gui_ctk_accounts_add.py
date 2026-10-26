@@ -183,7 +183,7 @@ class BridgeAccountsAdd:
             lowered = message.lower()
             if verify and ('ssl' in lowered or 'certificate' in lowered):
                 if messagebox.askyesno(tr('gui.accounts.ms.ssl_title'),
-                                       tr('gui.accounts.ms.ssl_ask'),
+                                       tr('gui.accounts.ms.ssl_ask', detail=message),
                                        parent=dialog):
                     status.configure(text=tr('gui.accounts.ms.retrying_ssl'))
                     stopped.clear()

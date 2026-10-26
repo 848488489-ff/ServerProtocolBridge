@@ -22,7 +22,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-from .utils import app_dir
+from .utils import config_dir
 
 AUTH_FILENAME = 'web_auth.json'
 ITERATIONS = 240_000
@@ -34,7 +34,8 @@ _failures: dict[str, deque[float]] = {}
 
 
 def auth_path() -> Path:
-    return app_dir() / AUTH_FILENAME
+    """Next to ``config.json``, in the user's configuration folder."""
+    return config_dir() / AUTH_FILENAME
 
 
 def _default_state() -> dict:

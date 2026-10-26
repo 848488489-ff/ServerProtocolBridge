@@ -1,4 +1,10 @@
-"""Configuration: loading, saving, validation and address parsing."""
+"""Configuration: loading, saving, validation and address parsing.
+
+``config.json`` lives in the user's configuration folder (see
+:func:`proxy.utils.config_dir`), never beside the executable: a build under
+Program Files cannot write there, and replacing the install would otherwise
+throw the settings away with it.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +13,7 @@ from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 from .i18n import LANGUAGES, tr
-from .utils import app_dir, resolve_path
+from .utils import config_dir, resolve_path
 
 CONFIG_FILENAME = 'config.json'
 
@@ -433,4 +439,6 @@ class Config:
 
 
 def default_config_path() -> Path:
-    return app_dir() / CONFIG_FILENAME
+    """Where ``config.json`` is read from and written to: the user's
+    configuration folder, so it survives reinstalls and Program Files."""
+    return config_dir() / CONFIG_FILENAME

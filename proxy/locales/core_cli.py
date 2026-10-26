@@ -4,7 +4,8 @@ EN = {
     'core.cli.description': '%(app)s v%(version)s - turns an ordinary Minecraft '
                             'server into a local wss:// or ws:// endpoint',
     'core.cli.version_line': '%(app)s v%(version)s',
-    'core.cli.config_help': 'Path to the config file (default: config.json next to the program)',
+    'core.cli.config_help': 'Path to the config file (default: config.json in the user '
+                            'configuration folder)',
     'core.cli.no_gui_help': 'Run in command line mode (this mode already is the CLI; '
                             'the flag exists for compatibility with main.py)',
     'core.cli.target_help': 'Forward target, e.g. play.example.net (resolved '
@@ -47,7 +48,7 @@ EN = {
                                   'result and exit (exit code 1 = a newer release exists)',
     'core.cli.no_update_check_help': 'Do not check for a newer release on startup',
     'core.cli.config_problem': 'Configuration: %(problem)s',
-    'core.cli.work_dir': 'Working directory: %(path)s',
+    'core.cli.config_dir': 'Configuration directory: %(path)s',
     'core.cli.target_line': 'Forward target: %(target)s',
     'core.cli.checking_cert': 'Checking the certificate ...',
     'core.cli.cert_ok': 'Certificate is usable: %(path)s',
@@ -96,7 +97,7 @@ EN = {
 ZH = {
     'core.cli.description': '%(app)s v%(version)s —— 把普通 Minecraft 服务器转换为本地 wss:// 或 ws:// 端点',
     'core.cli.version_line': '%(app)s v%(version)s',
-    'core.cli.config_help': '配置文件路径(默认程序目录下的 config.json)',
+    'core.cli.config_help': '配置文件路径(默认用户配置文件夹下的 config.json)',
     'core.cli.no_gui_help': '以命令行方式运行(这里本来就是命令行模式, 这个参数只是为了和 main.py 的用法保持一致)',
     'core.cli.target_help': '转发目标, 例如 play.example.net(按 SRV 解析) 或 127.0.0.1:25565',
     'core.cli.listen_help': '监听地址(默认 127.0.0.1)',
@@ -127,7 +128,7 @@ ZH = {
     'core.cli.check_update_help': '向云端查询最新版本并退出(退出码 1 = 有新版本)',
     'core.cli.no_update_check_help': '启动时不自动检查新版本',
     'core.cli.config_problem': '配置: %(problem)s',
-    'core.cli.work_dir': '工作目录: %(path)s',
+    'core.cli.config_dir': '配置目录: %(path)s',
     'core.cli.target_line': '转发目标: %(target)s',
     'core.cli.checking_cert': '正在检查证书...',
     'core.cli.cert_ok': '证书可用: %(path)s',

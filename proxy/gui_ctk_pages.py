@@ -174,8 +174,8 @@ class BridgePages:
         place retranslates it quickly and never blanks the window the way
         destroying the whole toplevel does.
         """
-        for menu in list(getattr(self, 'theme_menu', None),
-                         getattr(self, 'language_menu', None)):
+        for menu in (getattr(self, 'theme_menu', None),
+                     getattr(self, 'language_menu', None)):
             if menu is not None:
                 self._teardown_dropdowns(menu)
         for child in list(self.sidebar.winfo_children()):
@@ -196,6 +196,7 @@ class BridgePages:
         self._build_header()
         self._pill_state = ''
         self._update_pill(self.manager.status().get('state') or 'stopped')
+        self.title(self._window_title())
     @staticmethod
     def _teardown_dropdowns(menu) -> None:
         """Close a CustomTkinter option menu's dropdown without touching it.

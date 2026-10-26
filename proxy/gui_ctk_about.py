@@ -12,6 +12,7 @@ from . import dpi
 from .gui_ctk import (ACCENT, CARD_BORDER, FIELD_BG, MUTED, SIDEBAR_HOVER, ScrollPage, TEXT, _open_url, _style_map, _style_opt)
 from .i18n import tr
 from .third_party import (COMPONENTS, STDLIB_MODULES)
+from .utils import config_dir
 from .version import VERSION
 from tkinter import ttk
 class BridgeAbout:
@@ -22,10 +23,10 @@ class BridgeAbout:
         body = page.body
 
         _card, head = self._card(body, '%s  v%s' % (tr('core.app_name'), VERSION))
-        ctk.CTkLabel(head, text=tr('gui.about.blurb'), font=self.font_body,
-                     text_color=TEXT, anchor='w', justify='left',
-                     wraplength=780).grid(row=0, column=0, columnspan=2,
-                                          sticky='w')
+        ctk.CTkLabel(head, text=tr('gui.about.blurb', workdir=config_dir()),
+                     font=self.font_body, text_color=TEXT, anchor='w',
+                     justify='left', wraplength=780).grid(
+            row=0, column=0, columnspan=2, sticky='w')
         ctk.CTkButton(
             head, text=tr('gui.about.project_license'), anchor='w', height=24,
             font=self.font_small, fg_color='transparent', hover_color=SIDEBAR_HOVER,

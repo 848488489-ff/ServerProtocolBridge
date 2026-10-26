@@ -19,12 +19,13 @@ def app_dir() -> Path:
 
 
 def resolve_path(value: str | os.PathLike[str], base: Path | None = None) -> Path:
-    """Turn a configured path into an absolute one; relative paths are based on
-    ``base`` (the program directory by default)."""
+    """Turn a configured path into an absolute one; relative paths are based
+    on ``base`` (the configuration directory by default, so a value such as
+    ``certs`` lands in the user's own folder instead of beside the executable)."""
     path = Path(value).expanduser()
     if path.is_absolute():
         return path
-    return (base or app_dir()) / path
+    return (base or config_dir()) / path
 
 
 # Folder name under the per-user data directory; deliberately without spaces.
@@ -55,6 +56,18 @@ def data_dir() -> Path:
         base = (os.environ.get('XDG_DATA_HOME') or '').strip()
         root = Path(base) if base else Path.home() / '.local' / 'share'
     return root / DATA_FOLDER
+
+
+def config_dir() -> Path:
+    """The folder holding this program's user configuration.
+
+    Always per-user, never beside the executable.  Writing ``config.json``
+    next to the EXE fails outright in Program Files, where that folder is
+    read-only, and the settings were wiped by every reinstall and every
+    update that replaced the directory.  Configuration is user data, so it
+    belongs with the account file in the per-user folder.
+    """
+    return data_dir()
 
 
 def human_bytes(value: float) -> str:

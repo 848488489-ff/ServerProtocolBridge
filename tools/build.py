@@ -143,24 +143,17 @@ def main() -> int:
                         help='run the packaged EXE (--version / --selftest / GUI) after building')
     args = parser.parse_args()
 
-    # Keep certificates and the user's configuration between builds; delete
-    # only previous artifacts.
-    keep = {DIST / 'certs', DIST / 'config.json'}
+    # Delete every previous artifact.  config.json and the certificates used to
+    # sit in this folder, so they were kept; they now live in the user's
+    # configuration folder, so there is nothing to preserve here.
     if DIST.exists():
         for item in DIST.iterdir():
-            if item in keep:
-                continue
             if item.is_dir():
                 shutil.rmtree(item, ignore_errors=True)
             else:
                 item.unlink(missing_ok=True)
     if BUILD.exists():
         shutil.rmtree(BUILD, ignore_errors=True)
-
-    source_certs = ROOT / 'certs'
-    target_certs = DIST / 'certs'
-    if source_certs.is_dir() and not target_certs.exists():
-        shutil.copytree(source_certs, target_certs)
 
     command = [
         args.python, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onefile',
