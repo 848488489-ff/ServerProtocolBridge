@@ -45,27 +45,53 @@ def create_app(config_path: str | None = None) -> Flask:
     # id kept in localStorage -- so a copied cookie is rejected when replayed
     # from another machine, another browser, or another profile, and that client
     # has to type the password itself.
+    #
+    # The device id only exists in the browser, so the server also keeps a copy
+    # in a plain cookie: that is the one channel a normal page load can use,
+    # since only XHR can set a request header.  Binding it to the ip and user
+    # agent is what stops a copied pair from working elsewhere.
     app.secret_key = webauth.secret_key()
     app.config.update(SESSION_COOKIE_HTTPONLY=True,
                       SESSION_COOKIE_SAMESITE='Lax')
 
     def _client_fingerprint() -> list[str]:
-        """Identify the client owning this request: ip, user agent, device id.
+        """Identify the client owning this request: ip and user agent.
 
-        The device id arrives as the X-Device-Id header for XHR traffic, or as
-        the ``device`` form field when the login form posts (the form is plain
-        HTML and cannot set headers).
+        Both are present on every request, including plain page navigations.
         """
         agent = (request.user_agent.string or '').strip()
         agent = ' '.join(agent.split())[:160]
-        device = (request.headers.get('X-Device-Id') or '').strip()
-        if not device:
-            device = str(request.form.get('device') or '').strip()
-        return [request.remote_addr or '', agent, device[:64]]
+        return [request.remote_addr or '', agent]
+
+    def _client_device() -> str:
+        """This browser's stable id, from whichever channel the request offers.
+
+        The id is deliberately client supplied so a copied session cookie fails
+        when replayed from another profile.  It reaches the server three ways:
+        as the ``X-Device-Id`` header on XHR, as the ``device`` form field when
+        the login form posts, and -- after a successful login -- as the
+        ``spb-device`` cookie, which is the only channel a plain page load can
+        use.  Without that last one the redirect straight after signing in
+        looked like a different client and bounced the user back to the login
+        page every time.
+        """
+        value = (request.headers.get('X-Device-Id') or '').strip()
+        if not value:
+            value = str(request.form.get('device') or '').strip()
+        if not value:
+            value = str(request.cookies.get('spb-device') or '').strip()
+        return value[:64]
 
     def _signed_in() -> bool:
-        return bool(session.get('authenticated')) and \
-            session.get('client') == _client_fingerprint()
+        if not session.get('authenticated'):
+            return False
+        if (session.get('client') or [])[:2] != _client_fingerprint():
+            return False
+        incoming = _client_device()
+        expected = str(session.get('device') or '').strip()
+        # An empty incoming id means the request could not carry one; it is not
+        # evidence of a different client.
+        return not (incoming and expected and incoming != expected)
 
     def _safe_next(value: str) -> str:
         value = (value or '').strip()
@@ -108,7 +134,17 @@ def create_app(config_path: str | None = None) -> Flask:
                 session.clear()
                 session['authenticated'] = True
                 session['client'] = _client_fingerprint()
-                return redirect(target)
+                device = _client_device()
+                session['device'] = device
+                response = redirect(target)
+                # Give every later request a channel for the device id.  Without
+                # it the redirect above would fail the fingerprint check and the
+                # browser would land back on this page.  No max_age: like the
+                # session cookie itself, closing the tab ends it.
+                if device:
+                    response.set_cookie('spb-device', device, samesite='Lax',
+                                        httponly=True)
+                return response
             else:
                 webauth.record_failure(key)
                 error = tr('web.login_failed')

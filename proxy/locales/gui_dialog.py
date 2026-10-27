@@ -41,6 +41,7 @@ EN = {
     'gui.error.password_mismatch': 'The two passwords do not match.',
     'gui.error.password_required': 'Enter a password before enabling access control.',
     'gui.error.password_short': 'The password must contain at least 4 characters.',
+    'gui.error.web_auth_unreadable': 'The Web UI password file exists but cannot be read. Nothing was changed; close other copies of this program and try again.',
     'gui.confirm.title': 'Clear Access Password',
     'gui.confirm.web_password_off': 'This clears the stored Web UI password permanently. Continue?',
 }
@@ -80,6 +81,7 @@ ZH = {
     'gui.error.password_mismatch': '两次输入的密码不一致。',
     'gui.error.password_required': '启用访问控制前请先设置密码。',
     'gui.error.password_short': '密码至少需要 4 个字符。',
+    'gui.error.web_auth_unreadable': 'Web UI 密码文件存在但无法读取。未做任何修改；请关闭其他本程序副本后重试。',
     'gui.confirm.title': '清空访问密码',
     'gui.confirm.web_password_off': '这将永久清空已保存的 Web UI 密码，且无法恢复。要继续吗？',
 }

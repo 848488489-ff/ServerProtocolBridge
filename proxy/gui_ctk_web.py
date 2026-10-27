@@ -30,41 +30,50 @@ class BridgeWeb:
         enabled = bool(self.var_web_password.get())
         password = self.var_web_password_value.get()
         confirm = self.var_web_password_confirm.get()
-        if enabled:
-            if password or confirm:
-                if password != confirm:
+        try:
+            if enabled:
+                if password or confirm:
+                    if password != confirm:
+                        messagebox.showerror(tr('gui.error.title'),
+                                             tr('gui.error.password_mismatch'),
+                                             parent=self)
+                        return
+                    if len(password) < 4:
+                        messagebox.showerror(tr('gui.error.title'),
+                                             tr('gui.error.password_short'),
+                                             parent=self)
+                        return
+                    webauth.set_password(password)
+                    self._log(tr('gui.log.web_password_on'))
+                elif not webauth.has_password():
                     messagebox.showerror(tr('gui.error.title'),
-                                         tr('gui.error.password_mismatch'),
+                                         tr('gui.error.password_required'),
                                          parent=self)
                     return
-                if len(password) < 4:
-                    messagebox.showerror(tr('gui.error.title'),
-                                         tr('gui.error.password_short'),
-                                         parent=self)
+                else:
+                    # The hash exists but is stored disabled: the switch is on, so
+                    # put it into force without making the user retype it.
+                    if not webauth.is_enabled():
+                        webauth.enable()
+                    self.var_web_password.set(True)
+                    self._log(tr('gui.log.web_password_kept'))
+            elif webauth.is_enabled():
+                # Wiping the hash is irreversible, so ask first.
+                if not messagebox.askyesno(tr('gui.confirm.title'),
+                                           tr('gui.confirm.web_password_off'),
+                                           parent=self):
                     return
-                webauth.set_password(password)
-                self._log(tr('gui.log.web_password_on'))
-            elif not webauth.has_password():
-                messagebox.showerror(tr('gui.error.title'),
-                                     tr('gui.error.password_required'),
-                                     parent=self)
-                return
-            else:
-                # The hash exists but is stored disabled: the switch is on, so
-                # put it into force without making the user retype it.
-                if not webauth.is_enabled():
-                    webauth.enable()
-                self.var_web_password.set(True)
-                self._log(tr('gui.log.web_password_kept'))
-        elif webauth.is_enabled():
-            # Wiping the hash is irreversible, so ask first.
-            if not messagebox.askyesno(tr('gui.confirm.title'),
-                                       tr('gui.confirm.web_password_off'),
-                                       parent=self):
-                return
-            webauth.disable()
-            self.var_web_password.set(False)
-            self._log(tr('gui.log.web_password_off'))
+                webauth.disable()
+                self.var_web_password.set(False)
+                self._log(tr('gui.log.web_password_off'))
+        except OSError:
+            # web_auth.json exists but cannot be read: fail the whole action
+            # instead of silently writing over it (that is what wiped a stored
+            # password before).  Nothing was changed.
+            messagebox.showerror(tr('gui.error.title'),
+                                 tr('gui.error.web_auth_unreadable'),
+                                 parent=self)
+            return
         # The fields are deliberately left in place: a password entry that
         # empties itself the moment you confirm it looks like the password was
         # lost, and there is no way to check what was just stored.  They are
