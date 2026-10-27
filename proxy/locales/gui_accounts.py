@@ -49,13 +49,12 @@ EN = {
     'gui.accounts.ms.code_label': 'Code:',
     'gui.accounts.ms.starting': 'Requesting a sign-in code from Microsoft...',
     'gui.accounts.ms.waiting': 'Waiting for the sign-in in the browser...',
-    'gui.accounts.ms.copy_code': 'Copy code',
     'gui.accounts.ms.code_copied': 'Sign-in code copied to the clipboard',
-    'gui.accounts.ms.copy': 'Copy link',
+    'gui.accounts.ms.copy': 'Copy code',
     'gui.accounts.ms.open': 'Open in browser',
-    'gui.accounts.ms.copied': 'Sign-in link copied to the clipboard',
-    'gui.accounts.ms.open_failed': 'Could not open a browser; use "Copy link" and paste '
-                                   'the address into a browser window instead',
+    'gui.accounts.ms.open_failed': 'Could not open a browser; use the "Open in browser" '
+                                   'button or paste the sign-in link into a browser '
+                                   'window instead',
     'gui.accounts.ms.added': 'Added Microsoft account %(name)s',
     'gui.accounts.ms.ssl_title': 'Certificate check failed',
     'gui.accounts.ms.ssl_ask': 'The secure connection to Microsoft could not be '
@@ -117,12 +116,10 @@ ZH = {
     'gui.accounts.ms.code_label': '代码:',
     'gui.accounts.ms.starting': '正在向微软申请登录代码...',
     'gui.accounts.ms.waiting': '正在等待浏览器中完成登录...',
-    'gui.accounts.ms.copy_code': '复制代码',
     'gui.accounts.ms.code_copied': '登录代码已复制到剪贴板',
-    'gui.accounts.ms.copy': '复制链接',
+    'gui.accounts.ms.copy': '复制代码',
     'gui.accounts.ms.open': '在浏览器中打开',
-    'gui.accounts.ms.copied': '登录链接已复制到剪贴板',
-    'gui.accounts.ms.open_failed': '无法自动打开浏览器; 请点「复制链接」, 把地址粘贴到浏览器里打开',
+    'gui.accounts.ms.open_failed': '无法自动打开浏览器; 请点「在浏览器中打开」, 或在浏览器地址栏粘贴登录链接',
     'gui.accounts.ms.added': '已添加微软账号 %(name)s',
     'gui.accounts.ms.ssl_title': '证书验证失败',
     'gui.accounts.ms.ssl_ask': '无法验证与微软的安全连接:\n\n%(detail)s\n\n'
