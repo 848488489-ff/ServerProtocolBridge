@@ -43,15 +43,29 @@ def _default_state() -> dict:
             'secret': ''}
 
 
-def _read() -> dict:
+def _read() -> tuple[dict, bool]:
+    """Return ``(state, readable)``.
+
+    ``readable`` is False when the file exists but could not be read or parsed.
+    That is a transient failure -- a lock, an antivirus scan, a half-written
+    file -- not a fresh install.  Treating it as first run and writing the
+    defaults back is what destroyed a stored password before: the empty state
+    was persisted over the real one and the password was gone.
+    """
     path = auth_path()
     state = _default_state()
     try:
-        payload = json.loads(path.read_text(encoding='utf-8'))
-    except (OSError, ValueError):
-        return state
+        text = path.read_text(encoding='utf-8')
+    except FileNotFoundError:
+        return state, True            # genuinely first run
+    except OSError:
+        return state, False
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return state, False
     if not isinstance(payload, dict):
-        return state
+        return state, False
     for key in ('salt', 'hash', 'secret'):
         value = payload.get(key)
         if isinstance(value, str):
@@ -61,26 +75,31 @@ def _read() -> dict:
         state['iterations'] = max(100_000, int(payload.get('iterations', ITERATIONS)))
     except (TypeError, ValueError):
         state['iterations'] = ITERATIONS
-    return state
+    return state, True
 
 
-def _write(state: dict) -> None:
+def _write(state: dict) -> bool:
+    """Persist *state*, returning whether the write happened."""
     path = auth_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix('.tmp')
-    temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2) + '\n',
-                         encoding='utf-8')
-    temporary.replace(path)
+    try:
+        temporary.write_text(json.dumps(state, ensure_ascii=False, indent=2) + '\n',
+                             encoding='utf-8')
+        temporary.replace(path)
+    except OSError:
+        return False
     try:
         os.chmod(path, 0o600)
     except OSError:
         pass
+    return True
 
 
 def state() -> dict:
     """Public view used by both interfaces; never exposes the hash."""
     with _lock:
-        data = _read()
+        data, _readable = _read()
     return {'enabled': bool(data['enabled'] and data['hash']),
             'has_password': bool(data['hash'])}
 
@@ -101,10 +120,13 @@ def set_password(password: str) -> None:
     digest = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt,
                                  ITERATIONS)
     with _lock:
-        data = _read()
+        data, readable = _read()
+        if not readable:
+            raise OSError('web_auth.json could not be read')
         data.update(enabled=True, salt=salt.hex(), hash=digest.hex(),
                     iterations=ITERATIONS)
-        _write(data)
+        if not _write(data):
+            raise OSError('web_auth.json could not be written')
     clear_failures('')
 
 
@@ -117,24 +139,32 @@ def enable() -> None:
     the Web UI would open without asking for a password at all.
     """
     with _lock:
-        data = _read()
+        data, readable = _read()
+        if not readable:
+            raise OSError('web_auth.json could not be read')
         if data['hash']:
             data['enabled'] = True
-            _write(data)
+            if not _write(data):
+                raise OSError('web_auth.json could not be written')
 
 
 def disable() -> None:
     with _lock:
-        data = _read()
+        data, readable = _read()
+        if not readable:
+            raise OSError('web_auth.json could not be read')
         data.update(enabled=False, salt='', hash='')
-        _write(data)
+        if not _write(data):
+            raise OSError('web_auth.json could not be written')
     clear_failures('')
 
 
 def verify(password: str) -> bool:
     with _lock:
-        data = _read()
-    if not data['hash'] or not data['salt']:
+        data, readable = _read()
+    # A file that exists but cannot be read fails closed: the password cannot
+    # be checked, so access is not granted on a guess.
+    if not readable or not data['hash'] or not data['salt']:
         return False
     try:
         salt = bytes.fromhex(data['salt'])
@@ -148,14 +178,21 @@ def verify(password: str) -> bool:
 
 
 def secret_key() -> bytes:
-    """Persistent Flask session key; generated on first use."""
+    """Persistent Flask session key; generated on first use.
+
+    When the file exists but cannot be read, a fresh key is used in memory only
+    and nothing is written: overwriting the file with a default state here is
+    what wiped a stored password before.  Sessions simply do not survive a
+    restart in that case.
+    """
     with _lock:
-        data = _read()
+        data, readable = _read()
         secret = data.get('secret') or ''
         if len(secret) < 32:
             secret = secrets.token_hex(32)
-            data['secret'] = secret
-            _write(data)
+            if readable:
+                data['secret'] = secret
+                _write(data)
     return secret.encode('ascii')
 
 

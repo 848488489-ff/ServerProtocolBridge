@@ -611,7 +611,10 @@ function deviceId() {
   if (!value) {
     value = (window.crypto && crypto.randomUUID) ? crypto.randomUUID()
       : 'd-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
-    try { localStorage.setItem(KEY, value); } catch (err) { value = ''; }
+    // Storage may be unavailable (private window, storage blocked).  Keep using
+    // the id for this page instead of falling back to an empty one, which the
+    // server cannot distinguish from a different client.
+    try { localStorage.setItem(KEY, value); } catch (err) { }
   }
   return value;
 }
@@ -926,7 +929,13 @@ async function saveAuth() {
       }, 700);
       return;
     }
-    toast(enabled ? t('web.password_saved') : t('web.saved'), 'ok');
+    if (!enabled) {
+      toast(t('web.saved'), 'ok');
+    } else if (data.password_changed === false) {
+      toast(t('web.password_unchanged'), 'ok');
+    } else {
+      toast(t('web.password_saved'), 'ok');
+    }
   } catch (err) {
     toast(err.message, 'error', 6000);
   }
@@ -1560,7 +1569,9 @@ button:hover { background: var(--accent-hover); }
     } else {
       value = 'd-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 12);
     }
-    try { localStorage.setItem(KEY, value); } catch (err) { value = ''; }
+    // Storage may be unavailable (private window, storage blocked).  Keep using
+    // the id for this page rather than submitting an empty one.
+    try { localStorage.setItem(KEY, value); } catch (err) { }
   }
   var field = document.getElementById('device-id');
   if (field) field.value = value;

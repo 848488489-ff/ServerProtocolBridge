@@ -103,24 +103,40 @@ def register(app, fail):
         enabled = bool(body.get('enabled'))
         password = str(body.get('password') or '')
         was_enabled = webauth.is_enabled()
-        if enabled:
-            if password:
-                if len(password) < 4:
-                    return fail(tr('web.password_short'))
-                webauth.set_password(password)
-            elif not webauth.has_password():
-                return fail(tr('web.password_required'))
-        else:
-            webauth.disable()
+        password_changed = False
+        try:
+            if enabled:
+                if password:
+                    if len(password) < 4:
+                        return fail(tr('web.password_short'))
+                    webauth.set_password(password)
+                    password_changed = True
+                elif not webauth.has_password():
+                    return fail(tr('web.password_required'))
+                else:
+                    # The field was left blank, which the form documents as "keep the
+                    # current password".  Nothing was written before, so the switch
+                    # could read "on" in the browser while the file still said
+                    # otherwise; persist the switch either way.
+                    webauth.enable()
+            else:
+                webauth.disable()
+        except OSError:
+            # The file exists but cannot be read or written.  Fail the request
+            # instead of proceeding: the switch is already on in the browser and
+            # would silently claim a password was set when the file still says
+            # otherwise (this is what wiped a stored password before).
+            return fail(tr('web.auth_unreadable'), status=503)
         # Enabling access control or changing the password must invalidate the
         # current browser session: otherwise the page that just set the
         # password keeps working and the password looks like it had no effect.
-        reauth = enabled and (bool(password) or not was_enabled)
+        reauth = enabled and (password_changed or not was_enabled)
         if reauth:
             session.clear()
         else:
             session['authenticated'] = True
-        return jsonify({'ok': True, 'auth': webauth.state(), 'reauth': reauth})
+        return jsonify({'ok': True, 'auth': webauth.state(), 'reauth': reauth,
+                        'password_changed': password_changed})
     @app.route('/api/ui/preferences', methods=['POST'])
     def api_preferences():
         manager = get_manager()
