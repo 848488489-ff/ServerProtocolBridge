@@ -32,7 +32,6 @@ class BridgePages:
     def _select_page(self, name: str) -> None:
         if name not in self.page_builders:
             name = 'control'
-        fresh = name not in self.pages
         # A wheel gesture interrupted by a page change would otherwise carry
         # its partial delta onto the new page and make it jump as soon as the
         # user scrolls again.
@@ -70,10 +69,6 @@ class BridgePages:
         self.title_label.configure(text=tr(title_key))
         self.subtitle_label.configure(text=tr(subtitle_key) if subtitle_key else '')
         self.current_page = name
-        # A page that was just built has empty fields: the form was loaded
-        # before it existed, so load it again now that its widgets do.
-        if fresh:
-            self._load_form(self.cfg)
         if name == 'accounts':
             self._refresh_accounts()
         elif name == 'cert':
@@ -132,13 +127,14 @@ class BridgePages:
                      anchor='w').grid(row=row, column=0, sticky='w',
                                       padx=(0, 14), pady=5)
         entry.grid(row=row, column=1, sticky='ew', pady=5)
-        ctk.CTkButton(body, text=tr('gui.button.web_auth_show'), width=96,
-                      height=28, font=self.font_small, fg_color='transparent',
-                      border_width=1, border_color=CARD_BORDER, text_color=MUTED,
-                      hover_color=SIDEBAR_HOVER,
-                      command=lambda: self._toggle_password_visibility(entry,
-                                                                       self)).grid(
-            row=row, column=2, sticky='e', padx=(8, 0), pady=5)
+        button = ctk.CTkButton(body, text=tr('gui.button.web_auth_show'), width=96,
+                               height=28, font=self.font_small, fg_color='transparent',
+                               border_width=1, border_color=CARD_BORDER, text_color=MUTED,
+                               hover_color=SIDEBAR_HOVER)
+        # Hand the button itself, not the page: _toggle_password_visibility
+        # flips the button label between show/hide, which requires the widget.
+        button.configure(command=lambda: self._toggle_password_visibility(entry, button))
+        button.grid(row=row, column=2, sticky='e', padx=(8, 0), pady=5)
         row += 1
         if hint:
             ctk.CTkLabel(body, text=hint, font=self.font_small, text_color=MUTED,

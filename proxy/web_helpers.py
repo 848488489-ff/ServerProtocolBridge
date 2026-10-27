@@ -41,11 +41,20 @@ def _ms_worker(job_id: str, info: dict, verify: bool) -> None:
             if job is not None:
                 job.update(state='error', error=str(exc), code='')
     else:
-        accounts.add_account(account)
-        with _jobs_lock:
-            job = _jobs.get(job_id)
-            if job is not None:
-                job.update(state='done', account=_account_payload(account, ''))
+        try:
+            accounts.add_account(account)
+        except Exception as exc:
+            # A store write failure must surface in the job, not kill the
+            # worker thread silently and leave the UI polling a dead job.
+            with _jobs_lock:
+                job = _jobs.get(job_id)
+                if job is not None:
+                    job.update(state='error', error=str(exc), code='')
+        else:
+            with _jobs_lock:
+                job = _jobs.get(job_id)
+                if job is not None:
+                    job.update(state='done', account=_account_payload(account, ''))
 def _account_payload(account, active_id: str) -> dict:
     return {
         'id': account.id,

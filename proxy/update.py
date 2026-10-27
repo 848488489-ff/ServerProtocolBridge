@@ -244,7 +244,7 @@ def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
         payload = None
     if isinstance(payload, dict):
         version = _first_string(payload, VERSION_KEYS)
-        page = _first_string(payload, PAGE_KEYS)
+        page = _clean_url(_first_string(payload, PAGE_KEYS), base_url=url)
         source = _clean_url(_first_string(payload, SOURCE_KEYS), base_url=url)
         notes = _localized_notes(payload, _first_string(payload, NOTES_KEYS))
         min_version = _first_string(payload, MIN_VERSION_KEYS)

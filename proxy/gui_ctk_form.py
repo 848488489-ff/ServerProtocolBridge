@@ -6,6 +6,8 @@ through ``self``.
 
 from __future__ import annotations
 
+import copy
+
 import customtkinter as ctk
 import tkinter as tk
 from . import (config as config_module, webauth)
@@ -85,7 +87,12 @@ class BridgeForm:
                 raise ValueError(tr('gui.error.invalid_number', label=label,
                                     value=text)) from None
 
-        config = self.cfg
+        # Collect into a copy of the live config, never into the live object
+        # itself: when validation fails part-way through (bad port, missing
+        # route target, ...) the fields already written here must not leak into
+        # the config that is in use.  The copy becomes the live config only when
+        # save_config() receives it after a clean collection.
+        config = copy.copy(self.cfg)
         extra = [item.strip() for item in
                  self.var_cert_extra.get().replace(',', ' ').split() if item.strip()]
         routes_text = self._route_rows_text()
