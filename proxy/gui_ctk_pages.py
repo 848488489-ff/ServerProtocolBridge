@@ -33,6 +33,16 @@ class BridgePages:
         if name not in self.page_builders:
             name = 'control'
         fresh = name not in self.pages
+        # A wheel gesture interrupted by a page change would otherwise carry
+        # its partial delta onto the new page and make it jump as soon as the
+        # user scrolls again.
+        for canvas in list(self.scroll_canvases):
+            scroller = getattr(canvas, '_smooth_wheel', None)
+            if scroller is not None:
+                try:
+                    scroller.reset()
+                except Exception:
+                    pass
         page = self._ensure_page(name)
         for key, other in self.pages.items():
             if key == name:

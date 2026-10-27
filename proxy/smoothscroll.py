@@ -22,13 +22,27 @@ Three entry points:
 
 from __future__ import annotations
 
+import sys
 import tkinter as tk
 from tkinter import ttk as _ttk
 from typing import Any, Callable
 
+_WINDOWS = sys.platform == 'win32'
+
+
+def _trunc_div(value: int, divisor: int) -> int:
+    """Integer division truncating toward zero (Python's ``//`` floors)."""
+    if value >= 0:
+        return value // divisor
+    return -((-value) // divisor)
+
 
 def wheel_notches(event: Any) -> int:
-    """Convert a platform wheel event into notches (positive = scroll up)."""
+    """Convert a platform wheel event into notches (positive = scroll up).
+
+    Used on non-Windows platforms and for events that already carry a whole
+    notch.  Windows touchpad accumulation lives in :class:`SmoothWheel`.
+    """
     number = getattr(event, 'num', None)
     if number == 4:
         return 1
@@ -40,7 +54,7 @@ def wheel_notches(event: Any) -> int:
         return 0
     if delta == 0:
         return 0
-    # Windows reports ±120 per notch, macOS reports small values (±1..±10)
+    # Windows reports ±120 per notch, macOS reports small values (±1..±10).
     if abs(delta) >= 120:
         return -delta // 120
     return -1 if delta > 0 else 1
@@ -60,13 +74,41 @@ class SmoothWheel:
         self._scroll = scroll
         self._scheduler = scheduler
         self.units_per_notch = units_per_notch
+        # Residual wheel delta, Windows precision touchpads only.  Kept so a
+        # gentle two-finger swipe scrolls the same distance as a mouse notch
+        # instead of jumping a whole step per small event.
+        self._delta_acc = 0
 
     # ---------- event handler ----------
     def wheel(self, event: Any) -> str:
-        notches = wheel_notches(event)
+        notches = self._notches(event)
         if notches:
             self.apply(notches * self.units_per_notch)
         return 'break'
+
+    def _notches(self, event: Any) -> int:
+        if _WINDOWS:
+            return self._accumulate(event)
+        return wheel_notches(event)
+
+    def _accumulate(self, event: Any) -> int:
+        """Windows: turn raw touchpad/mouse deltas into whole notches."""
+        number = getattr(event, 'num', None)
+        if number == 4:
+            return 1
+        if number == 5:
+            return -1
+        try:
+            delta = int(getattr(event, 'delta', 0) or 0)
+        except (TypeError, ValueError):
+            return 0
+        if delta == 0:
+            return 0
+        self._delta_acc += delta
+        steps = _trunc_div(self._delta_acc, 120)
+        if steps:
+            self._delta_acc -= steps * 120
+        return -steps
 
     # ---------- scroll ----------
     def apply(self, units: int) -> None:
@@ -99,7 +141,8 @@ class SmoothWheel:
             pass
 
     def reset(self) -> None:
-        """Nothing is pending anymore; kept for the callers that still ask."""
+        """Drop any pending touchpad delta (callers do this on page change)."""
+        self._delta_acc = 0
 
 
 def enable(widget: Any, units_per_notch: int = 4) -> None:
