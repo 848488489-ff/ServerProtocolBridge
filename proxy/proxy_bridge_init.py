@@ -69,6 +69,13 @@ class BridgeInit:
         # otherwise a reply can be appended between the copy and the clear and
         # silently disappear.
         self._to_server_lock = threading.Lock()
+        # _queue_to_client is the translator's send_client callback and runs in
+        # the same worker threads as _queue_to_backend (login / transaction
+        # replies).  _drain_outbox therefore needs the same copy-and-clear
+        # discipline as _to_server: without the lock a frame appended between
+        # the copy and the clear would be silently lost and the client would
+        # hang in login or desync in play.
+        self._outbox_lock = threading.Lock()
         self._close_after_flush = False
         self._ws_closed = False
         self._first_task: asyncio.Task | None = None

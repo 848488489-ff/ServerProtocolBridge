@@ -57,7 +57,8 @@ class BridgePump:
     def _queue_to_client(self, data: bytes) -> None:
         """Translator callback: queue one frame to be sent to the client (sent one
         by one, see _drain_outbox)."""
-        self._outbox.append(data)
+        with self._outbox_lock:
+            self._outbox.append(data)
     def _queue_to_backend(self, data: bytes) -> None:
         """Queue a chunk of bytes for the target server (thread-safe)."""
         with self._to_server_lock:
@@ -209,11 +210,17 @@ class BridgePump:
         self.bytes_to_server += total
         self.server.stats.add_bytes(to_server=total)
     async def _drain_outbox(self) -> None:
-        if self._outbox:
-            # same as _flush_to_server: must be cleared in place, or frames the
-            # translation layer appends later would be lost
-            frames = list(self._outbox)
-            self._outbox.clear()
+        with self._outbox_lock:
+            if self._outbox:
+                # same as _flush_to_server: must be cleared in place, or frames
+                # the translation layer appends later would be lost.  The lock
+                # makes the copy-and-clear atomic against _queue_to_client,
+                # which runs in a worker thread while login is in flight.
+                frames = list(self._outbox)
+                self._outbox.clear()
+            else:
+                frames = []
+        if frames:
             await self._send_payloads(frames)
         if self._close_after_flush:
             self._close_after_flush = False

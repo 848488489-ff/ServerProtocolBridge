@@ -744,7 +744,9 @@ function renderStatus(data) {
     setText('#web-url', web.url);
     setAttr('#web-url', 'href', web.url);
   }
-  setText('#web-bind', (web.host || '') + ':' + (web.port || ''));
+  let bindHost = web.host || '';
+  if (bindHost.indexOf(':') !== -1 && bindHost.charAt(0) !== '[') bindHost = '[' + bindHost + ']';
+  setText('#web-bind', bindHost + ':' + (web.port || ''));
   if (data.auth) {
     state.auth = data.auth;
     updateAuthVisibility();

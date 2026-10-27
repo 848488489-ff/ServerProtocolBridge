@@ -21,6 +21,15 @@ CONFIG_FILENAME = 'config.json'
 _SCHEMES = ('minecraft://', 'mc://', 'tcp://', 'wss://', 'ws://', 'https://', 'http://')
 
 
+def _bracket_host(host: str) -> str:
+    """Wrap an IPv6 literal in brackets for a URL, leaving IPv4 / DNS names
+    and hosts already bracketed untouched."""
+    host = (host or '').strip()
+    if ':' in host and not host.startswith('['):
+        return '[%s]' % host
+    return host
+
+
 def parse_address(text: str, default_port: int | None = None) -> tuple[str, int | None]:
     """Parse a forward target.
 
@@ -400,10 +409,11 @@ class Config:
             host, port = parse_address(self.target)
         except ValueError:
             return self.target
+        host = _bracket_host(host)
         return '%s:%d' % (host, port) if port else tr('core.config.target_srv', host=host)
 
     def listeners(self) -> list[str]:
-        host = self.listen_host or '127.0.0.1'
+        host = _bracket_host(self.listen_host or '127.0.0.1')
         result = []
         if self.tls_enabled and int(self.wss_port) > 0:
             result.append('wss://%s:%d' % (host, int(self.wss_port)))
@@ -416,8 +426,7 @@ class Config:
         host = (self.web_host or '127.0.0.1').strip() or '127.0.0.1'
         if host in ('0.0.0.0', '::', '[::]'):
             host = '127.0.0.1'
-        if ':' in host and not host.startswith('['):
-            host = '[%s]' % host
+        host = _bracket_host(host)
         return 'http://%s:%d/' % (host, int(self.web_port))
 
     def validate_web(self) -> list[str]:
@@ -430,7 +439,7 @@ class Config:
         return problems
 
     def wss_url(self) -> str | None:
-        host = self.listen_host or '127.0.0.1'
+        host = _bracket_host(self.listen_host or '127.0.0.1')
         if self.tls_enabled and int(self.wss_port) > 0:
             return 'wss://%s:%d' % (host, int(self.wss_port))
         if int(self.ws_port) > 0:

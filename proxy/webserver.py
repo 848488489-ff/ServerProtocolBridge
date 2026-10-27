@@ -104,6 +104,10 @@ def start_web_ui(host: str | None = None, port: int | None = None,
 
     default_host, default_port = _config_defaults()
     host = (host if host is not None else default_host).strip() or DEFAULT_HOST
+    if host.startswith('[') and host.endswith(']'):
+        # The config may store the bind address as "[::1]"; the socket layer
+        # wants the bare literal.  _display_host re-adds the brackets for URLs.
+        host = host[1:-1]
     try:
         requested = int(port) if port is not None else int(default_port)
     except (TypeError, ValueError):
