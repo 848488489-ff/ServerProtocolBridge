@@ -71,3 +71,6 @@ class TranslatorStateMixin:
         self.packets_to_client = 0
         self._seen_client_ids: set[tuple[int, str]] = set()
         self._seen_server_ids: set[tuple[int, str]] = set()
+        # True once a brand packet from the client has been rewritten to the
+        # spoofed value, so the synthesized brand is not announced a second time
+        self._brand_rewritten = False

@@ -175,10 +175,10 @@ def run_selftest(config: Config, logger: Logger) -> int:
     else:
         logger.error(tr('core.cli.crypto_missing'))
     try:
-        import tkinter  # noqa: F401
+        import webview  # noqa: F401
 
         logger.info(tr('core.cli.gui_ok'))
-    except Exception as exc:                       # the symptom seen when tcl/tk is missing from a package
+    except Exception as exc:                       # the symptom seen when pywebview / the webview runtime is missing
         logger.error(tr('core.cli.gui_missing', error=exc))
     try:
         import difflib  # noqa: F401  # flask's click imports it lazily when formatting errors

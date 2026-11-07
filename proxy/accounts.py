@@ -395,4 +395,12 @@ def join_session(account: Account, server_hash: str, log=None) -> None:
 
 # Auth backends live in accounts_auth (split for file size); re-export
 # the public names so callers keep using accounts.microsoft_* / .thirdparty_*.
-from .accounts_auth import microsoft_device_start, microsoft_device_poll, microsoft_refresh, microsoft_ensure_token, thirdparty_authenticate, thirdparty_validate, thirdparty_refresh, thirdparty_ensure_token  # noqa: F401
+from .accounts_auth import (  # noqa: F401
+    microsoft_device_start, microsoft_device_poll, microsoft_refresh,
+    microsoft_ensure_token, thirdparty_authenticate, thirdparty_validate,
+    thirdparty_refresh, thirdparty_ensure_token,
+    # Legacy names that used to live here, ported for callers (and tests)
+    # that still reference them through the accounts module.
+    MCMSA, MCAuthError, OAuthError, _request_json, _mcauth_attempted,
+    _mcauth_failure,
+)

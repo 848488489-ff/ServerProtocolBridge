@@ -16,7 +16,7 @@ STEPS = [
     ('feat: implement SRV lookup and target server reachability probe', ['proxy/resolver.py']),
     ('feat: implement config load/save, address parsing and validation', ['proxy/config.py']),
     ('feat: implement the WebSocket-to-TCP forwarding core', ['proxy/proxy.py']),
-    ('feat: implement the CustomTkinter GUI', ['proxy/gui_ctk.py']),
+    ('feat: host the Web UI in a native webview window (pywebview shell)', ['proxy/gui_shell.py']),
     ('feat: implement CLI mode and the program entry point', ['proxy/cli.py', 'main.py']),
     ('test: add self-tests (certificate handshake / frame codec / end-to-end relay)', ['tests/test_all.py']),
     ('build: add single-file PyInstaller packaging scripts', ['tools/build.py', 'tools/build.bat', 'start.bat']),

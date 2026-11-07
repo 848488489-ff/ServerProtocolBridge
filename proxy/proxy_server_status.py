@@ -19,120 +19,33 @@ from websockets.datastructures import Headers
 from websockets.http11 import (Request, Response)
 class ProxyStatus:
     """ProxyStatus mixin for ProxyServer."""
-    def warm_status_async(self, host: str, port: int | None) -> None:
-        """Resolve and refresh a target status in a daemon thread."""
-        host = (host or '').strip()
-        if not host:
-            return
-        token = '%s:%s' % (host, port or 0)
-        with self._lock:
-            if token in self._status_warming:
-                return
-            self._status_warming.add(token)
-
-        def worker() -> None:
-            try:
-                resolved_host, resolved_port = self.resolve_endpoint(host, port)
-                self._start_status_refresh(resolved_host, resolved_port)
-            except Exception as exc:
-                self.log.debug('status warm-up failed: %s' % exc)
-            finally:
-                with self._lock:
-                    self._status_warming.discard(token)
-
-        threading.Thread(target=worker, daemon=True, name='spb-status-warm').start()
-    def _start_status_refresh(self, host: str, port: int,
-                              timeout: float = STATUS_TIMEOUT) -> None:
-        key = '%s:%d' % (host, int(port))
-        with self._lock:
-            if key in self._status_refreshing:
-                return
-            self._status_refreshing.add(key)
-
-        def worker() -> None:
-            try:
-                result = resolver.query_status(host, int(port), timeout=timeout)
-                result['time'] = time.time()
-                if self.config.status_cache:
-                    with self._lock:
-                        self._status_cache[key] = result
-            except Exception as exc:
-                self.log.debug('status refresh failed: %s' % exc)
-            finally:
-                with self._lock:
-                    self._status_refreshing.discard(key)
-
-        threading.Thread(target=worker, daemon=True, name='spb-status').start()
     def status_for_query(self, host: str, port: int | None,
                          timeout: float = STATUS_TIMEOUT) -> dict:
         """Return the status used for an ``Accept: MOTD`` answer.
 
-        This runs in a worker thread.  With caching enabled a fresh result is
-        returned immediately, a stale result is returned while a refresh runs
-        in the background, and a miss performs one live query.  With caching
-        disabled every call queries the target and nothing is stored.
+        This runs in a worker thread.  Caching is deliberately disabled: every
+        list query hits the target server live, so the MOTD, player count and
+        version the client sees are always current instead of a stale cached
+        value.  (The status cache was removed as meaningless -- a server list
+        should never show yesterday's MOTD.)
         """
         resolved_host, resolved_port = self.resolve_endpoint(host, port)
         resolved_port = int(resolved_port)
-        key = '%s:%d' % (resolved_host, resolved_port)
-        if self.config.status_cache:
-            now = time.time()
-            with self._lock:
-                cached = self._status_cache.get(key)
-            if cached:
-                if now - cached['time'] < int(self.config.status_cache_ttl):
-                    return cached
-                self._start_status_refresh(resolved_host, resolved_port, timeout)
-                return cached
         result = resolver.query_status(resolved_host, resolved_port, timeout=timeout)
         result['time'] = time.time()
-        if self.config.status_cache:
-            with self._lock:
-                self._status_cache[key] = result
         return result
     def target_status(self, host: str, port: int, timeout: float = STATUS_TIMEOUT,
                       max_age: float | None = None, wait: bool = True) -> dict:
         """Return the target server status.
 
-        ``wait=True`` is for the status page: it may block for a fresh live
-        query.  ``wait=False`` is the non-blocking variant: it returns a cached
-        value immediately (even if stale) and refreshes it in the background,
-        or returns a placeholder while the first refresh runs.
+        Caching is disabled: every call performs a live query so the status page
+        always shows the current MOTD, players and ping.  ``wait=False`` is kept
+        for compatibility but no longer returns a cached/placeholder value; a
+        caller that must not block should pass ``wait=False`` and accept that the
+        query still runs (the status page refreshes on its own timer).
         """
-        if max_age is None:
-            max_age = float(self.config.status_cache_ttl)
-        key = '%s:%d' % (host, int(port))
-        now = time.time()
-        cached_result = None
-        needs_refresh = False
-        if self.config.status_cache:
-            with self._lock:
-                cached = self._status_cache.get(key)
-                if cached:
-                    fresh = now - cached['time'] < max_age
-                    if fresh or not wait:
-                        cached_result = cached
-                        needs_refresh = not fresh
-        if cached_result is not None:
-            if needs_refresh:
-                self._start_status_refresh(host, int(port), timeout)
-            return cached_result
-        if not wait:
-            if self.config.status_cache:
-                self._start_status_refresh(host, int(port), timeout)
-            return {
-                'ok': False,
-                'ms': None,
-                'status': None,
-                'error': '',
-                'time': now,
-                'refreshing': True,
-            }
         result = resolver.query_status(host, int(port), timeout=timeout)
         result['time'] = time.time()
-        if self.config.status_cache:
-            with self._lock:
-                self._status_cache[key] = result
         return result
     # ---------- HTTP / WebSocket transport ----------
     @staticmethod

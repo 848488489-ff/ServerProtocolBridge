@@ -71,6 +71,27 @@ MARKER_CLASSIC = 0x01        # First byte: EaglercraftX 1.8
 MARKER_MODERN = 0x02         # Second byte: v2..v5 handshake
 MARKER_LEGACY = 0x01         # Second byte: v1 handshake
 
+# Trailing parenthesized suffixes of a version string: modern clients report
+# e.g. "Eaglercraft 1.21.11 (u1-beta)" -- the parenthetical is a build/channel
+# tag, not the version number, and must not be copied anywhere (it is dropped
+# when the relay passes a client version on; see clean_version_string).
+_PAREN_SUFFIX_RE = re.compile(r'\s*\([^()]*\)\s*$')
+
+
+def clean_version_string(text: str) -> str:
+    """Strip trailing parenthesized suffixes from a client version string.
+
+    ``Eaglercraft 1.21.11 (u1-beta)`` becomes ``Eaglercraft 1.21.11``; plain
+    values are returned unchanged; ``1.2.3 (a) (b)`` loses both suffixes.
+    """
+    out = (text or '').strip()
+    while out:
+        stripped = _PAREN_SUFFIX_RE.sub('', out).strip()
+        if stripped == out:
+            return out
+        out = stripped
+    return out
+
 # Kept as a reference for what the vanilla clients and Mojang's validator use.
 # It is deliberately not applied to names any more: many servers -- Chinese
 # servers and offline-mode setups in particular -- accept non-ASCII names, and
@@ -157,7 +178,8 @@ class ClientVersion:
 
     def describe(self) -> str:
         return tr('eagler.describe.client_version',
-                  brand=self.brand or '?', version=self.version or '?',
+                  brand=self.brand or '?',
+                  version=clean_version_string(self.version) or '?',
                   handshake=self.handshake_protocols, mc=self.mc_protocols,
                   auth=tr('eagler.describe.auth_enabled' if self.auth
                           else 'eagler.describe.auth_disabled'))

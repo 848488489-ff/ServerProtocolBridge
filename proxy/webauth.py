@@ -40,7 +40,8 @@ def auth_path() -> Path:
 
 def _default_state() -> dict:
     return {'enabled': False, 'salt': '', 'hash': '', 'iterations': ITERATIONS,
-            'secret': ''}
+            'secret': '', 'mcp_salt': '', 'mcp_hash': '',
+            'mcp_iterations': ITERATIONS}
 
 
 def _read() -> tuple[dict, bool]:
@@ -66,15 +67,16 @@ def _read() -> tuple[dict, bool]:
         return state, False
     if not isinstance(payload, dict):
         return state, False
-    for key in ('salt', 'hash', 'secret'):
+    for key in ('salt', 'hash', 'secret', 'mcp_salt', 'mcp_hash'):
         value = payload.get(key)
         if isinstance(value, str):
             state[key] = value
     state['enabled'] = bool(payload.get('enabled'))
-    try:
-        state['iterations'] = max(100_000, int(payload.get('iterations', ITERATIONS)))
-    except (TypeError, ValueError):
-        state['iterations'] = ITERATIONS
+    for key in ('iterations', 'mcp_iterations'):
+        try:
+            state[key] = max(100_000, int(payload.get(key, ITERATIONS)))
+        except (TypeError, ValueError):
+            state[key] = ITERATIONS
     return state, True
 
 
@@ -106,6 +108,45 @@ def state() -> dict:
 
 def is_enabled() -> bool:
     return state()['enabled']
+
+
+def is_loopback_host(host: str) -> bool:
+    """Whether *host* is a loopback bind address.
+
+    Used for the "a password/key is pointless on loopback" rule.  An empty
+    bind address means the default, 127.0.0.1.  ``localhost`` and the whole
+    127.0.0.0/8 block count, as does the IPv6 loopback with or without
+    brackets.
+    """
+    value = (host or '').strip().lower()
+    if not value:
+        return True
+    if value.startswith('[') and value.endswith(']'):
+        value = value[1:-1]
+    if value == 'localhost' or value.startswith('::ffff:127.'):
+        return True
+    try:
+        import ipaddress
+
+        return ipaddress.ip_address(value).is_loopback
+    except ValueError:
+        return False
+
+
+def is_loopback(addr: str) -> bool:
+    """Whether a request comes from this machine.
+
+    The decision is based on the client's source address, never on the
+    configured bind address: binding ``0.0.0.0`` and connecting through
+    ``127.0.0.1`` is still a local access and must not ask for the password.
+    Testing an "open" listener therefore has to use a real non-loopback
+    address -- ``127.0.0.1`` would bypass the check.  An empty address is not
+    treated as local: a request with no peer address must fail closed.
+    """
+    value = (addr or '').strip()
+    if not value:
+        return False
+    return is_loopback_host(value)
 
 
 def has_password() -> bool:
@@ -173,6 +214,67 @@ def verify(password: str) -> bool:
     except (TypeError, ValueError):
         return False
     digest = hashlib.pbkdf2_hmac('sha256', (password or '').encode('utf-8'),
+                                 salt, iterations)
+    return hmac.compare_digest(digest, expected)
+
+
+# ---------------------------------------------------------------------------
+# MCP key
+# ---------------------------------------------------------------------------
+# The MCP endpoint reuses web_auth.json for its optional bearer key.  It is a
+# separate hash from the Web UI password: the two protect different clients and
+# either can be changed without touching the other.
+
+def mcp_state() -> dict:
+    """Public view of the MCP key state; never exposes the hash."""
+    with _lock:
+        data, _readable = _read()
+    has_key = bool(data['mcp_hash'] and data['mcp_salt'])
+    return {'enabled': has_key, 'has_key': has_key}
+
+
+def mcp_has_key() -> bool:
+    return mcp_state()['has_key']
+
+
+def set_mcp_key(key: str) -> None:
+    """Store a new MCP key, hashed like the Web UI password."""
+    if not key:
+        raise ValueError('empty key')
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac('sha256', key.encode('utf-8'), salt, ITERATIONS)
+    with _lock:
+        data, readable = _read()
+        if not readable:
+            raise OSError('web_auth.json could not be read')
+        data.update(mcp_salt=salt.hex(), mcp_hash=digest.hex(),
+                    mcp_iterations=ITERATIONS)
+        if not _write(data):
+            raise OSError('web_auth.json could not be written')
+
+
+def clear_mcp_key() -> None:
+    with _lock:
+        data, readable = _read()
+        if not readable:
+            raise OSError('web_auth.json could not be read')
+        data.update(mcp_salt='', mcp_hash='', mcp_iterations=ITERATIONS)
+        if not _write(data):
+            raise OSError('web_auth.json could not be written')
+
+
+def verify_mcp_key(key: str) -> bool:
+    with _lock:
+        data, readable = _read()
+    if not readable or not data['mcp_hash'] or not data['mcp_salt']:
+        return False
+    try:
+        salt = bytes.fromhex(data['mcp_salt'])
+        expected = bytes.fromhex(data['mcp_hash'])
+        iterations = int(data['mcp_iterations'])
+    except (TypeError, ValueError):
+        return False
+    digest = hashlib.pbkdf2_hmac('sha256', (key or '').encode('utf-8'),
                                  salt, iterations)
     return hmac.compare_digest(digest, expected)
 

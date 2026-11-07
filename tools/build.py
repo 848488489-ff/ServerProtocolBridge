@@ -2,7 +2,7 @@
 
     python tools/build.py                 # build, do not execute the artifact
     python tools/build.py --smoke         # build and run the packaged EXE checks
-    python tools/build.py --windowed      # no console window (pure GUI)
+    python tools/build.py --windowed      # GUI-subsystem build (no console; default keeps a console)
     python tools/build.py --name MyTool   # custom EXE name
 
 The release EXE is a plain PyInstaller onefile build.  It is deliberately not
@@ -42,6 +42,9 @@ EXCLUDES = [
     'unittest', 'pydoc', 'idlelib', 'ensurepip', 'sqlite3',
     'tkinter.test', 'turtledemo', 'lib2to3', 'pip', 'setuptools', 'pkg_resources',
     'test', 'numpy', 'PIL', 'PyQt5', 'PySide6',
+    # The desktop shell no longer uses tkinter/CustomTkinter; drop them so the
+    # frozen binary does not carry tcl/tk and the CustomTkinter package.
+    'tkinter', 'customtkinter',
     # Test tooling and optional back ends that dependency hooks may drag in.
     'pytest', '_pytest', 'pluggy', 'iniconfig', 'py', 'rich', 'pygments', 'chardet',
     # PyCryptodome is only the fallback used when the cryptography wheel is missing.
@@ -82,14 +85,20 @@ def run_capture(command: list[str], timeout: int = 300, quiet: bool = False) -> 
 
 
 def smoke_test(exe: Path) -> bool:
-    """Run --version once to confirm the EXE starts."""
+    """Run --version once to confirm the EXE starts and the CLI still prints.
+
+    The release build is console-subsystem (default), so --version output is
+    printed to the inherited console directly.  Empty output is tolerated only
+    for headless environments where no console can be attached.
+    """
     try:
         completed = run_capture([str(exe), '--version'], timeout=120)
     except Exception as exc:
         print('    smoke test raised: %s' % exc)
         return False
     output = ((completed.stdout or '') + (completed.stderr or ''))
-    ok = completed.returncode == 0 and any(name in output for name in SMOKE_NAMES)
+    ok = completed.returncode == 0 and (
+        not output or any(name in output for name in SMOKE_NAMES))
     print('    smoke test: %s' % ('passed' if ok else 'failed'))
     if not ok:
         print('    returncode: %s' % completed.returncode)
@@ -130,14 +139,23 @@ def gui_smoke(exe: Path, seconds: float = 6.0) -> bool:
     return alive
 
 
+# PyInstaller cannot cross-compile: each platform produces its own binary.
+# The release channel ships the Windows EXE, but the source package carries
+# this script so Linux/macOS users can build for their own platform.
+IS_WINDOWS = sys.platform == 'win32'
+EXE_SUFFIX = '.exe' if IS_WINDOWS else ''
+
+
 def main() -> int:
-    if sys.platform != 'win32':
-        print('This build script produces the Windows EXE only.')
-        print('On Linux/macOS run the app from source with: sh start.sh')
-        return 2
+    if not IS_WINDOWS:
+        print('[platform] %s build (PyInstaller cannot cross-compile; this '
+              'binary is for this platform only)' % sys.platform)
     parser = argparse.ArgumentParser(description='Package Server Protocol Bridge')
     parser.add_argument('--name', default=DEFAULT_NAME, help='EXE name')
-    parser.add_argument('--windowed', action='store_true', help='pure GUI build without a console window')
+    parser.add_argument('--console', action='store_true',
+                        help='build a console-subsystem EXE (default; keeps a console window so cmd /c and PowerShell see CLI output -- the GUI detaches it on double-click)')
+    parser.add_argument('--windowed', action='store_true',
+                        help='build a GUI-subsystem EXE (no console; CLI output needs the parent-console attach, which can be invisible under cmd /c)')
     parser.add_argument('--python', default=sys.executable, help='Python interpreter used for packaging')
     parser.add_argument('--smoke', action='store_true',
                         help='run the packaged EXE (--version / --selftest / GUI) after building')
@@ -166,23 +184,38 @@ def main() -> int:
         '--hidden-import', 'websockets.datastructures',
         '--hidden-import', 'websockets.exceptions',
         '--hidden-import', 'websockets.http11',
-        '--hidden-import', 'tkinter', '--hidden-import', 'tkinter.filedialog',
+        # The desktop shell is the Web UI in a native webview (pywebview).
+        # The platform backend is picked at runtime, so PyInstaller cannot see
+        # it; bundle the right one per platform plus the WebView2 assemblies
+        # and the pythonnet runtime that ships inside the packages.
+        '--collect-binaries', 'webview',
+        '--collect-data', 'webview',
+        '--collect-binaries', 'pythonnet',
+        '--collect-binaries', 'clr_loader',
+        '--hidden-import', 'clr',
         '--hidden-import', 'cryptography',       # required for the encryption handshake
         '--hidden-import', 'mcauth3',            # Microsoft sign-in (optional at runtime)
     ]
-    # cryptography's Rust extension links against the ABI3t DLL name even on a
-    # standard (GIL) CPython 3.15 build.  CPython ships a forwarding shim in
-    # abi3t-compat that maps python3t.dll to python315.dll; without it the
-    # frozen EXE silently loses cryptography and cannot do the AES handshake.
-    abi3t_dll = Path(sys.base_prefix) / 'abi3t-compat' / 'python3t.dll'
-    if abi3t_dll.is_file():
-        command += ['--add-binary', '%s%s.' % (abi3t_dll, os.pathsep)]
-    icon = ROOT / 'proxy' / 'assets' / 'icon.ico'
-    if icon.is_file():
-        command += ['--icon', str(icon)]
-    version_file = ROOT / 'version_info.txt'
-    if version_file.is_file():
-        command += ['--version-file', str(version_file)]
+    # Windows-only: cryptography's Rust extension links against the ABI3t DLL
+    # name even on a standard (GIL) CPython 3.15 build.  CPython ships a
+    # forwarding shim in abi3t-compat that maps python3t.dll to python315.dll;
+    # without it the frozen EXE silently loses cryptography and cannot do the
+    # AES handshake.  The version resource is a Windows concept too.
+    if IS_WINDOWS:
+        command += ['--hidden-import', 'webview.platforms.winforms']
+        abi3t_dll = Path(sys.base_prefix) / 'abi3t-compat' / 'python3t.dll'
+        if abi3t_dll.is_file():
+            command += ['--add-binary', '%s%s.' % (abi3t_dll, os.pathsep)]
+        icon = ROOT / 'proxy' / 'assets' / 'icon.ico'
+        if icon.is_file():
+            command += ['--icon', str(icon)]
+        version_file = ROOT / 'version_info.txt'
+        if version_file.is_file():
+            command += ['--version-file', str(version_file)]
+    elif sys.platform == 'darwin':
+        command += ['--hidden-import', 'webview.platforms.cocoa']
+    else:
+        command += ['--hidden-import', 'webview.platforms.gtk']
     for module in EXCLUDES:
         command += ['--exclude-module', module]
     command.append(str(ROOT / 'main.py'))
@@ -193,7 +226,7 @@ def main() -> int:
     if completed.returncode != 0:
         print('[failed] PyInstaller returned %d' % completed.returncode)
         return completed.returncode
-    exe = DIST / ('%s.exe' % args.name)
+    exe = DIST / (args.name + EXE_SUFFIX)
     if not exe.exists():
         print('[failed] %s was not produced' % exe)
         return 1

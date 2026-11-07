@@ -81,6 +81,22 @@ INJECTED_FRAME_MARKER = 0xEE
 # All of Eaglercraft's own extensions travel over plugin-message channels; these
 # are the two prefixes
 EAGLER_CHANNEL_PREFIXES = ('EAG|', 'eagler:')
+# Modern (1.13+) serverbound custom-payload packet ids this relay knows about,
+# so the client-identity (brand) packet can be located on modern versions too.
+# 1.8 is already CLIENT_PLUGIN_MESSAGE (0x17); the map has the remaining
+# entries for the versions exercised in tests.  For versions outside the map
+# the brand packet is still found by the exact-channel-signature fallback
+# below, which never depends on the packet id at all.
+CLIENT_PLUGIN_MESSAGE_IDS = {0x17: '1.8', 0x09: '1.9-1.14',
+                             0x0B: '1.15-1.19.2', 0x0D: '1.19.3-1.20.1',
+                             0x0F: '1.20.2-1.20.4', 0x10: '1.20.5',
+                             0x12: '1.20.6+'}
+# Plausible id range for the fallback scan.  Not a table of answers: both the
+# id and the exact channel string must match before a frame is treated as a
+# brand packet, so this cannot misfire on ordinary play traffic.
+PLUGIN_MESSAGE_ID_RANGE = frozenset(CLIENT_PLUGIN_MESSAGE_IDS)
+# The two channel spellings the brand packet can carry
+BRAND_CHANNELS = ('MC|Brand', 'minecraft:brand')
 
 
 class ProtocolError(Exception):

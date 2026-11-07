@@ -56,11 +56,13 @@ class BridgeQuery:
         if wants and 'MOTD' not in wants:
             return
         route = self.server.resolve_route(self.path)
-        # A cache hit is returned immediately; a miss performs one live status
-        # query in a worker thread.  The old code answered a miss with a
-        # placeholder, which made the client show "no MOTD" even though the
-        # target was reachable.  Waiting for the first query is the only way to
-        # return the real MOTD without sending a second, unsolicited answer.
+        # Every list query performs one live status query in a worker thread, so
+        # the MOTD, players and version are always current.  Caching was removed
+        # as meaningless: a server list should not show a stale MOTD.  (The old
+        # code answered a miss with a placeholder, which made the client show
+        # "no MOTD" even though the target was reachable; waiting for the live
+        # query is the only way to return the real MOTD without sending a
+        # second, unsolicited answer.)
         try:
             status = await asyncio.to_thread(
                 self.server.status_for_query, route['host'], route['port'],

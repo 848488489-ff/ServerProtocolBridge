@@ -22,8 +22,13 @@ class PlaySpoofMixin:
             return
         if self.mc_protocol != 47:
             # The plugin-message packet id and the brand channel name change
-            # per game version; outside 1.8 nothing is fabricated here, and the
-            # client's own packets pass through untouched
+            # per game version; outside 1.8 nothing is fabricated here (the
+            # client's own brand is rewritten in place instead -- see
+            # PlayClientMixin._maybe_rewrite_brand)
+            return
+        if getattr(self, '_brand_rewritten', False):
+            # The client already delivered a brand packet, rewritten to our
+            # value; announcing a second one would just be noise
             return
         channel = b'MC|Brand'
         value = self.spoof_brand.encode('utf-8', 'replace')

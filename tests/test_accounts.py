@@ -2,9 +2,10 @@
 Microsoft wrappers around mcauth3 and session joins.
 
 The network layer and the mcauth3 client are patched out
-(``accounts._request_json`` / ``accounts.MCMSA``); the store tests point
-``SPB_DATA_DIR`` at a temporary directory so nothing ever touches the real
-user data folder.
+(``accounts_auth._request_json`` / ``accounts_auth.MCMSA`` -- the auth
+backends live in ``proxy.accounts_auth``, which is where the code reads
+those names); the store tests point ``SPB_DATA_DIR`` at a temporary
+directory so nothing ever touches the real user data folder.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from proxy import accounts  # noqa: E402
+from proxy import accounts, accounts_auth  # noqa: E402
 from proxy.i18n import tr  # noqa: E402
 
 PROFILE_ID = '0f0e0d0c0b0a09080706050403020100'
@@ -119,7 +120,7 @@ class ThirdPartyTests(TempDataMixin, unittest.TestCase):
                 'accessToken': 'access-1', 'clientToken': 'client-1',
                 'selectedProfile': {'name': 'Steve', 'id': PROFILE_ID}},
         }
-        with unittest.mock.patch.object(accounts, '_request_json',
+        with unittest.mock.patch.object(accounts_auth, '_request_json',
                                         self.route_json(responses)):
             account = accounts.thirdparty_authenticate(
                 'https://auth.example.com/api/yggdrasil', 'steve@example.com', 'hunter2')
@@ -138,7 +139,7 @@ class ThirdPartyTests(TempDataMixin, unittest.TestCase):
         with self.assertRaises(accounts.AccountError):
             accounts.thirdparty_authenticate('auth.example.com', 'a', 'b')
         responses = {'/authserver/authenticate': {'accessToken': 'x'}}
-        with unittest.mock.patch.object(accounts, '_request_json',
+        with unittest.mock.patch.object(accounts_auth, '_request_json',
                                         self.route_json(responses)):
             with self.assertRaises(accounts.AccountError):
                 accounts.thirdparty_authenticate('https://x.invalid', 'a', 'b')
@@ -154,7 +155,7 @@ class ThirdPartyTests(TempDataMixin, unittest.TestCase):
                 'accessToken': 'new', 'clientToken': 'c2',
                 'selectedProfile': {'name': 'Steve', 'id': PROFILE_ID}},
         }
-        with unittest.mock.patch.object(accounts, '_request_json',
+        with unittest.mock.patch.object(accounts_auth, '_request_json',
                                         self.route_json(responses)):
             accounts.thirdparty_ensure_token(account)
         self.assertEqual(account.access_token, 'new')
@@ -168,7 +169,7 @@ class ThirdPartyTests(TempDataMixin, unittest.TestCase):
             '/authserver/validate': accounts.AccountError('invalid'),
             '/authserver/refresh': accounts.AccountError('invalid'),
         }
-        with unittest.mock.patch.object(accounts, '_request_json',
+        with unittest.mock.patch.object(accounts_auth, '_request_json',
                                         self.route_json(responses)):
             with self.assertRaises(accounts.AccountError) as ctx:
                 accounts.thirdparty_ensure_token(account)
@@ -186,7 +187,8 @@ class ThirdPartyTests(TempDataMixin, unittest.TestCase):
                 return {}
             raise AssertionError('unexpected URL %s' % url)
 
-        with unittest.mock.patch.object(accounts, '_request_json', call):
+        with unittest.mock.patch.object(accounts_auth, '_request_json', call), \
+                unittest.mock.patch.object(accounts, '_request_json', call):
             accounts.join_session(account, 'f' * 40)
         self.assertEqual(posts[-1][0],
                          'https://x.invalid/sessionserver/session/minecraft/join')
@@ -243,7 +245,7 @@ class MicrosoftTests(TempDataMixin, unittest.TestCase):
         info = {'device_code': 'dev-1', 'user_code': 'ABCD-EFGH',
                 'verification_uri': 'https://microsoft.com/link'}
         FakeMCMSA.start = info
-        with unittest.mock.patch.object(accounts, 'MCMSA', FakeMCMSA):
+        with unittest.mock.patch.object(accounts_auth, 'MCMSA', FakeMCMSA):
             self.assertEqual(accounts.microsoft_device_start(), info)
 
     def test_device_poll_builds_the_account(self):
@@ -252,7 +254,7 @@ class MicrosoftTests(TempDataMixin, unittest.TestCase):
                        'microsoft_refresh_token': 'refresh-token',
                        'expires_in': 86400},
             'profile': {'id': PROFILE_ID, 'name': 'Steve'}}
-        with unittest.mock.patch.object(accounts, 'MCMSA', FakeMCMSA):
+        with unittest.mock.patch.object(accounts_auth, 'MCMSA', FakeMCMSA):
             account = accounts.microsoft_device_poll({'device_code': 'dev-1'})
         self.assertEqual(account.kind, accounts.KIND_MICROSOFT)
         self.assertEqual(account.username, 'Steve')
@@ -262,8 +264,8 @@ class MicrosoftTests(TempDataMixin, unittest.TestCase):
         self.assertGreater(account.token_expires, time.time())
 
     def test_missing_library_is_reported(self):
-        with unittest.mock.patch.object(accounts, 'MCMSA', None), \
-                unittest.mock.patch.object(accounts, '_mcauth_attempted', True):
+        with unittest.mock.patch.object(accounts_auth, 'MCMSA', None), \
+                unittest.mock.patch.object(accounts_auth, '_mcauth_attempted', True):
             with self.assertRaises(accounts.AccountError) as ctx:
                 accounts.microsoft_device_start()
         self.assertEqual(str(ctx.exception),
@@ -273,7 +275,7 @@ class MicrosoftTests(TempDataMixin, unittest.TestCase):
         error = FakeOAuthError(
             'AADSTS70000: The provided value for the input parameter '
             "'device_code' has already been used.")
-        with unittest.mock.patch.object(accounts, 'MCAuthError', FakeMCAuthError):
+        with unittest.mock.patch.object(accounts_auth, 'MCAuthError', FakeMCAuthError):
             failure = accounts._mcauth_failure(error)
         self.assertEqual(failure.code, 'code_used')
         self.assertEqual(str(failure), tr('accounts.ms.code_used'))
@@ -286,7 +288,7 @@ class MicrosoftTests(TempDataMixin, unittest.TestCase):
             'profile': {'id': PROFILE_ID, 'name': 'Alex'}}
         account = accounts.Account(kind=accounts.KIND_MICROSOFT, username='Steve',
                                    uuid=PROFILE_ID, refresh_token='old')
-        with unittest.mock.patch.object(accounts, 'MCMSA', FakeMCMSA):
+        with unittest.mock.patch.object(accounts_auth, 'MCMSA', FakeMCMSA):
             accounts.microsoft_refresh(account)
         self.assertEqual(account.refresh_token, 'new')
         self.assertEqual(account.username, 'Alex')
@@ -297,9 +299,9 @@ class MicrosoftTests(TempDataMixin, unittest.TestCase):
                                    uuid=PROFILE_ID, refresh_token='old')
         FakeMCMSA.refresh_error = FakeOAuthError(
             'invalid_grant: the refresh token is not valid')
-        with unittest.mock.patch.object(accounts, 'MCMSA', FakeMCMSA), \
-                unittest.mock.patch.object(accounts, 'MCAuthError', FakeMCAuthError), \
-                unittest.mock.patch.object(accounts, 'OAuthError', FakeOAuthError):
+        with unittest.mock.patch.object(accounts_auth, 'MCMSA', FakeMCMSA), \
+                unittest.mock.patch.object(accounts_auth, 'MCAuthError', FakeMCAuthError), \
+                unittest.mock.patch.object(accounts_auth, 'OAuthError', FakeOAuthError):
             with self.assertRaises(accounts.AccountError) as ctx:
                 accounts.microsoft_refresh(account)
         self.assertEqual(str(ctx.exception),
