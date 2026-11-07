@@ -219,7 +219,6 @@ tr:last-child td { border-bottom: 0; }
 .log-warn { color: #f0b45a; }
 .log-error { color: #ff7b7b; }
 .hint { color: var(--muted); font-size: 12px; }
-.hint.warn { color: var(--warn); font-weight: 600; }
 .problems { color: var(--warn); font-size: 12px; white-space: pre-line; margin-top: 8px; }
 .banner {
   display: none; border: 1px solid var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--card));
@@ -239,6 +238,17 @@ tr:last-child td { border-bottom: 0; }
 .toast div.ok { border-left-color: var(--success); }
 .toast div.warn { border-left-color: var(--warn); }
 .toast div.error { border-left-color: var(--danger); }
+.toast-persist {
+  position: fixed; top: 18px; right: 18px; z-index: 61;
+  display: flex; align-items: center; gap: 10px;
+  max-width: min(420px, calc(100vw - 36px));
+  background: var(--card); border: 1px solid var(--border);
+  border-left: 4px solid var(--warn); border-radius: 10px;
+  padding: 10px 10px 10px 14px; box-shadow: var(--shadow); font-size: 13px;
+  animation: slide .18s ease-out;
+}
+.toast-persist[hidden] { display: none; }
+.toast-persist .icon-btn { font-size: 18px; padding: 2px 6px; }
 @keyframes slide { from { transform: translateY(-6px); opacity: 0; } }
 dialog {
   border: 1px solid var(--border); border-radius: 14px; background: var(--card);
@@ -375,8 +385,6 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
         <button class="btn primary" data-action="save-config" data-i18n="gui.button.save_config"></button>
         <button class="btn ghost" data-action="reset-defaults" data-i18n="gui.button.reset_defaults"></button>
         <span class="spacer"></span>
-        <span class="hint warn" id="service-restart-note" hidden
-              data-i18n="web.service_restart_hint"></span>
         <span class="hint" data-i18n="gui.hint.endpoint"></span>
       </div>
 
@@ -655,6 +663,15 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- Persistent top-right notification: some settings only apply after the
+     service is restarted.  Shown by renderServiceRestart, dismissed by the
+     close button or by starting the service. -->
+<div class="toast-persist warn" id="service-restart-toast" hidden role="status">
+  <span class="toast-persist-msg" data-i18n="web.service_restart_hint"></span>
+  <button type="button" class="icon-btn" id="btn-service-restart-close"
+          aria-label="Dismiss" title="Dismiss">&times;</button>
+</div>
 <dialog id="modal"></dialog>
 
 <script>
@@ -1302,6 +1319,14 @@ function stripParenSuffix(text) {
   return out;
 }
 
+/* Show or hide the persistent top-right notice that some settings only apply
+   after the service is restarted.  It is a notification only -- the service is
+   never restarted automatically. */
+function renderServiceRestart(needed) {
+  const note = $('#service-restart-toast');
+  if (note) note.hidden = !needed;
+}
+
 function numberValue(id, label, integer) {
   const raw = ($('#' + id).value || '').trim();
   const value = Number(raw);
@@ -1358,11 +1383,10 @@ async function saveConfig(silent) {
   state.config = data.config;
   state.seenRevision = data.revision;
   renderProblems(data.problems || []);
-  // A running proxy reads some settings only at startup: tell the user a
-  // restart is needed, but never restart it automatically (no hot reload).
-  const note = $('#service-restart-note');
-  if (note) note.hidden = !data.service_restart;
-  if (data.service_restart) toast(t('web.service_restart_hint'), 'warn', 6000);
+  // A running proxy reads some settings only at startup: show a persistent
+  // top-right notice that a restart is needed, but never restart it
+  // automatically (no hot reload).
+  renderServiceRestart(data.service_restart);
   if (!silent) toast(t('web.saved'), 'ok');
   if (data.language_changed) {
     toast(t('web.language_reload'), 'warn');
@@ -1401,8 +1425,7 @@ async function startService() {
   try {
     await saveConfig(true);
     await api('/api/service/start', { method: 'POST', body: {} });
-    const note = $('#service-restart-note');
-    if (note) note.hidden = true;
+    renderServiceRestart(false);
     toast(t('web.started'), 'ok');
     loadStatus();
   } catch (err) {
@@ -1874,6 +1897,7 @@ function bindEvents() {
   $('#btn-clear-mcp').addEventListener('click', clearMcp);
   $('#btn-copy-mcp').addEventListener('click', () => copyText($('#mcp-endpoint').value));
   $('#btn-copy-api').addEventListener('click', () => copyText($('#api-endpoint').value));
+  $('#btn-service-restart-close').addEventListener('click', () => renderServiceRestart(false));
   $('#btn-route-add').addEventListener('click', () => addRouteRow('', ''));
   $('#suffix_route').addEventListener('change', updateSuffixRouteState);
   $('#btn-web-restart').addEventListener('click', async () => {
