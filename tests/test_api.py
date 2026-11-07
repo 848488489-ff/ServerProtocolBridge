@@ -53,8 +53,14 @@ class ApiTests(unittest.TestCase):
         self._remote = {'environ_overrides': {'REMOTE_ADDR': '198.51.100.7'}}
 
     def tearDown(self):
-        config_module.resolve_path = self._original_resolve
+        # Save the config back to the scratch directory *before* restoring the
+        # real path resolver: the resolver still points at the tmp dir here, so
+        # the write goes to the scratch copy.  Restoring the real resolver and
+        # then saving would overwrite the operator's config.json with the test
+        # configuration (a test environment that can destroy the real config is
+        # worse than no test at all).
         self.manager.save_config(self._original_config)
+        config_module.resolve_path = self._original_resolve
         webauth.auth_path = self._original_auth_path
         webauth.clear_failures('')
         shutil.rmtree(self.tmp, ignore_errors=True)
