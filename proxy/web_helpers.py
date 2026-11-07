@@ -232,3 +232,11 @@ def _mcp_info() -> dict:
     info['endpoint'] = (base.rstrip('/') + '/mcp') if base else ''
     info['loopback_bind'] = webauth.is_loopback_host(config.web_host)
     return info
+
+
+def _api_info() -> dict:
+    """REST API base URL and the in-program documentation page."""
+    config = get_manager().config
+    base = _web_info().get('url') or config.web_url()
+    root = (base.rstrip('/') + '/api/v1/') if base else ''
+    return {'endpoint': root, 'docs': (root.rstrip('/') + '/docs') if root else ''}

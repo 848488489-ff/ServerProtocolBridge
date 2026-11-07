@@ -21,15 +21,23 @@ from __future__ import annotations
 import json
 
 from . import mcp
+from .api_docs import API_DOCS_HTML
 from .version import VERSION
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, jsonify, request
 
 api = Blueprint('api_v1', __name__, url_prefix='/api/v1')
 
 
 @api.before_request
 def _authorize():
-    """Same gate as ``/mcp``: loopback free, otherwise the MCP key."""
+    """Same gate as ``/mcp``: loopback free, otherwise the MCP key.
+
+    The documentation page (``/api/v1/docs``) is a static description of the
+    endpoint surface -- no live data, no secrets -- so it is served without a
+    key to stay browsable.
+    """
+    if request.path == '/api/v1/docs':
+        return None
     if mcp.authorized(request.remote_addr or '', request.headers):
         return None
     return jsonify({'ok': False, 'error': 'authentication required',
@@ -78,7 +86,15 @@ def index():
               'inputSchema': tool.get('inputSchema', {})}
              for tool in mcp.TOOLS]
     return jsonify({'ok': True, 'name': 'server-protocol-bridge',
-                    'version': VERSION, 'tools': tools})
+                    'version': VERSION, 'docs': '/api/v1/docs',
+                    'tools': tools})
+
+
+@api.get('/docs')
+def docs():
+    """The in-program, bilingual documentation page (default English)."""
+    html = API_DOCS_HTML.replace('__VERSION__', VERSION)
+    return Response(html, mimetype='text/html')
 
 
 @api.get('/status')
