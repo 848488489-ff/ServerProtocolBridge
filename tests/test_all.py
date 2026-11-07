@@ -33,6 +33,7 @@ from proxy.config import Config  # noqa: E402
 from proxy.i18n import tr  # noqa: E402
 from proxy.logger import Logger  # noqa: E402
 from proxy.proxy import ProxyServer  # noqa: E402
+from proxy.version import VERSION  # noqa: E402
 
 
 # ---------------------------------------------------------------- Helpers
@@ -623,6 +624,11 @@ class ConfigTests(unittest.TestCase):
         config.spoof_client = 'forge-1.8'
         config.spoof_brand = 'forge/1.8.8'          # an explicit brand overrides the preset default
         self.assertEqual(config.spoof_brand_value(), 'forge/1.8.8')
+        config.spoof_client = 'custom'
+        config.spoof_brand = 'paper:1234'           # the custom preset reports the brand verbatim
+        self.assertEqual(config.spoof_brand_value(), 'paper:1234')
+        config.spoof_brand = ''
+        self.assertEqual(config.spoof_brand_value(), '')
 
     def test_spoof_client_validation(self):
         config = Config()
@@ -632,6 +638,12 @@ class ConfigTests(unittest.TestCase):
         expected = tr('core.config.spoof_client_invalid',
                       choices=' / '.join(config_module.SPOOF_CLIENTS))
         self.assertTrue(any(expected in item for item in config.validate()))
+        config.spoof_client = 'custom'
+        config.spoof_brand = ''
+        expected = tr('core.config.spoof_custom_required')
+        self.assertTrue(any(expected in item for item in config.validate()))
+        config.spoof_brand = 'paper:1234'
+        self.assertEqual(config.validate(), [])
 
     def test_legacy_vanilla_brand_migrates_to_the_new_default(self):
         """A pre-1.1.3 config.json has no preset and carried the old literal default
@@ -675,9 +687,9 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(config.spoof_brand_value(), '')
 
     def test_spoof_preset_dropdown_labels_roundtrip(self):
-        """The settings window edits the spoof preset through a dropdown: every
+        """The settings dropdown edits the spoof preset through a label: every
         label must map back to its code, whichever language is active now."""
-        from proxy import gui_ctk as gui
+        from proxy import labels as gui
         from proxy.i18n import get_language, set_language
 
         self.addCleanup(set_language, get_language())
@@ -720,8 +732,17 @@ class WebAuthTests(unittest.TestCase):
         self._original_path = webauth.auth_path
         webauth.auth_path = lambda: self.tmp / 'web_auth.json'
         webauth.clear_failures('')
+        # /api/auth refuses to enable a password on a loopback bind, so the
+        # tests below must not depend on whatever config.json the machine
+        # running them happens to have.
+        from proxy.runtime import get_manager
+
+        self.manager = get_manager()
+        self._original_host = self.manager.config.web_host
+        self.manager.config.web_host = '0.0.0.0'
 
     def tearDown(self):
+        self.manager.config.web_host = self._original_host
         webauth.auth_path = self._original_path
         webauth.clear_failures('')
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -753,36 +774,96 @@ class WebAuthTests(unittest.TestCase):
             'enabled': True, 'password': 'abcd1234'})
         self.assertEqual(changed.status_code, 200)
         self.assertTrue(changed.get_json()['reauth'])
-        # Enabling the password invalidates the session that enabled it, so the
-        # page cannot keep working as if nothing happened.
-        self.assertEqual(owner.get('/api/status').status_code, 401)
-        self.assertEqual(owner.post('/login', data={
-            'password': 'abcd1234'}).status_code, 302)
+        # Enabling the password invalidates the session that enabled it, so a
+        # remote client has to sign in again.  The owner here is localhost: the
+        # loopback exemption means the page keeps working as if nothing changed.
         self.assertEqual(owner.get('/api/status').status_code, 200)
         self.assertEqual(owner.post('/api/auth', json={
             'enabled': True, 'password': 'abc'}).status_code, 400)
 
-        anonymous = app.test_client()
-        self.assertEqual(anonymous.get('/api/status').status_code, 401)
-        self.assertEqual(anonymous.get('/api/config').status_code, 401)
-        self.assertEqual(anonymous.post('/api/auth', json={
+        # A remote (non-loopback) client is the one the password protects: it
+        # must sign in before any page or API call goes through.  Testing the
+        # "open" listener with 127.0.0.1 would bypass the check entirely, so a
+        # real LAN address is used here.
+        remote = app.test_client()
+        env = {'REMOTE_ADDR': '192.168.1.50'}
+        self.assertEqual(remote.get('/api/status', environ_overrides=env).status_code, 401)
+        self.assertEqual(remote.get('/api/config', environ_overrides=env).status_code, 401)
+        self.assertEqual(remote.post('/api/auth', environ_overrides=env, json={
             'enabled': False}).status_code, 401)
-        page = anonymous.get('/')
+        page = remote.get('/', environ_overrides=env)
         self.assertEqual(page.status_code, 302)
         self.assertTrue(page.headers['Location'].startswith('/login'))
 
-        failed = anonymous.post('/login', data={'password': 'wrong'})
+        failed = remote.post('/login', environ_overrides=env, data={
+            'password': 'wrong'})
         self.assertIn(tr('web.login_failed'), failed.get_data(as_text=True))
-        self.assertEqual(anonymous.get('/api/status').status_code, 401)
+        self.assertEqual(remote.get('/api/status', environ_overrides=env).status_code, 401)
 
-        signed_in = anonymous.post('/login', data={'password': 'abcd1234'})
+        signed_in = remote.post('/login', environ_overrides=env, data={
+            'password': 'abcd1234'})
         self.assertEqual(signed_in.status_code, 302)
-        self.assertEqual(anonymous.get('/api/status').status_code, 200)
-        self.assertEqual(anonymous.post('/api/logout').status_code, 200)
-        self.assertEqual(anonymous.get('/api/status').status_code, 401)
+        self.assertEqual(remote.get('/api/status', environ_overrides=env).status_code, 200)
+        self.assertEqual(remote.post('/api/logout', environ_overrides=env).status_code, 200)
+        self.assertEqual(remote.get('/api/status', environ_overrides=env).status_code, 401)
 
         self.assertEqual(owner.post('/api/auth', json={'enabled': False}).status_code, 200)
-        self.assertEqual(anonymous.get('/api/status').status_code, 200)
+        self.assertEqual(remote.get('/api/status', environ_overrides=env).status_code, 200)
+
+    def test_loopback_client_never_needs_the_password(self):
+        """Local access is exempt from the access password.
+
+        The desktop shell loads the page through 127.0.0.1, so enabling the
+        password must not lock the program out of its own window.  The
+        exemption is based on the client's source address -- an open listener
+        reached through 127.0.0.1 is still local, whereas the same listener
+        reached from a LAN address still asks for the password.
+        """
+        from proxy.web import create_app
+
+        app = create_app()
+        app.testing = True
+        setup = app.test_client()
+        changed = setup.post('/api/auth', json={
+            'enabled': True, 'password': 's3cret!'})
+        self.assertEqual(changed.status_code, 200)
+
+        for loopback in ('127.0.0.1', '127.8.8.8', '::1', '::ffff:127.0.0.1',
+                         'localhost'):
+            local = app.test_client()
+            env = {'REMOTE_ADDR': loopback}
+            self.assertEqual(
+                local.get('/api/status', environ_overrides=env).status_code, 200,
+                'loopback %s must bypass the password' % loopback)
+            page = local.get('/', environ_overrides=env)
+            self.assertEqual(
+                page.status_code, 200,
+                'loopback %s must not be redirected to the login page' % loopback)
+
+        # The same password still guards every non-loopback source: a LAN
+        # client has to sign in even when the listener is bound to 0.0.0.0.
+        for remote_addr in ('192.168.1.50', '10.0.0.7', '203.0.113.9'):
+            remote = app.test_client()
+            env = {'REMOTE_ADDR': remote_addr}
+            self.assertEqual(
+                remote.get('/api/status', environ_overrides=env).status_code, 401,
+                'remote %s must still require the password' % remote_addr)
+            self.assertEqual(
+                remote.get('/', environ_overrides=env).status_code, 302,
+                'remote %s must be sent to the login page' % remote_addr)
+
+        # /api/auth tells a client whether it is local, so a loopback user is
+        # not bounced to the login page after setting a password.  A remote
+        # client cannot even reach /api/auth while signed out: the password
+        # protects it, so the change is blocked with 401 instead.
+        local_flag = app.test_client().post(
+            '/api/auth', environ_overrides={'REMOTE_ADDR': '127.0.0.1'},
+            json={'enabled': True, 'password': 's3cret!'})
+        self.assertTrue(local_flag.get_json()['loopback'])
+        remote_flag = app.test_client().post(
+            '/api/auth', environ_overrides={'REMOTE_ADDR': '192.168.1.50'},
+            json={'enabled': True, 'password': 's3cret!'})
+        self.assertEqual(remote_flag.status_code, 401)
 
     def test_login_throttling(self):
         for _ in range(webauth.LOCK_AFTER):
@@ -790,6 +871,407 @@ class WebAuthTests(unittest.TestCase):
         self.assertGreater(webauth.throttle_remaining('203.0.113.9'), 0)
         webauth.clear_failures('203.0.113.9')
         self.assertEqual(webauth.throttle_remaining('203.0.113.9'), 0)
+
+
+# ---------------------------------------------------------------- MCP / logs
+
+
+class McpTests(unittest.TestCase):
+    """The MCP endpoint shares the Web UI listener, so it is tested through it."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix='spb-mcp-'))
+        self._original_path = webauth.auth_path
+        webauth.auth_path = lambda: self.tmp / 'web_auth.json'
+        webauth.clear_failures('')
+        from proxy.runtime import get_manager
+
+        self.manager = get_manager()
+        self._original_host = self.manager.config.web_host
+        # A password/key may only be set on a non-loopback bind, which is what
+        # the authentication cases below exercise.
+        self.manager.config.web_host = '0.0.0.0'
+        from proxy.web import create_app
+
+        app = create_app()
+        app.testing = True
+        self.client = app.test_client()
+
+    def tearDown(self):
+        self.manager.config.web_host = self._original_host
+        webauth.auth_path = self._original_path
+        webauth.clear_failures('')
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _rpc(self, payload, addr='127.0.0.1', headers=None):
+        return self.client.post('/mcp', json=payload,
+                                environ_overrides={'REMOTE_ADDR': addr},
+                                headers=headers or {})
+
+    def test_initialize_and_tool_catalogue(self):
+        response = self._rpc({
+            'jsonrpc': '2.0', 'id': 1, 'method': 'initialize',
+            'params': {'protocolVersion': '2025-06-18', 'capabilities': {},
+                       'clientInfo': {'name': 'test', 'version': '1'}}})
+        self.assertEqual(response.status_code, 200)
+        result = response.get_json()['result']
+        self.assertEqual(result['protocolVersion'], '2025-06-18')
+        self.assertEqual(result['serverInfo']['name'], 'server-protocol-bridge')
+
+        listing = self._rpc({'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'})
+        names = {tool['name'] for tool in listing.get_json()['result']['tools']}
+        self.assertTrue({'status', 'get_config', 'update_config',
+                         'start_service', 'stop_service', 'get_logs'}
+                        .issubset(names))
+
+        called = self._rpc({
+            'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call',
+            'params': {'name': 'status', 'arguments': {}}})
+        payload = json.loads(called.get_json()['result']['content'][0]['text'])
+        self.assertEqual(payload['version'], VERSION)
+
+        # A notification has no id and must not produce a response body.
+        note = self._rpc({'jsonrpc': '2.0',
+                          'method': 'notifications/initialized'})
+        self.assertEqual(note.status_code, 202)
+        self.assertEqual(note.get_data(), b'')
+        self.assertEqual(self.client.get('/mcp').status_code, 405)
+
+    def test_loopback_client_is_always_allowed(self):
+        for addr in ('127.0.0.1', '127.8.8.8', '::1', '::ffff:127.0.0.1'):
+            response = self._rpc(
+                {'jsonrpc': '2.0', 'id': 1, 'method': 'ping'},
+                addr=addr)
+            self.assertEqual(response.status_code, 200,
+                             'loopback %s must not need an MCP key' % addr)
+
+    def test_password_cannot_be_bypassed_through_mcp(self):
+        enabled = self.client.post('/api/auth', json={
+            'enabled': True, 'password': 'abcd1234'})
+        self.assertEqual(enabled.status_code, 200)
+
+        remote = self._rpc({'jsonrpc': '2.0', 'id': 1, 'method': 'ping'},
+                           addr='192.168.1.50')
+        self.assertEqual(remote.status_code, 401)
+        self.assertEqual(remote.get_json()['error']['code'], -32001)
+        self.assertEqual(
+            self._rpc({'jsonrpc': '2.0', 'id': 2, 'method': 'ping'})
+            .status_code, 200)
+
+        # A key set from the local UI unlocks remote MCP clients.
+        saved = self.client.post('/api/mcp', json={'key': 'longenoughkey'})
+        self.assertEqual(saved.status_code, 200)
+        self.assertTrue(saved.get_json()['mcp']['has_key'])
+        self.assertEqual(
+            self._rpc({'jsonrpc': '2.0', 'id': 3, 'method': 'ping'},
+                      addr='192.168.1.50').status_code, 401)
+        self.assertEqual(
+            self._rpc({'jsonrpc': '2.0', 'id': 4, 'method': 'ping'},
+                      addr='192.168.1.50',
+                      headers={'Authorization': 'Bearer longenoughkey'})
+            .status_code, 200)
+        self.assertEqual(
+            self._rpc({'jsonrpc': '2.0', 'id': 5, 'method': 'ping'},
+                      addr='192.168.1.50',
+                      headers={'X-MCP-Key': 'longenoughkey'})
+            .status_code, 200)
+        self.assertEqual(
+            self._rpc({'jsonrpc': '2.0', 'id': 6, 'method': 'ping'},
+                      addr='192.168.1.50',
+                      headers={'Authorization': 'Bearer wrong-key'})
+            .status_code, 401)
+
+    def test_loopback_bind_rejects_password_and_key(self):
+        self.manager.config.web_host = '127.0.0.1'
+        password = self.client.post('/api/auth', json={
+            'enabled': True, 'password': 'abcd1234'})
+        self.assertEqual(password.status_code, 400)
+        key = self.client.post('/api/mcp', json={'key': 'longenoughkey'})
+        self.assertEqual(key.status_code, 400)
+        # Removing a leftover key is still allowed on loopback.
+        self.assertEqual(
+            self.client.post('/api/mcp', json={'clear': True}).status_code, 200)
+
+    def test_log_export_returns_the_whole_buffer(self):
+        hub = self.manager.hub
+        hub.clear()
+        hub.add('info', 'first line')
+        hub.add('warn', 'second line')
+        hub.add('error', 'third line')
+
+        whole = self.client.get('/api/logs/export')
+        self.assertEqual(whole.status_code, 200)
+        self.assertTrue(whole.mimetype.startswith('text/plain'))
+        self.assertIn('attachment;', whole.headers['Content-Disposition'])
+        text = whole.get_data(as_text=True)
+        self.assertIn('first line', text)
+        self.assertIn('second line', text)
+        self.assertIn('third line', text)
+        self.assertTrue(text.endswith('\n'))
+
+        errors = self.client.get('/api/logs/export?level=error')
+        filtered = errors.get_data(as_text=True)
+        self.assertIn('third line', filtered)
+        self.assertNotIn('first line', filtered)
+        self.assertNotIn('second line', filtered)
+
+    def test_extended_tool_catalogue(self):
+        listing = self._rpc({'jsonrpc': '2.0', 'id': 1, 'method': 'tools/list'})
+        names = {tool['name'] for tool in listing.get_json()['result']['tools']}
+        self.assertTrue({
+            'about', 'get_config_options', 'set_ui_preferences',
+            'get_auth_state', 'set_web_auth', 'set_mcp_key', 'clear_mcp_key',
+            'add_thirdparty_account', 'start_microsoft_login',
+            'get_microsoft_job', 'export_logs', 'reset_config',
+            'set_appearance', 'list_routes', 'set_route', 'remove_route',
+            'reload_config', 'set_log_limit', 'get_tutorial',
+            'open_tutorial'}.issubset(names))
+
+    def test_resources_and_prompts(self):
+        listing = self._rpc({'jsonrpc': '2.0', 'id': 1, 'method': 'resources/list'})
+        uris = {item['uri'] for item in listing.get_json()['result']['resources']}
+        self.assertTrue({'server-protocol-bridge://logs',
+                         'server-protocol-bridge://status',
+                         'server-protocol-bridge://config',
+                         'server-protocol-bridge://about',
+                         'server-protocol-bridge://mcp'}.issubset(uris))
+
+        read = self._rpc({'jsonrpc': '2.0', 'id': 2, 'method': 'resources/read',
+                          'params': {'uri': 'server-protocol-bridge://status'}})
+        content = read.get_json()['result']['contents'][0]
+        self.assertEqual(content['mimeType'], 'application/json')
+        self.assertEqual(json.loads(content['text'])['version'], VERSION)
+
+        missing = self._rpc({'jsonrpc': '2.0', 'id': 3,
+                             'method': 'resources/read',
+                             'params': {'uri': 'server-protocol-bridge://nope'}})
+        self.assertEqual(missing.get_json()['error']['code'], -32002)
+
+        prompts = self._rpc({'jsonrpc': '2.0', 'id': 4, 'method': 'prompts/list'})
+        names = {item['name'] for item in prompts.get_json()['result']['prompts']}
+        self.assertTrue({'diagnose', 'microsoft-signin',
+                         'configure-forwarding', 'secure-remote'}.issubset(names))
+
+        prompt = self._rpc({'jsonrpc': '2.0', 'id': 5, 'method': 'prompts/get',
+                            'params': {'name': 'diagnose'}})
+        messages = prompt.get_json()['result']['messages']
+        self.assertTrue(messages)
+        self.assertEqual(messages[0]['role'], 'user')
+
+    def test_ui_preferences_and_reset_config(self):
+        changed = self._rpc({
+            'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+            'params': {'name': 'set_ui_preferences',
+                       'arguments': {'theme': 'dark', 'language': 'zh'}}})
+        payload = json.loads(changed.get_json()['result']['content'][0]['text'])
+        self.assertTrue(payload['ok'])
+        self.assertEqual(payload['theme'], 'dark')
+        self.assertEqual(payload['language'], 'zh')
+
+        bad_theme = self._rpc({
+            'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+            'params': {'name': 'set_ui_preferences',
+                       'arguments': {'theme': 'neon'}}})
+        self.assertTrue(bad_theme.get_json()['result']['isError'])
+
+        reset = self._rpc({'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call',
+                           'params': {'name': 'reset_config',
+                                      'arguments': {}}})
+        payload = json.loads(reset.get_json()['result']['content'][0]['text'])
+        self.assertTrue(payload['ok'])
+        self.assertIn('revision', payload)
+        self.assertIn('config', payload)
+
+    def test_appearance_tool(self):
+        from proxy import config as config_module
+
+        manager = self.manager
+        original = manager.config.to_dict()
+        try:
+            changed = self._rpc({
+                'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+                'params': {'name': 'set_appearance',
+                           'arguments': {'preset': 'ocean'}}})
+            payload = json.loads(changed.get_json()['result']['content'][0]['text'])
+            self.assertTrue(payload['ok'])
+            self.assertEqual(payload['appearance']['preset'], 'ocean')
+            self.assertEqual(payload['appearance']['accent'], '#0ea5e9')
+
+            custom = self._rpc({
+                'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+                'params': {'name': 'set_appearance',
+                           'arguments': {'accent': '#123456'}}})
+            payload = json.loads(custom.get_json()['result']['content'][0]['text'])
+            self.assertEqual(payload['appearance']['accent'], '#123456')
+            self.assertEqual(payload['appearance']['preset'], 'custom')
+
+            bad = self._rpc({
+                'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call',
+                'params': {'name': 'set_appearance',
+                           'arguments': {'accent': 'blue'}}})
+            self.assertTrue(bad.get_json()['result']['isError'])
+
+            bad_density = self._rpc({
+                'jsonrpc': '2.0', 'id': 4, 'method': 'tools/call',
+                'params': {'name': 'set_appearance',
+                           'arguments': {'density': 'huge'}}})
+            self.assertTrue(bad_density.get_json()['result']['isError'])
+
+            empty = self._rpc({
+                'jsonrpc': '2.0', 'id': 5, 'method': 'tools/call',
+                'params': {'name': 'set_appearance', 'arguments': {}}})
+            self.assertTrue(empty.get_json()['result']['isError'])
+        finally:
+            manager.save_config(config_module.Config.from_dict(original))
+
+    def test_route_tools(self):
+        from proxy import config as config_module
+
+        manager = self.manager
+        original = manager.config.to_dict()
+        try:
+            added = self._rpc({
+                'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+                'params': {'name': 'set_route',
+                           'arguments': {'path': 'survival/',
+                                         'target': '127.0.0.1:25565'}}})
+            payload = json.loads(added.get_json()['result']['content'][0]['text'])
+            self.assertTrue(payload['ok'])
+            self.assertEqual(payload['routes']['/survival'], '127.0.0.1:25565')
+
+            listed = self._rpc({
+                'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+                'params': {'name': 'list_routes', 'arguments': {}}})
+            payload = json.loads(listed.get_json()['result']['content'][0]['text'])
+            self.assertEqual(payload['routes']['/survival'], '127.0.0.1:25565')
+            self.assertIn('/survival=127.0.0.1:25565', payload['routes_text'])
+
+            bad = self._rpc({
+                'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call',
+                'params': {'name': 'set_route',
+                           'arguments': {'path': '/x', 'target': ' '}}})
+            self.assertTrue(bad.get_json()['result']['isError'])
+
+            removed = self._rpc({
+                'jsonrpc': '2.0', 'id': 4, 'method': 'tools/call',
+                'params': {'name': 'remove_route',
+                           'arguments': {'path': '/survival/'}}})
+            payload = json.loads(removed.get_json()['result']['content'][0]['text'])
+            self.assertTrue(payload['ok'])
+            self.assertNotIn('/survival', payload['routes'])
+
+            missing = self._rpc({
+                'jsonrpc': '2.0', 'id': 5, 'method': 'tools/call',
+                'params': {'name': 'remove_route',
+                           'arguments': {'path': '/survival'}}})
+            self.assertTrue(missing.get_json()['result']['isError'])
+        finally:
+            manager.save_config(config_module.Config.from_dict(original))
+
+    def test_reload_loglimit_and_tutorial_tools(self):
+        from proxy import config as config_module
+
+        manager = self.manager
+        snapshot = manager.config.to_dict()
+        limit_before = manager.config.log_max_lines
+        try:
+            reloaded = self._rpc({
+                'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+                'params': {'name': 'reload_config', 'arguments': {}}})
+            payload = json.loads(reloaded.get_json()['result']['content'][0]['text'])
+            self.assertTrue(payload['ok'])
+            self.assertIn('revision', payload)
+            self.assertIn('config', payload)
+            self.assertIn('problems', payload)
+            self.assertIn('web_restart_needed', payload)
+
+            resized = self._rpc({
+                'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+                'params': {'name': 'set_log_limit', 'arguments': {'limit': 123}}})
+            payload = json.loads(resized.get_json()['result']['content'][0]['text'])
+            self.assertEqual(payload['limit'], 123)
+
+            tutorial = self._rpc({
+                'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call',
+                'params': {'name': 'get_tutorial',
+                           'arguments': {'kind': 'mcp', 'language': 'zh'}}})
+            payload = json.loads(tutorial.get_json()['result']['content'][0]['text'])
+            self.assertIn('MCP', payload['body'])
+            self.assertEqual(payload['kind'], 'mcp')
+
+            bad_kind = self._rpc({
+                'jsonrpc': '2.0', 'id': 4, 'method': 'tools/call',
+                'params': {'name': 'get_tutorial',
+                           'arguments': {'kind': 'web'}}})
+            self.assertTrue(bad_kind.get_json()['result']['isError'])
+        finally:
+            manager.set_log_limit(limit_before)
+            manager.save_config(config_module.Config.from_dict(snapshot))
+
+    def test_auth_and_key_tools(self):
+        # The test setup binds 0.0.0.0, so a password/key may be set here.
+        auth = self._rpc({
+            'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+            'params': {'name': 'set_web_auth',
+                       'arguments': {'enabled': True, 'password': 'abcd1234'}}})
+        payload = json.loads(auth.get_json()['result']['content'][0]['text'])
+        self.assertTrue(payload['ok'])
+        self.assertTrue(payload['auth']['enabled'])
+
+        key = self._rpc({
+            'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+            'params': {'name': 'set_mcp_key',
+                       'arguments': {'key': 'longenoughkey'}}})
+        payload = json.loads(key.get_json()['result']['content'][0]['text'])
+        self.assertTrue(payload['ok'])
+        self.assertTrue(payload['mcp']['has_key'])
+
+        state = self._rpc({'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call',
+                           'params': {'name': 'get_auth_state',
+                                      'arguments': {}}})
+        payload = json.loads(state.get_json()['result']['content'][0]['text'])
+        self.assertTrue(payload['auth']['enabled'])
+        self.assertTrue(payload['mcp']['has_key'])
+
+        cleared = self._rpc({
+            'jsonrpc': '2.0', 'id': 4, 'method': 'tools/call',
+            'params': {'name': 'clear_mcp_key', 'arguments': {}}})
+        payload = json.loads(cleared.get_json()['result']['content'][0]['text'])
+        self.assertTrue(payload['ok'])
+        self.assertFalse(payload['mcp']['has_key'])
+
+        # On a loopback bind both password and key setup are refused.
+        self.manager.config.web_host = '127.0.0.1'
+        refused = self._rpc({
+            'jsonrpc': '2.0', 'id': 5, 'method': 'tools/call',
+            'params': {'name': 'set_web_auth',
+                       'arguments': {'enabled': True, 'password': 'abcd1234'}}})
+        self.assertTrue(refused.get_json()['result']['isError'])
+        refused_key = self._rpc({
+            'jsonrpc': '2.0', 'id': 6, 'method': 'tools/call',
+            'params': {'name': 'set_mcp_key',
+                       'arguments': {'key': 'longenoughkey'}}})
+        self.assertTrue(refused_key.get_json()['result']['isError'])
+
+    def test_export_logs_tool(self):
+        hub = self.manager.hub
+        hub.clear()
+        hub.add('info', 'tool line one')
+        hub.add('warn', 'tool line two')
+
+        whole = self._rpc({'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+                           'params': {'name': 'export_logs', 'arguments': {}}})
+        text = whole.get_json()['result']['content'][0]['text']
+        self.assertIn('tool line one', text)
+        self.assertIn('tool line two', text)
+        self.assertTrue(text.endswith('\n'))
+
+        errors = self._rpc({'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
+                            'params': {'name': 'export_logs',
+                                       'arguments': {'level': 'error'}}})
+        text = errors.get_json()['result']['content'][0]['text']
+        self.assertNotIn('tool line one', text)
+        self.assertNotIn('tool line two', text)
 
 
 # ---------------------------------------------------------------- DNS / SRV
@@ -992,6 +1474,52 @@ class ProxyEndToEndTests(unittest.TestCase):
         finally:
             self.config.routes = {}
             other.close()
+
+    def test_suffix_routing(self):
+        other = EchoServer(greeting=b'SECOND-SERVER')
+        original_suffix = self.config.suffix_route
+        try:
+            self.config.suffix_route = True
+            client, _headers = connect_ws(self.config.ws_port,
+                                          path='/127.0.0.1:%d' % other.port)
+            try:
+                self.assertEqual(client.recv_exactly(len(b'SECOND-SERVER')),
+                                 b'SECOND-SERVER')
+                self.assertEqual(other.connections, 1)
+            finally:
+                client.close()
+        finally:
+            self.config.suffix_route = original_suffix
+            other.close()
+
+    def test_suffix_routing_resolution(self):
+        original_suffix = self.config.suffix_route
+        try:
+            self.config.suffix_route = True
+            resolved = self.server.resolve_route('/mc244.com')
+            self.assertEqual(resolved['host'], 'mc244.com')
+            self.assertIsNone(resolved['port'])
+            resolved = self.server.resolve_route('/127.0.0.1:25565')
+            self.assertEqual((resolved['host'], resolved['port']), ('127.0.0.1', 25565))
+            resolved = self.server.resolve_route('/')
+            self.assertEqual(resolved['label'], tr('proxy.route.default'))
+            resolved = self.server.resolve_route('/a/b')
+            self.assertEqual(resolved['label'], tr('proxy.route.default_missing',
+                                                   path='/a/b'))
+        finally:
+            self.config.suffix_route = original_suffix
+
+    def test_suffix_route_conflict_blocks_start(self):
+        config = config_module.Config()
+        config.target = '127.0.0.1:25565'
+        config.suffix_route = True
+        config.routes = {'/x': '127.0.0.1:25566'}
+        self.assertIn(config_module.tr('core.config.suffix_route_conflict'),
+                      config.validate())
+        data = config.to_dict()
+        data['routes'] = {}
+        self.assertNotIn(config_module.tr('core.config.suffix_route_conflict'),
+                         config_module.Config.from_dict(data).validate())
 
     def test_target_unreachable_closes_with_1011(self):
         dead_port = free_port()

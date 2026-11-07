@@ -28,6 +28,10 @@ _url = ''
 _host = ''
 _port = 0
 _error = ''
+# The port the caller asked for on the last start_web_ui call.  When the
+# config value is busy we fall back to the next free port; keeping the
+# requested value lets the shell tell the user "8765 was busy, using 8766".
+_requested_port = 0
 
 
 def _port_free(host: str, port: int) -> bool:
@@ -100,7 +104,7 @@ def start_web_ui(host: str | None = None, port: int | None = None,
     With *force* the current listener is replaced even when the requested
     address is unchanged (used by the restart button).
     """
-    global _server, _thread, _url, _host, _port, _error
+    global _server, _thread, _url, _host, _port, _error, _requested_port
 
     default_host, default_port = _config_defaults()
     host = (host if host is not None else default_host).strip() or DEFAULT_HOST
@@ -113,6 +117,7 @@ def start_web_ui(host: str | None = None, port: int | None = None,
     except (TypeError, ValueError):
         requested = DEFAULT_PORT
     requested = max(0, min(65535, requested))
+    _requested_port = requested
 
     with _lock:
         if _server is not None and _thread is not None and _thread.is_alive():
@@ -128,9 +133,25 @@ def start_web_ui(host: str | None = None, port: int | None = None,
             _error = str(exc)
             return '', _error
 
-        candidates = [0] if requested == 0 else [
-            item for item in range(requested, min(65535, requested + PORT_SCAN) + 1)
-            if item == 0 or _port_free(host, item)]
+        if requested == 0:
+            candidates = [0]
+        else:
+            # Prefer the configured port and its immediate neighbours.  When a
+            # range is unavailable (another instance, or Windows excludes the
+            # block, e.g. Hyper-V reserving 8766-8865), keep scanning upward so
+            # we find a port that is actually bindable instead of giving up.
+            # The scan is bounded: it must not walk thousands of ports just to
+            # report "no free port" when the machine really is exhausted.
+            candidates = []
+            scanned = 0
+            for item in range(requested, 65536):
+                scanned += 1
+                if item == 0 or _port_free(host, item):
+                    candidates.append(item)
+                if scanned >= PORT_SCAN and candidates:
+                    break
+                if scanned >= 512:
+                    break
         if not candidates:
             _error = 'no free port in range %d-%d' % (requested, requested + PORT_SCAN)
             return '', _error
@@ -159,6 +180,20 @@ def start_web_ui(host: str | None = None, port: int | None = None,
                 get_manager().web_url = _url
             except Exception:
                 pass
+            # The requested port was busy and we fell back to another one:
+            # persist only the port actually bound so the settings page shows
+            # the live value and the next start uses it.  This modifies a single
+            # field; it never clears the rest of the config.
+            if actual != requested:
+                try:
+                    from .runtime import get_manager
+
+                    manager = get_manager()
+                    if int(manager.config.web_port) != actual:
+                        manager.config.web_port = actual
+                        manager.save_config(manager.config)
+                except Exception:
+                    pass
             return _url, ''
 
         _error = last_error or 'the Web UI could not bind %s:%d' % (host, requested)
@@ -185,6 +220,16 @@ def current_url() -> str:
 
 def current_address() -> tuple[str, int]:
     return _host, _port
+
+
+def requested_port() -> int:
+    """Port the last start_web_ui call asked for (before any fallback)."""
+    return _requested_port
+
+
+def port_was_adjusted() -> bool:
+    """True when the last start bound a different port than requested."""
+    return bool(_port) and _requested_port and _port != _requested_port
 
 
 def last_error() -> str:

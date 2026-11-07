@@ -67,7 +67,7 @@ EN = {
                           'can perform it when the target server requires it',
     'core.cli.crypto_missing': 'Encryption handshake: unavailable -- cryptography is required '
                                '(pip install cryptography)',
-    'core.cli.gui_ok': 'GUI: available (tkinter)',
+    'core.cli.gui_ok': 'GUI: available (embedded webview)',
     'core.cli.gui_missing': 'GUI: unavailable (%(error)s)',
     'core.cli.difflib_ok': 'difflib: bundled (flask error formatting needs it)',
     'core.cli.difflib_missing': 'difflib: missing from this build (%(error)s)',
@@ -144,7 +144,7 @@ ZH = {
     'core.cli.run_mode_source': '源码',
     'core.cli.crypto_ok': '加密握手: 可用 (后端 %(backend)s) —— 目标服务器要求加密时可以代做',
     'core.cli.crypto_missing': '加密握手: 不可用 —— 需要 cryptography (pip install cryptography)',
-    'core.cli.gui_ok': '图形界面: 可用 (tkinter)',
+    'core.cli.gui_ok': '图形界面: 可用 (内嵌浏览器)',
     'core.cli.gui_missing': '图形界面: 不可用 (%(error)s)',
     'core.cli.difflib_ok': 'difflib: 已打包 (flask 报错格式化需要它)',
     'core.cli.difflib_missing': 'difflib: 本构建缺少该模块 (%(error)s)',

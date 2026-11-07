@@ -14,8 +14,12 @@
 websockets>=15
 cryptography>=42
 
-# GUI (CustomTkinter provides modern widgets on top of Tkinter)
-customtkinter>=5.2
+# Desktop shell: the Web UI is hosted in a native OS webview window.
+#   Windows: pulls pythonnet (uses the system .NET + Edge WebView2 runtime)
+#   macOS:   pulls pyobjc (WKWebView)
+#   Linux:   needs `pip install pywebview[gtk]` plus the system packages
+#            python3-gi and gir1.2-webkit2-4.1 (WebKitGTK)
+pywebview>=6
 
 # Web UI (Flask for the browser-based interface - lighter than FastAPI)
 flask>=3.0

@@ -8,17 +8,19 @@ unchanged, so every endpoint keeps the same rule, methods and name.
 """
 
 import json
+import re
 import threading
 import time
 import uuid
-from . import (accounts, certs, config as config_module, eagler, third_party, update, webauth)
+from . import (accounts, certs, config as config_module, eagler, mcp, third_party, tutorial, update, webauth)
 from .i18n import (LANGUAGES, get_language, tr)
+from .gui_shell import update_window_title as _update_native_title
 from .runtime import get_manager
 from .utils import config_dir
 from .version import VERSION
-from .web_helpers import (_account_payload, _cert_payload, _config_options, _i18n_payload, _jobs, _jobs_lock, _ms_worker, _prune_jobs, _save_body, _schedule_web_restart, _web_info)
+from .web_helpers import (_account_payload, _cert_payload, _config_options, _i18n_payload, _jobs, _jobs_lock, _mcp_info, _ms_worker, _prune_jobs, _save_body, _schedule_web_restart, _web_info)
 from .web_html import INDEX_HTML
-from flask import (jsonify, request, session)
+from flask import (Response, jsonify, request, session)
 def register(app, fail):
     """Install the Web UI routes on *app*."""
     # ------------------------------------------------------------------
@@ -52,6 +54,8 @@ def register(app, fail):
         data['config_problems'] = manager.config.validate()
         data['log_seq'] = manager.hub.seq
         data['auth'] = webauth.state()
+        data['mcp'] = _mcp_info()
+        data['loopback_bind'] = data['mcp']['loopback_bind']
         return jsonify(data)
     @app.route('/api/config', methods=['GET', 'POST'])
     def api_config():
@@ -66,6 +70,8 @@ def register(app, fail):
                 'web_problems': manager.config.validate_web(),
                 'web': _web_info(),
                 'auth': webauth.state(),
+                'mcp': _mcp_info(),
+                'loopback_bind': webauth.is_loopback_host(manager.config.web_host),
             })
         body = request.get_json(silent=True) or {}
         if body.get('reset'):
@@ -94,14 +100,25 @@ def register(app, fail):
             'web_url': config.web_url(),
             'language_changed': language_changed,
             'auth': webauth.state(),
+            'mcp': _mcp_info(),
+            'loopback_bind': webauth.is_loopback_host(config.web_host),
         })
     @app.route('/api/auth', methods=['GET', 'POST'])
     def api_auth():
+        manager = get_manager()
+        loopback_bind = webauth.is_loopback_host(manager.config.web_host)
         if request.method == 'GET':
-            return jsonify({'ok': True, 'auth': webauth.state()})
+            return jsonify({'ok': True, 'auth': webauth.state(),
+                            'loopback_bind': loopback_bind,
+                            'mcp': _mcp_info()})
         body = request.get_json(silent=True) or {}
         enabled = bool(body.get('enabled'))
         password = str(body.get('password') or '')
+        # A password only constrains clients that can reach the listener over
+        # the network.  With a loopback bind there are none, and pretending
+        # otherwise adds a setting that can never do anything.
+        if enabled and loopback_bind:
+            return fail(tr('web.password_loopback_no_set'))
         was_enabled = webauth.is_enabled()
         password_changed = False
         try:
@@ -136,7 +153,55 @@ def register(app, fail):
         else:
             session['authenticated'] = True
         return jsonify({'ok': True, 'auth': webauth.state(), 'reauth': reauth,
+                        'loopback': webauth.is_loopback(request.remote_addr or ''),
+                        'loopback_bind': loopback_bind,
+                        'mcp': _mcp_info(),
                         'password_changed': password_changed})
+    @app.route('/api/mcp', methods=['GET', 'POST'])
+    def api_mcp():
+        manager = get_manager()
+        loopback_bind = webauth.is_loopback_host(manager.config.web_host)
+        if request.method == 'GET':
+            return jsonify({'ok': True, 'mcp': _mcp_info()})
+        body = request.get_json(silent=True) or {}
+        if body.get('clear'):
+            # Removing a key is always allowed, including on loopback: a key
+            # left over from a previous LAN bind should not be stuck forever.
+            try:
+                webauth.clear_mcp_key()
+            except OSError:
+                return fail(tr('web.auth_unreadable'), status=503)
+            return jsonify({'ok': True, 'mcp': _mcp_info()})
+        key = str(body.get('key') or '')
+        if not key:
+            return fail(tr('web.mcp_key_required'))
+        if len(key) < 8:
+            return fail(tr('web.mcp_key_short'))
+        if loopback_bind:
+            return fail(tr('web.mcp_loopback_no_key'))
+        try:
+            webauth.set_mcp_key(key)
+        except OSError:
+            return fail(tr('web.auth_unreadable'), status=503)
+        return jsonify({'ok': True, 'mcp': _mcp_info()})
+    # ------------------------------------------------------------------
+    # MCP (Model Context Protocol)
+    # ------------------------------------------------------------------
+    @app.route('/mcp', methods=['GET', 'POST', 'DELETE', 'OPTIONS'])
+    def mcp_endpoint():
+        if request.method == 'OPTIONS':
+            return ('', 204, {'Allow': 'POST'})
+        if request.method != 'POST':
+            return ('', 405, {'Allow': 'POST'})
+        if not mcp.authorized(request.remote_addr or '', request.headers):
+            return jsonify(mcp.unauthorized_response()), 401
+        payload = request.get_json(silent=True)
+        if payload is None:
+            return jsonify(mcp.handle_payload(None)), 200
+        result = mcp.handle_payload(payload)
+        if result is None:
+            return ('', 202)
+        return jsonify(result)
     @app.route('/api/ui/preferences', methods=['POST'])
     def api_preferences():
         manager = get_manager()
@@ -149,9 +214,40 @@ def register(app, fail):
             config.theme = theme
         if language in LANGUAGES:
             config.language = language
+        # Appearance personalization: accept a partial dict and merge, so a
+        # single control can update one field without wiping the others.
+        appearance = body.get('appearance')
+        if isinstance(appearance, dict):
+            merged = dict(getattr(config, 'appearance', {}) or {})
+            # Background image / blur / opacity were removed on request; drop any
+            # stale values a previous config might still carry.
+            for key in ('bgImage', 'bgBlur', 'bgOpacity'):
+                merged.pop(key, None)
+            for key, value in appearance.items():
+                if key not in ('accent', 'bgColor', 'radius', 'density', 'preset', 'fontScale'):
+                    continue
+                if key in ('accent', 'bgColor'):
+                    # accept #rgb / #rrggbb only, else drop the value
+                    if not (isinstance(value, str) and re.fullmatch(r'#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?', value)):
+                        continue
+                elif key in ('radius', 'fontScale'):
+                    try:
+                        value = max(0, min(100000, int(value)))
+                    except (TypeError, ValueError):
+                        continue
+                elif key == 'density':
+                    if value not in ('compact', 'comfortable', 'spacious'):
+                        continue
+                merged[key] = value
+            config.appearance = merged
         manager.save_config(config)
+        # The embedded pywebview window title is set once at startup from the
+        # language at that time; a language change here must refresh it.
+        if old_language != config.language:
+            _update_native_title()
         return jsonify({'ok': True, 'theme': config.theme,
                         'language': config.language,
+                        'appearance': config.appearance,
                         'language_changed': old_language != config.language})
     # ------------------------------------------------------------------
     # Service
@@ -198,6 +294,28 @@ def register(app, fail):
     def api_logs_clear():
         get_manager().hub.clear()
         return jsonify({'ok': True})
+    @app.route('/api/logs/export')
+    def api_logs_export():
+        """Download the whole in-memory log as a plain-text attachment.
+
+        The page only renders the newest 2500 lines, so exporting from the DOM
+        would quietly truncate the buffer.  This route reads the full hub
+        snapshot and honours the same level filter as the live view.
+        """
+        manager = get_manager()
+        level = (request.args.get('level') or 'all').strip().lower()
+        items = manager.hub.snapshot(0)
+        if level != 'all':
+            items = [item for item in items if item['level'] == level]
+        text = '\n'.join(item['text'] for item in items)
+        if text:
+            text += '\n'
+        stamp = time.strftime('%Y%m%d-%H%M%S')
+        filename = 'server-protocol-bridge-%s.log' % stamp
+        return Response(
+            text, mimetype='text/plain',
+            headers={'Content-Disposition': 'attachment; filename="%s"' % filename,
+                     'Cache-Control': 'no-store'})
     # ------------------------------------------------------------------
     # Accounts
     # ------------------------------------------------------------------
@@ -280,6 +398,14 @@ def register(app, fail):
             return fail(tr('web.account_select'), 404)
         accounts.set_active(account_id)
         return jsonify({'ok': True})
+    @app.route('/api/accounts/none', methods=['POST'])
+    def api_account_none():
+        # "Use no account": keep every stored account but stop using one, so
+        # clients send the names they request themselves again (the old
+        # behaviour).  set_active('') clears the selection; the store already
+        # accepts an empty active id.
+        accounts.set_active('')
+        return jsonify({'ok': True})
     @app.route('/api/accounts/<account_id>', methods=['DELETE'])
     def api_account_delete(account_id: str):
         if not accounts.remove_account(account_id):
@@ -358,6 +484,20 @@ def register(app, fail):
                  'url': item['url']} for item in third_party.COMPONENTS],
             'stdlib': list(third_party.STDLIB_MODULES),
         })
+    @app.route('/api/tutorial')
+    def api_tutorial():
+        kind = request.args.get('kind', 'mcp')
+        return jsonify({'ok': True, **tutorial.tutorial(kind)})
+    @app.route('/api/tutorial/open', methods=['POST'])
+    def api_tutorial_open():
+        body = request.get_json(silent=True) or {}
+        kind = str(body.get('kind') or 'mcp')
+        language = body.get('language')
+        try:
+            path = tutorial.open_tutorial(kind, language)
+        except Exception as exc:
+            return fail(str(exc), status=500)
+        return jsonify({'ok': True, 'path': path})
     @app.route('/api/web/restart', methods=['POST'])
     def api_web_restart():
         config = get_manager().config

@@ -654,6 +654,8 @@ class TranslatorUnitTests(unittest.TestCase):
         translator.feed_server(build_disconnect('Server closed'))
         self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_DENY_LOGIN)
         length = int.from_bytes(sent[-1][1:3], 'big')
+        # The reason is flattened to plain text: the client must never see a
+        # JSON wall instead of the message the server actually sent.
         self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), 'Server closed')
 
     def test_plain_kick_reason_is_forwarded_as_plain_text(self):
@@ -682,7 +684,9 @@ class TranslatorUnitTests(unittest.TestCase):
         length = int.from_bytes(sent[-1][1:3], 'big')
         self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), '服务器已满')
 
-    def test_json_kick_reason_stays_json(self):
+    def test_json_kick_reason_is_flattened_to_plain_text(self):
+        """A JSON chat component is flattened before it reaches the client: the
+        player sees the message text, not a wall of JSON."""
         component = json.dumps({'text': 'Kicked by admin', 'color': 'gray'})
         body = vanilla.write_varint(len(component.encode())) + component.encode()
         translator, sent, _closed, _backend = self.make()
@@ -691,7 +695,7 @@ class TranslatorUnitTests(unittest.TestCase):
         translator.feed_server(vanilla.pack(vanilla.LOGIN_DISCONNECT, body))
         self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_DENY_LOGIN)
         length = int.from_bytes(sent[-1][1:3], 'big')
-        self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), component)
+        self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), 'Kicked by admin')
 
     def test_double_encoded_kick_reason_is_unwrapped_not_flattened(self):
         """A twice-serialized component is decoded to the component, not flattened."""
@@ -704,7 +708,7 @@ class TranslatorUnitTests(unittest.TestCase):
         translator.feed_server(vanilla.pack(vanilla.LOGIN_DISCONNECT, body))
         self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_DENY_LOGIN)
         length = int.from_bytes(sent[-1][1:3], 'big')
-        self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), component)
+        self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), 'Kicked by admin')
 
     def test_play_disconnect_body_is_forwarded_verbatim(self):
         translator, _sent, _closed, _backend = self.make()
@@ -795,14 +799,11 @@ class TranslatorUnitTests(unittest.TestCase):
         self.assertEqual(brand, 'Paper')
         self.assertEqual(version, '1.8.8-R0.1')
 
-    def test_spoof_brand_is_injected_and_client_brand_is_dropped(self):
-        """Client-brand spoofing: inject an MC|Brand from config after login and drop the client's own.
-
-        Clients (especially the EaglercraftX family) send an MC|Brand of their
-        own after login, with a value like "EaglercraftX"; that is what plugins
-        on the target server see as the "client brand" -- so verbatim forwarding
-        is replaced with a config-driven declaration.
-        """
+    def test_spoof_brand_is_injected_and_client_brand_is_rewritten(self):
+        """Client-brand spoofing: an MC|Brand from config is announced after
+        login, and the client's own MC|Brand is rewritten to the configured
+        value instead of reaching the target verbatim (plugins on the target
+        see only our declaration)."""
         translator, _sent, _closed, to_backend = self.make(spoof_brand='forge/1.8.8')
         translator.feed_client(REAL_FIRST_PACKET)
         translator.feed_client(build_request_login(username='Tester'))
@@ -819,7 +820,13 @@ class TranslatorUnitTests(unittest.TestCase):
                                        vanilla.write_varint(len(channel)) + channel
                                        + vanilla.write_varint(11) + b'EaglercraftX'))
         to_backend.clear()
-        self.assertEqual(translator.feed_client(plugin), b'')
+        moved = translator.feed_client(plugin)
+        packets = list(vanilla.Decoder(0).feed(moved))
+        self.assertEqual(packets[0].packet_id, vanilla.CLIENT_PLUGIN_MESSAGE)
+        moved_channel, pos = vanilla.read_string(packets[0].body, 0)
+        moved_value, _ = vanilla.read_string(packets[0].body, pos)
+        self.assertEqual(moved_channel, 'MC|Brand')
+        self.assertEqual(moved_value, 'forge/1.8.8')
         self.assertEqual(to_backend, [])
 
     def test_forge_1_8_preset_shapes_handshake_and_registers_fml_channels(self):
@@ -921,10 +928,12 @@ class TranslatorUnitTests(unittest.TestCase):
         self.assertEqual(name, 'Tester')
         self.assertEqual(sent[-1][pos:pos + 16], raw)
 
-    def test_modern_protocol_leaves_the_client_brand_alone(self):
-        """Outside 1.8 the plugin-message packet id differs per version, so the
-        relay fabricates nothing: no FML marker, no REGISTER, no brand rewrite,
-        and the client's own packets pass through."""
+    def test_modern_protocol_rewrites_the_client_brand(self):
+        """Outside 1.8 the plugin-message packet id differs per version, but a
+        spoofed client identity is still honoured: the client's own
+        minecraft:brand packet is rewritten to the configured value instead of
+        reaching the target server verbatim (no FML marker, no REGISTER --
+        those stay 1.8-only)."""
         translator, _sent, _closed, to_backend = self.make(
             spoof_client='forge-1.8', spoof_brand='fml,forge')
         translator.feed_client(build_client_version(handshake_protocols=(5,),
@@ -937,11 +946,40 @@ class TranslatorUnitTests(unittest.TestCase):
         translator.feed_client(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
         self.assertEqual(to_backend, [])            # no REGISTER, no brand injection
         channel = b'minecraft:brand'
+        value = 'EaglercraftX 1.21.11 (u1-beta)'.encode()
+        plugin = unframed(vanilla.pack(0x12,
+                                       vanilla.write_varint(len(channel)) + channel
+                                       + vanilla.write_varint(len(value)) + value))
+        moved = translator.feed_client(plugin)
+        packets = list(vanilla.Decoder(0).feed(moved))
+        self.assertEqual(packets[0].packet_id, 0x12)
+        moved_channel, pos = vanilla.read_string(packets[0].body, 0)
+        moved_value, _ = vanilla.read_string(packets[0].body, pos)
+        self.assertEqual(moved_channel, 'minecraft:brand')
+        self.assertEqual(moved_value, 'fml,forge')
+
+    def test_modern_protocol_passes_the_client_brand_through_when_not_spoofed(self):
+        translator, _sent, _closed, _backend = self.make()
+        translator.feed_client(build_client_version(handshake_protocols=(5,),
+                                                    mc_protocols=(766,)))
+        translator.feed_client(build_request_login(username='Tester'))
+        translator.feed_server(vanilla.pack(vanilla.LOGIN_SUCCESS,
+                                            bytes(range(16)) + vanilla.write_string('Tester')))
+        translator.feed_client(bytes([eagler.PROTOCOL_CLIENT_FINISH_LOGIN]))
+        channel = b'minecraft:brand'
         plugin = unframed(vanilla.pack(0x12,
                                        vanilla.write_varint(len(channel)) + channel
                                        + vanilla.write_varint(11) + b'EaglercraftX'))
         moved = translator.feed_client(plugin)
         self.assertEqual([p.payload for p in vanilla.Decoder(0).feed(moved)], [plugin])
+
+    def test_clean_version_string(self):
+        self.assertEqual(eagler.clean_version_string('EaglercraftX 1.21.11 (u1-beta)'),
+                         'EaglercraftX 1.21.11')
+        self.assertEqual(eagler.clean_version_string('1.2.3 (a) (b)'), '1.2.3')
+        self.assertEqual(eagler.clean_version_string('1.20.6'), '1.20.6')
+        self.assertEqual(eagler.clean_version_string(''), '')
+        self.assertEqual(eagler.clean_version_string(' (u1-beta) '), '')
 
     def test_modern_login_success_sends_login_acknowledged(self):
         """1.20.2+ targets hold the connection in the login state until the
@@ -1322,7 +1360,7 @@ class TranslateEndToEndTests(unittest.TestCase):
         server.start()
         client = None
         try:
-            with unittest.mock.patch('proxy.proxy.resolver.query_status', return_value=status):
+            with unittest.mock.patch('proxy.resolver.query_status', return_value=status):
                 client, _headers = connect_ws(config.ws_port, tls=False)
                 client.send(b'Accept: MOTD', opcode=wsproto.OP_TEXT)
                 frame = client.recv(timeout=5.0)
@@ -1342,38 +1380,33 @@ class TranslateEndToEndTests(unittest.TestCase):
                 client.close()
             server.stop()
 
-    def test_status_cache_toggle_and_ttl(self):
-        """Cache off queries every time; cache on reuses a result until its TTL."""
+    def test_status_cache_disabled_queries_every_time(self):
+        """Caching is removed: every MOTD/status call queries the target live."""
         status = {
             'ok': True,
             'ms': 1.0,
-            'status': {'description': 'Cached MOTD'},
+            'status': {'description': 'Live MOTD'},
             'error': '',
         }
         config = Config()
-        config.status_cache = True
+        config.status_cache = True   # kept for config compat; ignored at runtime
         config.status_cache_ttl = 30
         server = ProxyServer(config)
 
-        with unittest.mock.patch('proxy.proxy.resolver.query_status', return_value=status) as query:
+        with unittest.mock.patch('proxy.resolver.query_status', return_value=status) as query:
             first = server.target_status('127.0.0.1', 25565)
             second = server.target_status('127.0.0.1', 25565)
-            self.assertEqual(first['status']['description'], 'Cached MOTD')
-            self.assertEqual(second['status']['description'], 'Cached MOTD')
-            self.assertEqual(query.call_count, 1)
-
-            key = '127.0.0.1:25565'
-            server._status_cache[key]['time'] -= 31
-            third = server.target_status('127.0.0.1', 25565)
-            self.assertEqual(third['status']['description'], 'Cached MOTD')
+            self.assertEqual(first['status']['description'], 'Live MOTD')
+            self.assertEqual(second['status']['description'], 'Live MOTD')
+            # No cache: every call performs a fresh query.
             self.assertEqual(query.call_count, 2)
 
-        config.status_cache = False
-        server = ProxyServer(config)
-        with unittest.mock.patch('proxy.proxy.resolver.query_status', return_value=status) as query:
-            server.status_for_query('127.0.0.1', 25565)
-            server.status_for_query('127.0.0.1', 25565)
-            self.assertEqual(query.call_count, 2)
+            q1 = server.status_for_query('127.0.0.1', 25565)
+            q2 = server.status_for_query('127.0.0.1', 25565)
+            self.assertEqual(q1['status']['description'], 'Live MOTD')
+            self.assertEqual(q2['status']['description'], 'Live MOTD')
+            self.assertEqual(query.call_count, 4)
+            # Nothing is ever stored.
             self.assertEqual(server._status_cache, {})
 
 

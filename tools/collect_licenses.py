@@ -37,6 +37,16 @@ DIST_NAMES = {
     "charset-normalizer": "charset-normalizer",
     "certifi": "certifi",
     "idna": "idna",
+    "pywebview": "pywebview",
+    "pythonnet": "pythonnet",
+    "clr_loader": "clr_loader",
+    "Flask": "flask",
+    "Werkzeug": "werkzeug",
+    "Jinja2": "jinja2",
+    "click": "click",
+    "itsdangerous": "itsdangerous",
+    "blinker": "blinker",
+    "MarkupSafe": "markupsafe",
     "PyInstaller": "pyinstaller",
 }
 
@@ -122,21 +132,6 @@ def main() -> int:
             })
             continue
 
-        if name == "Tcl/Tk (Tkinter)":
-            refs = []
-            tcl_root = Path(sys.base_prefix) / "tcl"
-            for candidate in sorted(tcl_root.glob("tk*/demos/license.terms")):
-                refs.append(add_text(read_text(candidate), "Tcl/Tk license", name))
-            entries.append({
-                "name": name,
-                "version": "Tcl/Tk bundled with Python",
-                "license": str(component["license"]),
-                "url": str(component["url"]),
-                "role": "Runtime",
-                "refs": refs,
-            })
-            continue
-
         if name == "OpenSSL (bundled)":
             entries.append({
                 "name": name,
@@ -144,6 +139,20 @@ def main() -> int:
                 "license": str(component["license"]),
                 "url": str(component["url"]),
                 "role": "Runtime",
+                "refs": [],
+            })
+            continue
+
+        if name == "Microsoft Edge WebView2":
+            # The WebView2 Runtime is a Windows system component (delivered via
+            # Windows Update / the Evergreen installer), not a Python package, so
+            # there is no license file to collect here.
+            entries.append({
+                "name": name,
+                "version": "system (WebView2 Runtime)",
+                "license": str(component["license"]),
+                "url": str(component["url"]),
+                "role": "System component",
                 "refs": [],
             })
             continue
@@ -236,7 +245,7 @@ def main() -> int:
     lines.append("Each module above is part of CPython and is covered by the PSF-2.0")
     lines.append("license. It is listed separately because minimal or embedded Python")
     lines.append("distributions may omit standard library modules such as random, ssl,")
-    lines.append("tkinter or asyncio.")
+    lines.append("secrets or asyncio.")
     lines.append("")
     lines.append("Notes")
     lines.append("-" * 78)

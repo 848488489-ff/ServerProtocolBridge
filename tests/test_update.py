@@ -249,12 +249,11 @@ class AsyncTests(_ServerTest):
         """
         import inspect
 
-        from proxy import cli, gui_ctk
+        from proxy import cli
 
-        for module in (cli, gui_ctk):
-            source = inspect.getsource(module)
-            self.assertIn('callback=lambda outcome', source,
-                          '%s does not name the check callback' % module.__name__)
+        source = inspect.getsource(cli)
+        self.assertIn('callback=lambda outcome', source,
+                      '%s does not name the check callback' % cli.__name__)
 
 
 class CliTests(_ServerTest):

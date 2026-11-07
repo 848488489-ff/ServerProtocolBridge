@@ -103,7 +103,9 @@ def create_app(config_path: str | None = None) -> Flask:
     def _require_login():
         if not webauth.is_enabled():
             return None
-        if request.path in ('/login', '/favicon.ico'):
+        if request.path in ('/login', '/favicon.ico', '/mcp'):
+            return None
+        if webauth.is_loopback(request.remote_addr or ''):
             return None
         if _signed_in():
             return None
@@ -119,6 +121,11 @@ def create_app(config_path: str | None = None) -> Flask:
     @app.route('/login', methods=['GET', 'POST'])
     def login():
         if not webauth.is_enabled():
+            return redirect('/')
+        if webauth.is_loopback(request.remote_addr or ''):
+            # Local access never needs the password: the desktop shell loads
+            # this page through 127.0.0.1, and showing the form would lock the
+            # program out of its own window.
             return redirect('/')
         target = _safe_next(request.values.get('next', '/'))
         error = ''
@@ -195,6 +202,22 @@ def create_app(config_path: str | None = None) -> Flask:
 
 
 
+
+    # ------------------------------------------------------------------
+    # Security headers
+    # ------------------------------------------------------------------
+    # The Web UI is a local, single-page app that relies on inline <script>
+    # and <style>, so a strict CSP would break it.  We still harden the parts
+    # that do not conflict with the page: clickjacking, MIME sniffing and the
+    # referrer.  CSP is deliberately omitted here (an 'unsafe-inline' policy
+    # would add no protection, only a false sense of it).
+    @app.after_request
+    def _security_headers(response):
+        response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+        response.headers.setdefault('X-Frame-Options', 'DENY')
+        response.headers.setdefault('Referrer-Policy',
+                                    'strict-origin-when-cross-origin')
+        return response
 
     web_routes.register(app, fail)
     return app

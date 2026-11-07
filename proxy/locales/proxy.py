@@ -46,6 +46,7 @@ EN = {
     'proxy.route.path': 'path %(path)s',
     'proxy.route.default': 'default target',
     'proxy.route.default_missing': 'default target (no route for %(path)s)',
+    'proxy.route.suffix': 'path %(path)s (suffix routing)',
 
     # -- connection diagnostics --
     'proxy.diag.no_reply': 'The target server closed the connection without sending '
@@ -113,8 +114,8 @@ EN = {
                              '%(reason)s | up %(up)s, down %(down)s',
     'proxy.log.listeners_ready': 'listeners ready: %(listeners)s',
     'proxy.log.stopped': 'service stopped',
-    'proxy.log.bad_route': 'route %(path)s has an invalid target (%(error)s), using the '
-                           'default target',
+    'proxy.log.bad_route': 'route %(path)s has an invalid target (%(error)s), using the default target',
+    'proxy.log.bad_suffix': 'the path %(path)s cannot be read as a server address, using the default target',
     'proxy.log.status_resolve_failed': 'failed to resolve the target address for the '
                                        'status request: %(error)s',
 
@@ -159,6 +160,7 @@ ZH = {
     'proxy.route.path': '路径 %(path)s',
     'proxy.route.default': '默认目标',
     'proxy.route.default_missing': '默认目标(路径 %(path)s 无映射)',
+    'proxy.route.suffix': '路径 %(path)s(路径直连)',
 
     # -- connection diagnostics --
     'proxy.diag.no_reply': '目标服务器收到登录请求后一个字节都没回就把连接关了, 常见原因:',
@@ -210,6 +212,7 @@ ZH = {
     'proxy.log.listeners_ready': '监听就绪: %(listeners)s',
     'proxy.log.stopped': '服务已停止',
     'proxy.log.bad_route': '路径映射 %(path)s 的目标无效(%(error)s), 使用默认目标',
+    'proxy.log.bad_suffix': '路径 %(path)s 无法识别为服务器地址, 使用默认目标',
     'proxy.log.status_resolve_failed': '状态请求解析目标地址失败: %(error)s',
 
     # -- status page --

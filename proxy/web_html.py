@@ -16,6 +16,7 @@ INDEX_HTML = r"""<!doctype html>
   --border: #d8dfe9; --text: #151c26; --muted: #5d6878; --hover: #d7deea;
   --accent: #2f6fed; --accent-hover: #2559c9; --success: #159a63;
   --danger: #d64545; --warn: #c27508; --shadow: 0 8px 24px rgba(20, 30, 50, .08);
+  --radius: 14px; --density-gap: 12px; --font-scale: 1;
 }
 html[data-theme="dark"] {
   --bg: #0d1014; --sidebar: #141920; --card: #1a1f27; --field: #11151b;
@@ -35,10 +36,7 @@ html[data-theme="dark"] {
 html { scroll-behavior: smooth; }
 body {
   margin: 0; background: var(--bg); color: var(--text);
-  /* Font sizes are the GUI's actual CTkFont spec (font_body 13, font_small 12,
-     font_h1 23 bold, font_h2 14 bold), not a web-app default.  Running the page
-     at 15px body read as a different program to the window. */
-  font: 13px/1.55 "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
+  font: calc(13px * var(--font-scale))/1.55 "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", system-ui, sans-serif;
 }
 button, input, select, textarea { font: inherit; color: inherit; }
 a { color: var(--accent); }
@@ -80,33 +78,33 @@ a { color: var(--accent); }
 .pill.error { background: var(--danger); }
 .page { display: none; }
 .page.active { display: block; }
-/* Settings: a save bar, then one card under a tab strip.  Only the selected
-   pane is in the layout, so the page stays short and scrolling stays cheap. */
+/* Settings: a save bar, then every card one after another.  The cards used to
+   sit under a tab strip; without it the page is longer but nothing hides the
+   fields a user is looking for. */
 .savebar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
 .savebar .spacer { flex: 1; }
-.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-.tab {
-  border: 1px solid var(--border); border-radius: 9px; background: transparent;
-  color: var(--text); padding: 8px 16px; font-size: 13px; cursor: pointer;
-}
-.tab:hover { background: var(--hover); }
-.tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.settings-search { margin: -2px 0 14px; max-width: 480px; }
+.settings-search .hint { display: block; margin-top: 4px; }
+.settings-search .hint[hidden] { display: none; }
 .ports { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .ports input { flex: 1 1 130px; min-width: 0; }
 .ports input.port-num { flex: 0 0 96px; }
 .ports span { color: var(--muted); font-size: 12px; }
-.tabpane { display: none; }
-.tabpane.active { display: block; }
 .card {
-  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
   padding: 18px; margin-bottom: 16px; box-shadow: var(--shadow);
 }
 .card h2 { margin: 0 0 12px; font-size: 15px; }
 .card h3 { margin: 0 0 8px; font-size: 14px; }
 .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
-.grid2 { display: grid; gap: 12px 18px; grid-template-columns: 180px minmax(0, 1fr); align-items: center; }
+.grid2 { display: grid; gap: var(--density-gap) 18px; grid-template-columns: 180px minmax(0, 1fr); align-items: center; }
+.grid2[hidden] { display: none; }
 .grid2 .hint { grid-column: 1 / -1; color: var(--muted); font-size: 12px; margin: -4px 0 4px; }
+.grid2 .hint[hidden] { display: none; }
 .routes { display: grid; gap: 8px; align-content: start; }
+.routes[hidden] { display: none; }
+.grid2 > .routes-label { align-self: start; padding-top: 2px; }
+.routes-head[hidden] { display: none; }
 .routes-head {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) 34px;
   gap: 8px; color: var(--muted); font-size: 12px; padding-bottom: 2px;
@@ -158,6 +156,15 @@ a { color: var(--accent); }
 .field:focus, .grid2 input:focus, .grid2 select:focus, .grid2 textarea:focus {
   border-color: var(--accent);
 }
+/* Native color pickers must not be stretched by the .grid2 input rules above:
+   keep them a compact swatch, not a full-width bar. */
+.grid2 input[type="color"] {
+  width: 100%; max-width: 72px; height: 36px; padding: 2px;
+  border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
+  background: var(--field);
+}
+.grid2 input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+.grid2 input[type="color"]::-webkit-color-swatch { border: none; border-radius: 5px; }
 textarea { resize: vertical; min-height: 82px; font-family: Consolas, monospace; font-size: 13px; }
 .btn {
   border: 1px solid transparent; border-radius: 9px; padding: 9px 16px;
@@ -198,8 +205,15 @@ tr:last-child td { border-bottom: 0; }
   border: 1px solid var(--border); border-radius: 12px; padding: 12px;
   font: 12.5px/1.55 Consolas, "Courier New", monospace; color: #cbd5e1;
   scroll-behavior: smooth;
+  /* pywebview's window has text selection disabled by default; the shell turns
+     it on and these rules keep the log selectable even if a future backend
+     resets the document default.  Without this the log could not be copied. */
+  user-select: text; -webkit-user-select: text; cursor: text;
 }
-.log-line { white-space: pre-wrap; word-break: break-word; }
+.log-line {
+  white-space: pre-wrap; word-break: break-word;
+  user-select: text; -webkit-user-select: text;
+}
 .log-debug { color: #7c8798; }
 .log-info { color: #7fb0ff; }
 .log-warn { color: #f0b45a; }
@@ -279,7 +293,6 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
     <div class="side-foot">
       <div><label data-i18n="gui.label.theme"></label><select id="theme-select"></select></div>
       <div><label data-i18n="gui.language"></label><select id="language-select"></select></div>
-      <button class="btn ghost" id="btn-logout" style="display:none" data-i18n="web.sign_out"></button>
     </div>
   </aside>
 
@@ -333,7 +346,6 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <button class="btn" data-action="save-config" data-i18n="gui.button.save_config"></button>
           <button class="btn ghost" data-action="reset-defaults" data-i18n="gui.button.reset_defaults"></button>
           <span class="spacer"></span>
-          <button class="btn primary" id="btn-open-web" data-i18n="gui.button.open_web"></button>
         </div>
         <div class="kv" style="margin-top:12px">
           <div><span data-i18n="web.webui_url"></span><b><a id="web-url" href="#" target="_blank" rel="noreferrer">—</a></b></div>
@@ -365,15 +377,52 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
         <span class="hint" data-i18n="gui.hint.endpoint"></span>
       </div>
 
-      <div class="tabs" id="settings-tabs">
-        <button type="button" class="tab active" data-tab="forward" data-i18n="gui.section.forwarding"></button>
-        <button type="button" class="tab" data-tab="protocol" data-i18n="gui.section.protocol"></button>
-        <button type="button" class="tab" data-tab="runtime" data-i18n="gui.section.runtime"></button>
-        <button type="button" class="tab" data-tab="web" data-i18n="gui.section.web"></button>
-        <button type="button" class="tab" data-tab="cert" data-i18n="gui.section.certificate"></button>
+      <div class="settings-search">
+        <input type="search" id="settings-search" class="field"
+               data-i18n-placeholder="web.settings_search" autocomplete="off">
+        <span class="hint" id="settings-search-empty" data-i18n="web.settings_no_match" hidden></span>
       </div>
 
-      <div class="tabpane active card" data-pane="forward">
+      <div class="tabpane card" data-pane="appearance">
+        <h2 data-i18n="gui.section.appearance"></h2>
+        <div class="grid2">
+          <label data-i18n="gui.label.appearance_preset"></label>
+          <select id="ap-preset">
+            <option value="default" data-i18n="gui.label.appearance_preset_default">Default</option>
+            <option value="ocean" data-i18n="gui.label.appearance_preset_ocean">Ocean</option>
+            <option value="forest" data-i18n="gui.label.appearance_preset_forest">Forest</option>
+            <option value="sunset" data-i18n="gui.label.appearance_preset_sunset">Sunset</option>
+            <option value="mono" data-i18n="gui.label.appearance_preset_mono">Monochrome</option>
+            <option value="custom" data-i18n="gui.label.appearance_preset_custom">Custom</option>
+          </select>
+          <label data-i18n="gui.label.appearance_accent"></label>
+          <input type="color" id="ap-accent" value="#2f6fed">
+          <label data-i18n="gui.label.appearance_bg_color"></label>
+          <input type="color" id="ap-bgcolor" value="#eef1f6">
+          <label data-i18n="gui.label.appearance_radius"></label>
+          <input type="range" id="ap-radius" min="0" max="24" value="14">
+          <label data-i18n="gui.label.appearance_density"></label>
+          <select id="ap-density">
+            <option value="compact" data-i18n="gui.label.appearance_density_compact">Compact</option>
+            <option value="comfortable" selected data-i18n="gui.label.appearance_density_comfortable">Comfortable</option>
+            <option value="spacious" data-i18n="gui.label.appearance_density_spacious">Spacious</option>
+          </select>
+          <label data-i18n="gui.label.appearance_font_scale"></label>
+          <input type="range" id="ap-font-scale" min="80" max="130" value="100">
+        </div>
+        <div class="card" style="margin-top:12px;padding:12px">
+          <div id="ap-preview" style="min-height:80px;border-radius:8px;padding:12px;background:var(--card);border:1px solid var(--border)">
+            <strong data-i18n="gui.label.appearance_preview">Preview</strong> · <span style="color:var(--muted)" data-i18n="gui.label.appearance_preview_muted">muted text</span>
+            <div style="margin-top:8px"><button class="btn primary" data-i18n="gui.button.preview_primary">Primary</button> <button class="btn ghost" data-i18n="gui.button.preview_ghost">Ghost</button></div>
+          </div>
+        </div>
+        <div class="actions" style="margin-top:12px">
+          <button type="button" class="btn primary" id="ap-save" data-i18n="gui.button.save">Save</button>
+          <button type="button" class="btn ghost" id="ap-reset" data-i18n="gui.button.reset">Reset</button>
+        </div>
+      </div>
+
+      <div class="tabpane card" data-pane="forward">
         <h2 data-i18n="gui.section.forwarding"></h2>
         <div class="grid2">
           <label data-i18n="gui.label.server_brand"></label>
@@ -382,12 +431,15 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <input id="server_brand_version" autocomplete="off">
           <label data-i18n="gui.label.spoof_client"></label>
           <select id="spoof_client"></select>
-          <label data-i18n="gui.label.spoof_brand"></label>
-          <input id="spoof_brand" autocomplete="off">
-          <div class="hint" data-i18n="gui.hint.spoof_brand"></div>
-          <label data-i18n="gui.label.routes"></label>
+          <label data-i18n="gui.label.spoof_brand" id="spoof-brand-label" data-spoof-brand="1"></label>
+          <input id="spoof_brand" autocomplete="off" data-spoof-brand="1">
+          <div class="hint" data-i18n="gui.hint.spoof_brand" id="spoof-brand-hint" data-spoof-brand="1"></div>
+          <label for="suffix_route" data-i18n="gui.label.suffix_route"></label>
+          <label class="switch"><input type="checkbox" id="suffix_route"><span class="knob"></span></label>
+          <div class="hint" data-i18n="gui.hint.suffix_route"></div>
+          <label class="routes-label" data-i18n="gui.label.routes"></label>
           <div class="routes">
-            <div class="routes-head">
+            <div class="routes-head" id="routes-head">
               <span data-i18n="web.route_path"></span>
               <span data-i18n="web.route_target"></span>
               <span></span>
@@ -431,10 +483,6 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <input id="connect_timeout" inputmode="decimal">
           <label data-i18n="gui.label.max_payload"></label>
           <input id="max_payload_mb" inputmode="numeric">
-          <label for="status_cache" data-i18n="gui.label.status_cache"></label>
-          <label class="switch"><input type="checkbox" id="status_cache"><span class="knob"></span></label>
-          <label data-i18n="gui.label.status_cache_ttl"></label>
-          <input id="status_cache_ttl" inputmode="numeric">
           <label for="update_check" data-i18n="gui.label.update_check"></label>
           <label class="switch"><input type="checkbox" id="update_check"><span class="knob"></span></label>
         </div>
@@ -456,12 +504,33 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <label data-i18n="web.confirm_password"></label>
           <input id="auth-confirm" type="password" autocomplete="new-password">
           <div class="hint" data-i18n="web.password_hint"></div>
+          <div class="hint" id="auth-loopback-note" data-i18n="web.password_loopback_note" hidden></div>
         </div>
         <div class="actions" style="margin-top:12px">
-          <button class="btn primary" id="btn-save-auth" data-i18n="gui.button.save_config"></button>
+          <button class="btn primary" id="btn-save-auth" data-i18n="gui.button.web_auth_apply"></button>
+          <button class="btn ghost" id="btn-clear-auth" data-i18n="web.password_clear" hidden></button>
           <button class="btn ghost" id="btn-web-restart" data-i18n="gui.button.web_restart"></button>
           <span class="hint" id="auth-status"></span>
           <span class="hint" data-i18n="web.bind_hint"></span>
+        </div>
+      </div>
+
+      <div class="tabpane card" data-pane="mcp">
+        <h2 data-i18n="web.mcp_section"></h2>
+        <div class="grid2">
+          <label data-i18n="web.mcp_endpoint"></label>
+          <input id="mcp-endpoint" readonly>
+          <label data-i18n="web.mcp_key"></label>
+          <input id="mcp-key" type="password" autocomplete="new-password">
+          <div class="hint" id="mcp-status" data-i18n="web.mcp_status_unset"></div>
+          <div class="hint" data-i18n="web.mcp_key_hint"></div>
+          <div class="hint" id="mcp-loopback-note" data-i18n="web.mcp_loopback_no_key" hidden></div>
+        </div>
+        <div class="actions" style="margin-top:12px">
+          <button class="btn ghost" id="btn-copy-mcp" data-i18n="web.mcp_copy"></button>
+          <button class="btn primary" id="btn-save-mcp" data-i18n="web.mcp_save"></button>
+          <button class="btn ghost" id="btn-clear-mcp" data-i18n="web.mcp_clear" hidden></button>
+          <span class="hint" id="mcp-msg"></span>
         </div>
       </div>
 
@@ -491,6 +560,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <button class="btn primary" id="btn-add-offline" data-i18n="gui.accounts.add.offline"></button>
           <button class="btn ghost" id="btn-add-thirdparty" data-i18n="gui.accounts.add.thirdparty"></button>
           <button class="btn ghost" id="btn-add-microsoft" data-i18n="gui.accounts.add.microsoft"></button>
+          <span class="spacer"></span>
+          <button class="btn ghost" id="btn-use-none" data-i18n="gui.accounts.button.clear" disabled></button>
         </div>
         <div style="overflow:auto;margin-top:12px">
           <table>
@@ -537,9 +608,13 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
       <div class="card">
         <div class="log-toolbar">
           <button class="btn ghost" id="btn-clear-log" data-i18n="gui.log.clear"></button>
+          <button class="btn ghost" id="btn-copy-log" data-i18n="web.log_copy"></button>
+          <button class="btn ghost" id="btn-export-log" data-i18n="web.log_export"></button>
           <label><input type="checkbox" id="log-autoscroll" checked> <span data-i18n="gui.log.auto_scroll"></span></label>
           <label for="log-level" data-i18n="gui.label.log_level"></label>
           <select id="log-level" class="field" style="width:auto"></select>
+          <input type="search" id="log-search" class="field" style="width:auto"
+                 data-i18n-placeholder="web.log_search" autocomplete="off">
           <span class="hint" data-i18n="gui.log.hint"></span>
         </div>
         <div class="log-box" id="log-box"></div>
@@ -551,6 +626,11 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
         <h2 id="about-title"></h2>
         <p id="about-blurb"></p>
         <p class="hint" id="about-license"></p>
+        <div class="actions" style="margin-top:12px">
+          <button class="btn ghost" id="btn-tutorial-mcp" data-i18n="web.tutorial_open_mcp"></button>
+          <button class="btn ghost" id="btn-tutorial-cli" data-i18n="web.tutorial_open_cli"></button>
+          <span class="hint" id="tutorial-status"></span>
+        </div>
       </div>
       <div class="card">
         <h2 data-i18n="gui.about.components"></h2>
@@ -569,7 +649,9 @@ const I18N = __I18N__;
 const state = {
   config: null, status: null, accounts: [], logSeq: 0, language: '__LANG__',
   theme: '__THEME__', update: null, page: 'dashboard', seenRevision: undefined,
-  auth: { enabled: false, has_password: false }
+  auth: { enabled: false, has_password: false },
+  mcp: { enabled: false, has_key: false, endpoint: '', loopback_bind: false },
+  loopbackBind: true, appearance: {}
 };
 
 function t(key, vars) {
@@ -689,30 +771,6 @@ function setPage(name) {
   if (name === 'accounts') loadAccounts();
   if (name === 'certificate') loadCert();
   if (name === 'about') loadAbout();
-  if (name === 'settings') setSettingsTab(rememberedSettingsTab());
-}
-
-/* ---------- settings tabs ----------
-   The five settings cards used to sit one under another, making the page eight
-   cards tall.  The window shows one card under a tab strip, so the Web UI does
-   too.  Remembering the choice means a reload lands on the same card. */
-const SETTINGS_TABS = ['forward', 'protocol', 'runtime', 'web', 'cert'];
-const SETTINGS_TAB_KEY = 'spb-settings-tab';
-
-function setSettingsTab(key) {
-  if (SETTINGS_TABS.indexOf(key) < 0) key = 'forward';
-  $$('#settings-tabs .tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === key));
-  $$('#page-settings .tabpane').forEach(pane => pane.classList.toggle('active', pane.dataset.pane === key));
-  try { localStorage.setItem(SETTINGS_TAB_KEY, key); } catch (err) { }
-}
-
-function rememberedSettingsTab() {
-  try {
-    var value = localStorage.getItem(SETTINGS_TAB_KEY);
-    return SETTINGS_TABS.indexOf(value) >= 0 ? value : 'forward';
-  } catch (err) {
-    return 'forward';
-  }
 }
 
 /* ---------- status ---------- */
@@ -751,6 +809,8 @@ function renderStatus(data) {
     state.auth = data.auth;
     updateAuthVisibility();
   }
+  if (data.loopback_bind !== undefined) state.loopbackBind = !!data.loopback_bind;
+  updateAuthAvailability();
   syncConfigFromStatus(data);
 }
 
@@ -796,11 +856,33 @@ function renderRoutes(routes) {
   const list = $('#routes-list');
   list.innerHTML = '';
   Object.entries(routes || {}).forEach(pair => addRouteRow(pair[0], pair[1]));
+  refreshRoutes();
 }
 
 function refreshRoutes() {
+  const has = $('#routes-list').children.length > 0;
   const empty = $('#routes-empty');
-  if (empty) empty.hidden = $('#routes-list').children.length > 0;
+  if (empty) empty.hidden = has;
+  const head = $('#routes-head');
+  if (head) head.hidden = !has;
+  updateSuffixRouteState();
+}
+
+/* Suffix routing and the path-route table cannot be used together.  The
+   checkbox is locked while route rows exist; the route editor is locked
+   while the checkbox is on.  The server enforces the same rule; this only
+   keeps the page from offering a state that cannot be saved. */
+function updateSuffixRouteState() {
+  const suffix = $('#suffix_route');
+  if (!suffix) return;
+  const hasRoutes = $$('#routes-list .route-row').length > 0;
+  suffix.disabled = hasRoutes && !suffix.checked;
+  suffix.title = suffix.disabled ? t('gui.hint.suffix_route_disabled') : '';
+  const lock = suffix.checked;
+  $$('#routes-list .route-path, #routes-list .route-target, #routes-list .route-remove')
+    .forEach(el => { el.disabled = lock; });
+  const addBtn = $('#btn-route-add');
+  if (addBtn) addBtn.disabled = lock;
 }
 
 /* Read the editor back into the "path=target" text the server parses.
@@ -824,6 +906,127 @@ function renderConfig(data) {
   if (data.revision !== undefined) state.seenRevision = data.revision;
   fillConfig(data.config, data.options || {}, data.problems || []);
   if (data.auth) renderAuth(data.auth);
+  if (data.mcp) renderMcp(data.mcp);
+}
+
+/* The spoof brand is only meaningful for the "custom" client-identity preset:
+   every other preset supplies its own default brand.  Hiding the field keeps
+   the preset list the single control, with "自定义" revealing the brand box. */
+function updateSpoofBrandVisibility() {
+  const select = $('#spoof_client');
+  const custom = (select && select.value) === 'custom';
+  ['spoof-brand-label', 'spoof_brand', 'spoof-brand-hint'].forEach(id => {
+    const el = $('#' + id);
+    if (el) el.hidden = !custom;
+  });
+}
+
+/* ---------- settings search ----------
+   The settings page no longer hides its cards behind tabs, so it is long
+   enough to want a filter.  Each grid2 row (label + field) is matched against
+   the query by its label text or the field's current value; rows that do not
+   match are hidden, and a card with nothing left is hidden too.  The spoof
+   brand row is owned by updateSpoofBrandVisibility and is skipped here. */
+let settingsQuery = '';
+
+function settingsGridRows(grid) {
+  const kids = Array.from(grid.children);
+  const rows = [];
+  let i = 0;
+  while (i < kids.length) {
+    const el = kids[i];
+    if (el.tagName === 'LABEL' && i + 1 < kids.length) {
+      rows.push([el, kids[i + 1]]);
+      i += 2;
+    } else {
+      rows.push([el]);
+      i += 1;
+    }
+  }
+  return rows;
+}
+
+function applySettingsFilter() {
+  const query = settingsQuery;
+  const empty = $('#settings-search-empty');
+  if (!query) {
+    $$('#page-settings .tabpane').forEach(card => {
+      card.hidden = false;
+      card.querySelectorAll('.grid2').forEach(grid => {
+        grid.hidden = false;
+        Array.from(grid.children).forEach(el => { el.hidden = false; });
+      });
+    });
+    if (empty) empty.hidden = true;
+    refreshRoutes();
+    updateSpoofBrandVisibility();
+    updateAuthAvailability();
+    return;
+  }
+  let anyVisible = false;
+  $$('#page-settings .tabpane').forEach(card => {
+    let cardVisible = false;
+    card.querySelectorAll('.grid2').forEach(grid => {
+      let gridVisible = false;
+      settingsGridRows(grid).forEach(row => {
+        if (row.some(el => el.hasAttribute && el.hasAttribute('data-spoof-brand'))) {
+          return;  // updateSpoofBrandVisibility owns these
+        }
+        const text = row.map(el =>
+          ((el.textContent || '') + ' ' + (el.value || '')).toLowerCase()).join(' ');
+        const match = !query || text.indexOf(query) !== -1;
+        row.forEach(el => { el.hidden = !match; });
+        if (match) gridVisible = true;
+      });
+      grid.hidden = !gridVisible;
+      if (gridVisible) cardVisible = true;
+    });
+    card.hidden = !cardVisible;
+    if (!card.hidden) anyVisible = true;
+  });
+  if (empty) empty.hidden = anyVisible;
+}
+
+/* Appearance / personalization: these run at module scope so fillConfig can
+   apply the saved look on load, and the settings controls can preview live.
+   The preset list lives here too so both the controls and the auto-"custom"
+   detection share one source of truth. */
+const AP_PRESETS = {
+  default: { accent: '#2f6fed', bgColor: '#eef1f6' },
+  ocean:   { accent: '#0ea5e9', bgColor: '#e0f2fe' },
+  forest:  { accent: '#16a34a', bgColor: '#dcfce7' },
+  sunset:  { accent: '#f97316', bgColor: '#ffedd5' },
+  mono:    { accent: '#525252', bgColor: '#f5f5f5' },
+};
+function applyAppearance(a) {
+  a = a || {};
+  const root = document.documentElement;
+  if (a.accent) root.style.setProperty('--accent', a.accent);
+  if (a.bgColor) root.style.setProperty('--bg', a.bgColor);
+  if (a.radius != null) root.style.setProperty('--radius', a.radius + 'px');
+  const density = a.density || 'comfortable';
+  const gap = density === 'compact' ? '6px' : density === 'spacious' ? '18px' : '12px';
+  root.style.setProperty('--density-gap', gap);
+  if (a.fontScale != null) root.style.setProperty('--font-scale', (a.fontScale / 100));
+}
+function loadAppearanceControls(a) {
+  a = a || {};
+  const setVal = (id, v) => { const el = $(id); if (el && v != null) el.value = v; };
+  setVal('#ap-preset', a.preset || 'default');
+  setVal('#ap-accent', a.accent || '#2f6fed');
+  setVal('#ap-bgcolor', a.bgColor || '#eef1f6');
+  setVal('#ap-radius', a.radius != null ? a.radius : 14);
+  setVal('#ap-density', a.density || 'comfortable');
+  setVal('#ap-font-scale', a.fontScale != null ? a.fontScale : 100);
+}
+/* Match the current accent/bgColor against a preset; if no preset matches, the
+   user has made a custom look, so the preset select flips to "custom". */
+function matchAppearancePreset(accent, bgColor) {
+  for (const key in AP_PRESETS) {
+    const p = AP_PRESETS[key];
+    if (p.accent === accent && p.bgColor === bgColor) return key;
+  }
+  return 'custom';
 }
 
 /* Push one config into the settings form.  options is only needed to rebuild
@@ -851,21 +1054,27 @@ function fillConfig(config, options, problems) {
   state.theme = config.theme;
   state.language = config.language;
   document.documentElement.dataset.theme = config.theme;
+  state.appearance = config.appearance || {};
+  applyAppearance(state.appearance);
+  loadAppearanceControls(state.appearance);
   const fields = ['target', 'listen_host', 'wss_port', 'ws_port', 'server_brand',
     'server_brand_version', 'spoof_brand', 'log_level', 'heartbeat_sec',
-    'connect_timeout', 'max_payload_mb', 'status_cache_ttl', 'cert_dir',
+    'connect_timeout', 'max_payload_mb', 'cert_dir',
     'cert_common_name', 'cert_extra_names', 'cert_days', 'cert_generator',
     'web_host', 'web_port'];
   fields.forEach(id => { const el = $('#' + id); if (el) el.value = config[id] ?? ''; });
   renderRoutes(config.routes);
   ['use_srv', 'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-   'auto_exit', 'status_cache', 'update_check'].forEach(id => {
+   'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
     const el = $('#' + id); if (el) el.checked = !!config[id];
   });
+  updateSuffixRouteState();
   $('#cert_cn_page').value = config.cert_common_name || '';
   $('#cert_extra_page').value = (config.cert_extra_names || []).join(', ');
   $('#cert_days_page').value = config.cert_days || 3650;
   renderProblems(problems);
+  updateAuthAvailability();
+  updateSpoofBrandVisibility();
 }
 
 /* The desktop window and this page edit one config file, so a change on one
@@ -884,6 +1093,41 @@ function syncConfigFromStatus(data) {
   state.seenRevision = data.revision;
   fillConfig(data.config, {}, data.config_problems || []);
   if (data.auth) renderAuth(data.auth);
+  if (data.mcp) renderMcp(data.mcp);
+}
+
+function isLoopbackHost(host) {
+  host = String(host == null ? '' : host).trim().toLowerCase();
+  if (!host) return true;
+  if (host.charAt(0) === '[' && host.charAt(host.length - 1) === ']') {
+    host = host.slice(1, -1);
+  }
+  if (host === 'localhost' || host === '::1' || host.indexOf('::ffff:127.') === 0) {
+    return true;
+  }
+  return /^127\./.test(host);
+}
+
+function currentBindHost() {
+  const field = $('#web_host');
+  if (field) return field.value;
+  return state.config ? state.config.web_host : '';
+}
+
+/* A password only protects clients that can reach the page over the network.
+   When the listener is bound to loopback there is no such client, so the
+   controls are disabled instead of pretending to add security. */
+function updateAuthAvailability() {
+  const loopback = isLoopbackHost(currentBindHost());
+  state.loopbackBind = loopback;
+  ['auth-enabled', 'auth-password', 'auth-confirm', 'btn-save-auth'].forEach(id => {
+    const el = $('#' + id);
+    if (el) el.disabled = loopback;
+  });
+  const note = $('#auth-loopback-note');
+  if (note) note.hidden = !loopback;
+  const clear = $('#btn-clear-auth');
+  if (clear) clear.hidden = !(state.auth && state.auth.has_password);
 }
 
 function renderAuth(auth) {
@@ -892,11 +1136,10 @@ function renderAuth(auth) {
   $('#auth-password').value = '';
   $('#auth-confirm').value = '';
   updateAuthVisibility();
+  updateAuthAvailability();
 }
 
 function updateAuthVisibility() {
-  const enabled = !!(state.auth && state.auth.enabled);
-  $('#btn-logout').style.display = enabled ? '' : 'none';
   const status = $('#auth-status');
   if (status) {
     status.textContent = state.auth && state.auth.has_password
@@ -905,6 +1148,10 @@ function updateAuthVisibility() {
 }
 
 async function saveAuth() {
+  if (isLoopbackHost(currentBindHost())) {
+    toast(t('web.password_loopback_note'), 'warn', 7000);
+    return;
+  }
   const enabled = $('#auth-enabled').checked;
   const password = $('#auth-password').value;
   const confirm = $('#auth-confirm').value;
@@ -926,8 +1173,15 @@ async function saveAuth() {
     if (data.reauth) {
       toast(t('web.password_saved'), 'ok');
       setTimeout(() => {
-        const next = location.pathname + location.hash;
-        location.href = '/login?next=' + encodeURIComponent(next);
+        // A loopback client never has to sign in again, so bouncing it to the
+        // login page (which redirects straight back) only lost its place.  A
+        // remote client is the one the password protects and must re-auth.
+        if (data.loopback) {
+          location.reload();
+        } else {
+          const next = location.pathname + location.hash;
+          location.href = '/login?next=' + encodeURIComponent(next);
+        }
       }, 700);
       return;
     }
@@ -943,16 +1197,79 @@ async function saveAuth() {
   }
 }
 
-async function signOut() {
+async function clearAuth() {
   try {
-    await api('/api/logout', { method: 'POST', body: {} });
-  } catch (err) { /* the session may already be gone */ }
-  location.href = '/login';
+    const data = await api('/api/auth', { method: 'POST', body: { enabled: false } });
+    renderAuth(data.auth);
+    toast(t('web.password_cleared'), 'ok');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+/* ---------- MCP key ----------
+   An MCP key only matters for clients that reach the page over the network;
+   on a loopback bind it cannot add security, so the controls are disabled. */
+function renderMcp(mcp) {
+  state.mcp = mcp || { enabled: false, has_key: false, endpoint: '', loopback_bind: false };
+  const endpoint = $('#mcp-endpoint');
+  if (endpoint) endpoint.value = state.mcp.endpoint || '';
+  updateMcpAvailability();
+}
+
+function updateMcpAvailability() {
+  const loopback = state.mcp ? !!state.mcp.loopback_bind : isLoopbackHost(currentBindHost());
+  ['mcp-key', 'btn-save-mcp'].forEach(id => {
+    const el = $('#' + id);
+    if (el) el.disabled = loopback;
+  });
+  const note = $('#mcp-loopback-note');
+  if (note) note.hidden = !loopback;
+  const clear = $('#btn-clear-mcp');
+  if (clear) clear.hidden = !(state.mcp && state.mcp.has_key);
+  const status = $('#mcp-status');
+  if (status) {
+    status.textContent = state.mcp && state.mcp.has_key
+      ? t('web.mcp_status_set') : t('web.mcp_status_unset');
+  }
+}
+
+async function saveMcp() {
+  if (state.mcp && state.mcp.loopback_bind) {
+    toast(t('web.mcp_loopback_no_key'), 'warn', 7000);
+    return;
+  }
+  const key = ($('#mcp-key').value || '').trim();
+  if (!key) { toast(t('web.mcp_key_required'), 'error'); return; }
+  if (key.length < 8) { toast(t('web.mcp_key_short'), 'error'); return; }
+  try {
+    const data = await api('/api/mcp', { method: 'POST', body: { key } });
+    renderMcp(data.mcp);
+    $('#mcp-key').value = '';
+    toast(t('web.mcp_saved'), 'ok');
+  } catch (err) { toast(err.message, 'error', 6000); }
+}
+
+async function clearMcp() {
+  try {
+    const data = await api('/api/mcp', { method: 'POST', body: { clear: true } });
+    renderMcp(data.mcp);
+    toast(t('web.mcp_cleared'), 'ok');
+  } catch (err) { toast(err.message, 'error', 6000); }
 }
 
 function renderProblems(problems) {
   const box = $('#config-problems');
   box.textContent = (problems || []).join('\n');
+}
+
+/* A trailing parenthesised suffix is a build/channel tag, not part of the
+   version ("EaglercraftX 1.21.11 (u1-beta)"); it is dropped before saving so
+   it never travels upstream.  Applied repeatedly. */
+function stripParenSuffix(text) {
+  let out = String(text == null ? '' : text).trim();
+  while (/\s*\([^()]*\)\s*$/.test(out)) {
+    out = out.replace(/\s*\([^()]*\)\s*$/, '').trim();
+  }
+  return out;
 }
 
 function numberValue(id, label, integer) {
@@ -976,13 +1293,13 @@ function collectConfig() {
   config.heartbeat_sec = numberValue('heartbeat_sec', t('gui.label.heartbeat'), true);
   config.connect_timeout = numberValue('connect_timeout', t('gui.label.connect_timeout'), false);
   config.max_payload_mb = numberValue('max_payload_mb', t('gui.label.max_payload'), true);
-  config.status_cache_ttl = numberValue('status_cache_ttl', t('gui.label.status_cache_ttl'), true);
   config.cert_days = numberValue('cert_days', t('gui.label.cert_days'), true);
   const routes = routeText();
   if (routes.error) throw new Error(routes.error);
   config.routes_text = routes.text;
   config.cert_extra_names = $('#cert_extra_names').value;
   config.spoof_client = $('#spoof_client').value;
+  config.spoof_brand = stripParenSuffix($('#spoof_brand').value);
   config.resource_pack_mode = $('#resource_pack_mode').value;
   config.log_level = $('#log_level').value;
   config.log_max_lines = numberValue('log_max_lines', t('gui.label.log_max_lines'), true);
@@ -990,8 +1307,9 @@ function collectConfig() {
   config.theme = $('#theme-select').value;
   config.language = $('#language-select').value;
   ['use_srv', 'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-   'auto_exit', 'status_cache', 'update_check'].forEach(id => {
-    config[id] = $('#' + id).checked;
+   'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
+    const el = $('#' + id);
+    if (el) config[id] = el.checked;
   });
   return config;
 }
@@ -1017,9 +1335,30 @@ async function saveConfig(silent) {
     return data;
   }
   if (data.web_restart) {
-    toast(t('web.webui_restarting', { url: data.web_url }), 'warn', 9000);
+    handleWebRestart(data);
   }
   return data;
+}
+
+/* Changing the bind address stops this very server and rebinds the new one in
+   a background thread.  The current page is left on a dead connection, so it
+   has to follow the listener: same port means the page's own origin is still
+   reachable (the loopback or the wildcard covers it), while a new port has to
+   be followed to the URL the server now reports.  Without this the UI silently
+   froze after saving a new listen address, which read as "could not set it". */
+function handleWebRestart(data) {
+  toast(t('web.webui_restarting', { url: data.web_url }), 'warn', 9000);
+  const currentPort = location.port || (location.protocol === 'https:' ? '443' : '80');
+  const match = (data.web_url || '').match(/:(\d+)\/?/);
+  const newPort = match ? match[1] : currentPort;
+  // Give the background restart thread its one-second sleep plus time to bind.
+  setTimeout(() => {
+    if (newPort === currentPort) {
+      location.reload();
+    } else {
+      location.href = data.web_url;
+    }
+  }, 1800);
 }
 
 /* ---------- service ---------- */
@@ -1044,6 +1383,22 @@ async function stopService() {
 }
 
 /* ---------- logs ---------- */
+let logQuery = '';
+
+/* The search box filters the rendered lines.  It never asks the server: the
+   page already has the newest 2500 lines, which is what the box shows, and the
+   filter is applied as lines arrive so the match stays live. */
+function logMatches(text) {
+  if (!logQuery) return true;
+  return String(text || '').toLowerCase().indexOf(logQuery) !== -1;
+}
+function applyLogFilter() {
+  const box = $('#log-box');
+  if (!box) return;
+  for (const child of box.children) {
+    child.hidden = !logMatches(child.textContent);
+  }
+}
 async function loadLogs() {
   if (state.page !== 'logs') return;
   try {
@@ -1061,6 +1416,7 @@ function appendLogs(lines) {
     const item = document.createElement('div');
     item.className = 'log-line log-' + (line.level || 'info');
     item.textContent = line.text || '';
+    item.hidden = !logMatches(item.textContent);
     frag.appendChild(item);
   });
   box.appendChild(frag);
@@ -1076,6 +1432,40 @@ async function clearLogs() {
   } catch (err) { toast(err.message, 'error'); }
 }
 
+/* The log page keeps only the newest 2500 lines in the DOM, so copying the
+   visible box would silently lose the older part of the buffer.  Both actions
+   ask the server for the full buffer (respecting the level filter) instead. */
+async function fetchLogText() {
+  const level = $('#log-level').value || 'all';
+  const response = await fetch('/api/logs/export?level=' + encodeURIComponent(level));
+  if (!response.ok) throw new Error('HTTP ' + response.status);
+  return response.text();
+}
+async function copyLogs() {
+  try {
+    const text = await fetchLogText();
+    if (!text.trim()) { toast(t('web.log_empty'), 'warn'); return; }
+    await copyText(text);
+  } catch (err) { toast(t('web.log_copy_failed', { error: err.message }), 'error'); }
+}
+async function exportLogs() {
+  try {
+    const text = await fetchLogText();
+    if (!text.trim()) { toast(t('web.log_empty'), 'warn'); return; }
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    link.href = url;
+    link.download = 'server-protocol-bridge-' + stamp + '.log';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
+    toast(t('web.log_exported'), 'ok');
+  } catch (err) { toast(t('web.log_export_failed', { error: err.message }), 'error'); }
+}
+
 /* ---------- accounts ---------- */
 async function loadAccounts() {
   try {
@@ -1087,6 +1477,9 @@ async function loadAccounts() {
 function renderAccounts() {
   const body = $('#accounts-body');
   body.innerHTML = '';
+  const hasActive = state.accounts.some(account => account.active);
+  const useNone = $('#btn-use-none');
+  if (useNone) useNone.disabled = !hasActive;
   if (!state.accounts.length) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
@@ -1139,6 +1532,13 @@ async function setActive(id) {
   try {
     await api('/api/accounts/' + encodeURIComponent(id) + '/active', { method: 'POST', body: {} });
     toast(t('web.account_active'), 'ok');
+    loadAccounts();
+  } catch (err) { toast(err.message, 'error'); }
+}
+async function clearActive() {
+  try {
+    await api('/api/accounts/none', { method: 'POST', body: {} });
+    toast(t('web.account_cleared'), 'ok');
     loadAccounts();
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -1369,6 +1769,23 @@ async function loadAbout() {
   } catch (err) { toast(err.message, 'error'); }
 }
 
+/* Open a usage tutorial in the system's default viewer.  The backend renders
+   the text for the current UI language and asks the OS to open it, so the
+   button works on Windows, macOS and Linux alike. */
+async function openTutorial(kind) {
+  const status = $('#tutorial-status');
+  if (status) status.textContent = '';
+  try {
+    const data = await api('/api/tutorial/open', {
+      method: 'POST', body: { kind }
+    });
+    if (status) status.textContent = t('web.tutorial_opened');
+  } catch (err) {
+    if (status) status.textContent = err.message;
+    toast(err.message, 'error', 6000);
+  }
+}
+
 /* ---------- clipboard / theme / language ---------- */
 async function copyText(text) {
   if (!text) return;
@@ -1424,39 +1841,51 @@ function bindEvents() {
           return;
         }
         if (data.web_restart) {
-          toast(t('web.webui_restarting', { url: data.web_url }), 'warn', 9000);
+          handleWebRestart(data);
         }
         toast(t('web.saved'), 'ok');
       } catch (err) { toast(err.message, 'error'); }
     });
   });
-  $$('[data-tab]').forEach(button => {
-    button.addEventListener('click', () => setSettingsTab(button.dataset.tab));
-  });
-  $('#btn-open-web').addEventListener('click', () => {
-    const link = $('#web-url');
-    window.open(link && link.href && link.href !== '#' ? link.href : '/', '_blank');
-  });
   $('#btn-save-auth').addEventListener('click', saveAuth);
+  $('#btn-clear-auth').addEventListener('click', clearAuth);
+  $('#web_host').addEventListener('input', () => { updateAuthAvailability(); updateMcpAvailability(); });
+  $('#btn-save-mcp').addEventListener('click', saveMcp);
+  $('#btn-clear-mcp').addEventListener('click', clearMcp);
+  $('#btn-copy-mcp').addEventListener('click', () => copyText($('#mcp-endpoint').value));
+  $('#btn-tutorial-mcp').addEventListener('click', () => openTutorial('mcp'));
+  $('#btn-tutorial-cli').addEventListener('click', () => openTutorial('cli'));
   $('#btn-route-add').addEventListener('click', () => addRouteRow('', ''));
-  $('#btn-logout').addEventListener('click', signOut);
+  $('#suffix_route').addEventListener('change', updateSuffixRouteState);
   $('#btn-web-restart').addEventListener('click', async () => {
     try {
       const data = await api('/api/web/restart', { method: 'POST', body: {} });
-      toast(t('web.webui_restarting', { url: data.url }), 'warn', 9000);
+      handleWebRestart({ web_url: data.url, web_restart: true });
     } catch (err) { toast(err.message, 'error'); }
   });
   $('#btn-copy-endpoint').addEventListener('click', () => copyText($('#endpoint').textContent));
   $('#btn-update').addEventListener('click', checkUpdate);
   $('#btn-clear-log').addEventListener('click', clearLogs);
+  $('#btn-copy-log').addEventListener('click', copyLogs);
+  $('#btn-export-log').addEventListener('click', exportLogs);
   $('#log-level').addEventListener('change', () => {
     $('#log-box').innerHTML = '';
     state.logSeq = 0;
     loadLogs();
   });
+  $('#log-search').addEventListener('input', event => {
+    logQuery = (event.target.value || '').trim().toLowerCase();
+    applyLogFilter();
+  });
+  $('#settings-search').addEventListener('input', event => {
+    settingsQuery = (event.target.value || '').trim().toLowerCase();
+    applySettingsFilter();
+  });
+  $('#spoof_client').addEventListener('change', updateSpoofBrandVisibility);
   $('#btn-add-offline').addEventListener('click', addOffline);
   $('#btn-add-thirdparty').addEventListener('click', addThirdParty);
   $('#btn-add-microsoft').addEventListener('click', () => addMicrosoft(true));
+  $('#btn-use-none').addEventListener('click', clearActive);
   $('#btn-generate-cert').addEventListener('click', generateCert);
   $('#btn-install-cert').addEventListener('click', installCert);
   $('#theme-select').addEventListener('change', async event => {
@@ -1466,6 +1895,66 @@ function bindEvents() {
     const result = await savePreference({ theme });
     if (result) toast(t('web.theme_saved'), 'ok');
   });
+
+  // ---------- appearance / personalization ----------
+  const AP_PRESETS = {
+    default: { accent: '#2f6fed', bgColor: '#eef1f6' },
+    ocean:   { accent: '#0ea5e9', bgColor: '#e0f2fe' },
+    forest:  { accent: '#16a34a', bgColor: '#dcfce7' },
+    sunset:  { accent: '#f97316', bgColor: '#ffedd5' },
+    mono:    { accent: '#525252', bgColor: '#f5f5f5' },
+  };
+  function collectAppearance() {
+    return {
+      preset: $('#ap-preset').value,
+      accent: $('#ap-accent').value,
+      bgColor: $('#ap-bgcolor').value,
+      radius: parseInt($('#ap-radius').value, 10),
+      density: $('#ap-density').value,
+      fontScale: parseInt($('#ap-font-scale').value, 10),
+    };
+  }
+  // preset change auto-fills colors; picking a real preset clears the custom flag
+  $('#ap-preset').addEventListener('change', () => {
+    const preset = $('#ap-preset').value;
+    const p = AP_PRESETS[preset];
+    if (p) {
+      $('#ap-accent').value = p.accent;
+      $('#ap-bgcolor').value = p.bgColor;
+    }
+    applyAppearance(collectAppearance());
+  });
+  // changing a color no longer matches a preset, so flip to "custom"
+  function refreshPresetFromColors() {
+    const preset = matchAppearancePreset($('#ap-accent').value, $('#ap-bgcolor').value);
+    $('#ap-preset').value = preset;
+  }
+  ['#ap-accent','#ap-bgcolor'].forEach(sel => {
+    const el = $(sel);
+    if (el) el.addEventListener('input', () => { refreshPresetFromColors(); applyAppearance(collectAppearance()); });
+  });
+  ['#ap-radius','#ap-density','#ap-font-scale'].forEach(sel => {
+    const el = $(sel);
+    if (el) el.addEventListener('input', () => applyAppearance(collectAppearance()));
+  });
+  const saveBtn = $('#ap-save');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    const a = collectAppearance();
+    state.appearance = a;
+    try {
+      const result = await savePreference({ appearance: a });
+      if (result) toast(t('web.appearance_saved'), 'ok');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  const resetBtn = $('#ap-reset');
+  if (resetBtn) resetBtn.addEventListener('click', () => {
+    const a = { preset: 'default', accent: '#2f6fed', bgColor: '#eef1f6', radius: 14, density: 'comfortable', fontScale: 100 };
+    state.appearance = a;
+    loadAppearanceControls(a);
+    applyAppearance(a);
+    savePreference({ appearance: a });
+  });
+
   $('#language-select').addEventListener('change', async event => {
     const language = event.target.value;
     const result = await savePreference({ language });
@@ -1483,6 +1972,7 @@ async function init() {
   setPage(location.hash.slice(1) || 'dashboard');
   await Promise.allSettled([loadConfig(), loadStatus(), loadAccounts(), loadCert()]);
   if (state.page === 'logs') loadLogs();
+  applySettingsFilter();
   setInterval(loadStatus, 1200);
   setInterval(loadLogs, 1000);
 }

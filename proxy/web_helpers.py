@@ -102,6 +102,12 @@ def _config_options() -> dict:
         'cert_generators': [
             {'code': code, 'label': tr('gui.cert_generator.' + code)}
             for code in CERT_GENERATOR_CODES],
+        'appearance_presets': [
+            {'code': code, 'label': tr('gui.label.appearance_preset_' + code)}
+            for code in config_module.APPEARANCE_PRESETS],
+        'appearance_densities': [
+            {'code': code, 'label': tr('gui.label.appearance_density_' + code)}
+            for code in config_module.APPEARANCE_DENSITIES],
     }
 def _int_field(body: dict, key: str, label: str) -> int | None:
     if key not in body:
@@ -154,6 +160,12 @@ def _config_from_body(body: dict) -> config_module.Config:
     if 'log_max_lines' in body:
         if not 50 <= int(data['log_max_lines']) <= 100000:
             raise ValueError(tr('core.config.log_max_lines_invalid'))
+
+    # Suffix routing and the path-route table cannot be enabled together: the
+    # same request path cannot be read as both a route key and a server
+    # address, so the merged configuration must never carry both
+    if bool(data.get('suffix_route')) and (data.get('routes') or {}):
+        raise ValueError(tr('core.config.suffix_route_conflict'))
 
     config = config_module.Config.from_dict(data)
     if config.theme not in config_module.THEME_MODES:
@@ -208,3 +220,15 @@ def _cert_payload() -> dict:
         'key_path': str(key_path),
         'info': info,
     }
+
+
+def _mcp_info() -> dict:
+    """MCP endpoint and key state, shared by the status/auth/config routes."""
+    from . import webauth
+
+    config = get_manager().config
+    info = webauth.mcp_state()
+    base = _web_info().get('url') or config.web_url()
+    info['endpoint'] = (base.rstrip('/') + '/mcp') if base else ''
+    info['loopback_bind'] = webauth.is_loopback_host(config.web_host)
+    return info

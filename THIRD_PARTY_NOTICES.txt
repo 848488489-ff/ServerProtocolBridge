@@ -1,7 +1,7 @@
 Server Protocol Bridge - third-party notices
 ==============================================================================
 
-Generated: 2026-10-22 13:22:41 UTC
+Generated: 2026-10-31 03:32:20 UTC
 Python:   3.15.1
 
 This file is part of the source distribution.  The Windows EXE does not
@@ -18,34 +18,52 @@ Python                 3.15.1       PSF-2.0                            Runtime
     https://www.python.org/  [L1]
 CPython interpreter    3.15.1       PSF-2.0                            Runtime
     https://github.com/python/cpython  [L1]
-Tcl/Tk (Tkinter)       Tcl/Tk bundled with Python BSD-style (Tcl/Tk)                 Runtime
-    https://www.tcl.tk/software/tcltk/license.html  [L2]
+pywebview              6.2.1        BSD-3-Clause                       Runtime
+    https://github.com/r0x0r/pywebview  [L2]
+clr_loader             0.3.1        MIT                                Runtime
+    https://github.com/pythonnet/clr-loader  [L3]
+Microsoft Edge WebView2 system (WebView2 Runtime) BSD-3-Clause                       System component
+    https://learn.microsoft.com/microsoft-edge/webview2/  [no license file found]
 OpenSSL (bundled)      3.x (statically linked in cryptography) Apache-2.0                         Runtime
     https://www.openssl.org/  [no license file found]
 websockets             17.3         BSD-3-Clause                       Runtime
-    https://github.com/python-websockets/websockets  [L3]
+    https://github.com/python-websockets/websockets  [L4]
 cryptography           50.0.2       Apache-2.0 OR BSD-3-Clause         Runtime
-    https://github.com/pyca/cryptography  [L4, L5, L6]
+    https://github.com/pyca/cryptography  [L5, L6, L7]
 cffi                   2.1.1        MIT-0                              Runtime
-    https://github.com/python-cffi/cffi  [L7]
+    https://github.com/python-cffi/cffi  [L8]
 pycparser              3.11         BSD-3-Clause                       Runtime
-    https://github.com/eliben/pycparser  [L8]
+    https://github.com/eliben/pycparser  [L9]
 mcauth3                1.1.0        MIT                                Runtime
-    https://github.com/GongSunFangYun/mcauth3  [L9]
+    https://github.com/GongSunFangYun/mcauth3  [L10]
 requests               2.32.5       Apache-2.0                         Runtime
-    https://github.com/psf/requests  [L10]
+    https://github.com/psf/requests  [L11]
 urllib3                2.8.0        MIT                                Runtime
-    https://github.com/urllib3/urllib3  [L11]
+    https://github.com/urllib3/urllib3  [L12]
 charset-normalizer     3.5.2        MIT                                Runtime
-    https://github.com/jawah/charset_normalizer  [L12]
+    https://github.com/jawah/charset_normalizer  [L13]
 certifi                2026.10.19   MPL-2.0                            Runtime
-    https://github.com/certifi/python-certifi  [L13]
+    https://github.com/certifi/python-certifi  [L14]
 idna                   3.20         BSD-3-Clause                       Runtime
-    https://github.com/kjd/idna  [L14]
+    https://github.com/kjd/idna  [L15]
+Flask                  3.1.3        BSD-3-Clause                       Runtime
+    https://github.com/pallets/flask  [L16]
+Werkzeug               3.1.9        BSD-3-Clause                       Runtime
+    https://github.com/pallets/werkzeug  [L17, L18]
+Jinja2                 3.1.6        BSD-3-Clause                       Runtime
+    https://github.com/pallets/jinja  [L17]
+click                  8.5.0        BSD-3-Clause                       Runtime
+    https://github.com/pallets/click  [L19]
+itsdangerous           2.2.0        BSD-3-Clause                       Runtime
+    https://github.com/pallets/itsdangerous  [L20]
+blinker                1.9.0        MIT                                Runtime
+    https://github.com/pallets-eco/blinker  [L21]
+MarkupSafe             3.0.4        BSD-3-Clause                       Runtime
+    https://github.com/pallets/markupsafe  [L16]
 PyInstaller            6.22.3       GPL-2.0-or-later WITH bootloader-exception Build tool / bootloader
-    https://pyinstaller.org/  [L15]
+    https://pyinstaller.org/  [L22]
 pillow                 13.0.0       MIT-CMU                            Build-only icon generator
-    https://pypi.org/project/pillow/  [L16]
+    https://pypi.org/project/pillow/  [L23]
 
 Python standard library modules (PSF-2.0)
 ------------------------------------------------------------------------------
@@ -75,7 +93,6 @@ subprocess               https://docs.python.org/3/library/subprocess.html
 sys                      https://docs.python.org/3/library/sys.html
 threading                https://docs.python.org/3/library/threading.html
 time                     https://docs.python.org/3/library/time.html
-tkinter                  https://docs.python.org/3/library/tkinter.html
 traceback                https://docs.python.org/3/library/traceback.html
 typing                   https://docs.python.org/3/library/typing.html
 urllib                   https://docs.python.org/3/library/urllib.html
@@ -88,7 +105,7 @@ zlib                     https://docs.python.org/3/library/zlib.html
 Each module above is part of CPython and is covered by the PSF-2.0
 license. It is listed separately because minimal or embedded Python
 distributions may omit standard library modules such as random, ssl,
-tkinter or asyncio.
+secrets or asyncio.
 
 Notes
 ------------------------------------------------------------------------------
@@ -780,52 +797,67 @@ permission to use and distribute the software in accordance with the
 terms specified in this license.
 
 
-[L2] Tcl/Tk license
-Used by: Tcl/Tk (Tkinter)
+[L2] pywebview 6.2.1 - LICENSE
+Used by: pywebview
 ------------------------------------------------------------------------------
-This software is copyrighted by the Regents of the University of
-California, Sun Microsystems, Inc., Scriptics Corporation, ActiveState
-Corporation, Apple Inc. and other parties.  The following terms apply to
-all files associated with the software unless explicitly disclaimed in
-individual files.
+BSD 3-Clause License
 
-The authors hereby grant permission to use, copy, modify, distribute,
-and license this software and its documentation for any purpose, provided
-that existing copyright notices are retained in all copies and that this
-notice is included verbatim in any distributions. No written agreement,
-license, or royalty fee is required for any of the authorized uses.
-Modifications to this software may be copyrighted by their authors
-and need not follow the licensing terms described here, provided that
-the new terms are clearly indicated on the first page of each file where
-they apply.
+Copyright (c) 2014-2017, Roman Sirokov
+All rights reserved.
 
-IN NO EVENT SHALL THE AUTHORS OR DISTRIBUTORS BE LIABLE TO ANY PARTY
-FOR DIRECT, INDIRECT, SPECIAL, INCIDENTAL, OR CONSEQUENTIAL DAMAGES
-ARISING OUT OF THE USE OF THIS SOFTWARE, ITS DOCUMENTATION, OR ANY
-DERIVATIVES THEREOF, EVEN IF THE AUTHORS HAVE BEEN ADVISED OF THE
-POSSIBILITY OF SUCH DAMAGE.
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
 
-THE AUTHORS AND DISTRIBUTORS SPECIFICALLY DISCLAIM ANY WARRANTIES,
-INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.  THIS SOFTWARE
-IS PROVIDED ON AN "AS IS" BASIS, AND THE AUTHORS AND DISTRIBUTORS HAVE
-NO OBLIGATION TO PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR
-MODIFICATIONS.
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
 
-GOVERNMENT USE: If you are acquiring this software on behalf of the
-U.S. government, the Government shall have only "Restricted Rights"
-in the software and related documentation as defined in the Federal
-Acquisition Regulations (FARs) in Clause 52.227.19 (c) (2).  If you
-are acquiring the software on behalf of the Department of Defense, the
-software shall be classified as "Commercial Computer Software" and the
-Government shall have only "Restricted Rights" as defined in Clause
-252.227-7013 (b) (3) of DFARs.  Notwithstanding the foregoing, the
-authors grant the U.S. Government and others acting in its behalf
-permission to use and distribute the software in accordance with the
-terms specified in this license.
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+
+* Neither the name of the copyright holder nor the names of its
+  contributors may be used to endorse or promote products derived from
+  this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-[L3] websockets 17.3 - LICENSE
+[L3] clr_loader 0.3.1 - LICENSE
+Used by: clr_loader
+------------------------------------------------------------------------------
+MIT License
+
+Copyright (c) 2019-2026 Benedikt Reinartz
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+[L4] websockets 17.3 - LICENSE
 Used by: websockets
 ------------------------------------------------------------------------------
 Copyright (c) Aymeric Augustin and contributors
@@ -854,7 +886,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-[L4] cryptography 50.0.2 - LICENSE
+[L5] cryptography 50.0.2 - LICENSE
 Used by: cryptography
 ------------------------------------------------------------------------------
 This software is made available under the terms of *either* of the licenses
@@ -862,7 +894,7 @@ found in LICENSE.APACHE or LICENSE.BSD. Contributions to cryptography are made
 under the terms of *both* these licenses.
 
 
-[L5] cryptography 50.0.2 - LICENSE.APACHE
+[L6] cryptography 50.0.2 - LICENSE.APACHE
 Used by: cryptography
 ------------------------------------------------------------------------------
 Apache License
@@ -1068,7 +1100,7 @@ Apache License
    limitations under the License.
 
 
-[L6] cryptography 50.0.2 - LICENSE.BSD
+[L7] cryptography 50.0.2 - LICENSE.BSD
 Used by: cryptography
 ------------------------------------------------------------------------------
 Copyright (c) Individual contributors.
@@ -1100,7 +1132,7 @@ ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-[L7] cffi 2.1.1 - LICENSE
+[L8] cffi 2.1.1 - LICENSE
 Used by: cffi
 ------------------------------------------------------------------------------
 Except when otherwise stated (look for LICENSE files in directories or
@@ -1126,7 +1158,7 @@ documentation is licensed as follows:
     DEALINGS IN THE SOFTWARE.
 
 
-[L8] pycparser 3.11 - LICENSE
+[L9] pycparser 3.11 - LICENSE
 Used by: pycparser
 ------------------------------------------------------------------------------
 pycparser -- A C parser in Python
@@ -1158,7 +1190,7 @@ LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT
 OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-[L9] mcauth3 1.1.0 - LICENSE
+[L10] mcauth3 1.1.0 - LICENSE
 Used by: mcauth3
 ------------------------------------------------------------------------------
 MIT License
@@ -1184,7 +1216,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-[L10] requests 2.32.5 - LICENSE
+[L11] requests 2.32.5 - LICENSE
 Used by: requests
 ------------------------------------------------------------------------------
 Apache License
@@ -1363,7 +1395,7 @@ Apache License
       of your accepting any such warranty or additional liability.
 
 
-[L11] urllib3 2.8.0 - LICENSE.txt
+[L12] urllib3 2.8.0 - LICENSE.txt
 Used by: urllib3
 ------------------------------------------------------------------------------
 MIT License
@@ -1389,7 +1421,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-[L12] charset-normalizer 3.5.2 - LICENSE
+[L13] charset-normalizer 3.5.2 - LICENSE
 Used by: charset-normalizer
 ------------------------------------------------------------------------------
 MIT License
@@ -1415,7 +1447,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-[L13] certifi 2026.10.19 - LICENSE
+[L14] certifi 2026.10.19 - LICENSE
 Used by: certifi
 ------------------------------------------------------------------------------
 This package contains a modified version of ca-bundle.crt:
@@ -1440,7 +1472,7 @@ one at http://mozilla.org/MPL/2.0/.
 @(#) $RCSfile: certdata.txt,v $ $Revision: 1.80 $ $Date: 2011/11/03 15:11:58 $
 
 
-[L14] idna 3.20 - LICENSE.md
+[L15] idna 3.20 - LICENSE.md
 Used by: idna
 ------------------------------------------------------------------------------
 BSD 3-Clause License
@@ -1476,7 +1508,175 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
-[L15] pyinstaller 6.22.3 - COPYING.txt
+[L16] Flask 3.1.3 - LICENSE.txt
+Used by: Flask, MarkupSafe
+------------------------------------------------------------------------------
+Copyright 2010 Pallets
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1.  Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+2.  Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+3.  Neither the name of the copyright holder nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+[L17] Werkzeug 3.1.9 - LICENSE.txt
+Used by: Werkzeug, Jinja2
+------------------------------------------------------------------------------
+Copyright 2007 Pallets
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1.  Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+2.  Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+3.  Neither the name of the copyright holder nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+[L18] Werkzeug 3.1.9 - ICON_LICENSE.md
+Used by: Werkzeug
+------------------------------------------------------------------------------
+Silk icon set 1.3 by Mark James <mjames@gmail.com>
+
+http://www.famfamfam.com/lab/icons/silk/
+
+License: [CC-BY-2.5](https://creativecommons.org/licenses/by/2.5/)
+or [CC-BY-3.0](https://creativecommons.org/licenses/by/3.0/)
+
+
+[L19] click 8.5.0 - LICENSE.txt
+Used by: click
+------------------------------------------------------------------------------
+Copyright 2014 Pallets
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1.  Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+2.  Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+3.  Neither the name of the copyright holder nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+[L20] itsdangerous 2.2.0 - LICENSE.txt
+Used by: itsdangerous
+------------------------------------------------------------------------------
+Copyright 2011 Pallets
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+1.  Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+
+2.  Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+3.  Neither the name of the copyright holder nor the names of its
+    contributors may be used to endorse or promote products derived from
+    this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
+PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+[L21] blinker 1.9.0 - LICENSE.txt
+Used by: blinker
+------------------------------------------------------------------------------
+Copyright 2010 Jason Kirtland
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+[L22] pyinstaller 6.22.3 - COPYING.txt
 Used by: PyInstaller
 ------------------------------------------------------------------------------
 ================================
@@ -2129,7 +2329,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 
-[L16] pillow 13.0.0 - LICENSE
+[L23] pillow 13.0.0 - LICENSE
 Used by: pillow
 ------------------------------------------------------------------------------
 The Python Imaging Library (PIL) is

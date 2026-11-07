@@ -42,13 +42,12 @@ class LoginMixin(LoginHandshakeMixin, LoginBackendMixin, LoginEncryptionMixin,
                         reason=reason or tr('translator.empty_content'))
             self.log.warn('%s %s' % (self.tag, denied))
             fallback = tr('translator.kick_fallback')
-            # Forward the reason in the mode that matches its content: a JSON
-            # component stays JSON so jsonToComponent renders its colours, and
-            # a legacy ``§`` string stays plain text so the renderer draws the
-            # codes.  Nothing is flattened or converted in either direction.
-            body, chat_json = eagler.chat_passthrough(raw, fallback)
-            self._send(eagler.pack_deny_login(body, self.handshake_protocol,
-                                              chat_json=chat_json))
+            # The kick reason is flattened to plain text before it is sent: the
+            # browser client renders a chat component (jsonToComponent) but a
+            # JSON wall is exactly what the player should not have to read, so
+            # the body is always plain text regardless of what the server sent.
+            self._send(eagler.pack_deny_login(
+                reason or fallback, self.handshake_protocol, chat_json=False))
             self._fail(denied, notify_client=False)
             return
         if packet_id == vanilla.LOGIN_ENCRYPTION_REQUEST:

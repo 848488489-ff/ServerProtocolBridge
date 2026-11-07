@@ -72,19 +72,9 @@ class ProxyCore:
             self._shutdown_servers()
             raise
         self.log.info(tr('proxy.log.listeners_ready', listeners=', '.join(listeners)))
-        # Warm the server-list status cache off the event loop.  A cache hit
-        # answers immediately; a cache miss waits for one live target query so
-        # the client sees the real MOTD instead of a placeholder.  Prewarming
-        # makes that wait unlikely for the first browser connection.
-        if config.status_cache:
-            addresses = [config.target]
-            addresses.extend((config.routes or {}).values())
-            for address in addresses:
-                try:
-                    host_name, target_port = parse_address(address)
-                except (TypeError, ValueError):
-                    continue
-                self.warm_status_async(host_name, target_port)
+        # No status-cache pre-warm: server-list MOTD queries always hit the
+        # target live (caching was removed as meaningless), so there is nothing
+        # to warm and the first browser connection gets the real MOTD directly.
         return self.describe()
     def stop(self) -> None:
         if not self.running:
@@ -123,6 +113,7 @@ class ProxyCore:
             'target_source': (config.target or '').strip(),
             'target_resolved': self._resolved_target(),
             'routes': dict(config.routes or {}),
+            'suffix_route': bool(getattr(config, 'suffix_route', False)),
             'use_srv': bool(config.use_srv),
             'listeners': config.listeners() if self.running else [],
             'wss_url': config.wss_url() if self.running else None,
@@ -178,8 +169,12 @@ class ProxyCore:
                 self.stats.connection_closed()
     # ---------- routing / target resolution ----------
     def resolve_route(self, path: str) -> dict:
+        config = self.config
+        raw = (path or '/').strip()
+        key = raw.rstrip('/') or '/'
+        if getattr(config, 'suffix_route', False):
+            return self._resolve_suffix(raw, key)
         routes = self.config.routes or {}
-        key = (path or '/').rstrip('/') or '/'
         candidates = [key, path or '/']
         if key != '/':
             candidates.append(key + '/')
@@ -196,6 +191,33 @@ class ProxyCore:
         label = tr('proxy.route.default') if key == '/' \
             else tr('proxy.route.default_missing', path=path)
         return {'label': label, 'source': self.config.target, 'host': host, 'port': port}
+    def _resolve_suffix(self, raw: str, key: str) -> dict:
+        """Interpret the request path itself as the target server address.
+
+        ``/mc244.com`` forwards to mc244.com (SRV/default port), ``/hypixel.net``
+        to hypixel.net, ``/127.0.0.1:25565`` to 127.0.0.1:25565.  ``/`` or a path
+        that cannot stand for a server address falls back to the default target.
+        """
+        config = self.config
+        suffix = raw[1:] if raw.startswith('/') else raw
+        host, port = '', None
+        bad = (not suffix) or ('/' in suffix) or any(
+            ch.isspace() or ord(ch) < 0x20 for ch in suffix)
+        if not bad:
+            try:
+                host, port = parse_address(suffix)
+            except ValueError:
+                host, port = '', None
+        if host:
+            return {'label': tr('proxy.route.suffix', path='/' + suffix),
+                    'source': suffix, 'host': host, 'port': port}
+        if raw not in ('', '/'):
+            self.log.warn(tr('proxy.log.bad_suffix', path=raw))
+        target_host, target_port = parse_address(config.target)
+        label = tr('proxy.route.default') if key == '/' \
+            else tr('proxy.route.default_missing', path=raw)
+        return {'label': label, 'source': config.target,
+                'host': target_host, 'port': target_port}
     def resolve_endpoint(self, host: str, port: int | None) -> tuple[str, int]:
         if port:
             return host, int(port)
