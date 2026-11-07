@@ -963,8 +963,11 @@ class McpTests(unittest.TestCase):
         self.client = app.test_client()
 
     def tearDown(self):
-        self._config_module.resolve_path = self._original_resolve
+        # Save to the scratch directory first (the resolver still points there);
+        # restoring the real resolver before saving would write the test's
+        # config over the operator's real config.json.
         self.manager.save_config(self._original_config)
+        self._config_module.resolve_path = self._original_resolve
         webauth.auth_path = self._original_path
         webauth.clear_failures('')
         shutil.rmtree(self.tmp, ignore_errors=True)
