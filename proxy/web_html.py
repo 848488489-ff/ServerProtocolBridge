@@ -1942,18 +1942,20 @@ function bindEvents() {
   $('#btn-route-add').addEventListener('click', () => addRouteRow('', ''));
   $('#suffix_route').addEventListener('change', updateSuffixRouteState);
   /* Auto-save config fields as they change (debounced).  The settings search
-     box and panes with their own save buttons are marked data-no-autosave. */
-  $('#page-settings').addEventListener('input', (event) => {
-    const target = event.target;
-    if (target instanceof Element && !target.closest('[data-no-autosave]')) {
+     box and panes with their own save buttons are marked data-no-autosave.
+     The dashboard holds the connection fields (target, listen host, ports,
+     use_srv), which auto-save too so the "needs a restart" notice appears on
+     its own when one of them changes. */
+  const onConfigEdit = (event) => {
+    if (event.target instanceof Element
+        && !event.target.closest('[data-no-autosave]')) {
       scheduleAutoSave();
     }
-  });
-  $('#page-settings').addEventListener('change', (event) => {
-    const target = event.target;
-    if (target instanceof Element && !target.closest('[data-no-autosave]')) {
-      scheduleAutoSave();
-    }
+  };
+  ['#page-settings', '#page-dashboard'].forEach(selector => {
+    const page = $(selector);
+    page.addEventListener('input', onConfigEdit);
+    page.addEventListener('change', onConfigEdit);
   });
   /* Removing a route row changes the config even though it is a button. */
   $('#page-settings').addEventListener('click', (event) => {
