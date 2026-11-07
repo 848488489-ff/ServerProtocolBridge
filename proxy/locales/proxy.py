@@ -10,7 +10,11 @@ from __future__ import annotations
 EN = {
     # -- configuration / listener errors (raised towards the GUI) --
     'proxy.error.bad_config': 'Invalid configuration: %(problems)s',
-    'proxy.error.listen_failed': 'cannot listen on %(host)s:%(port)d (%(error)s)',
+    'proxy.error.listen_failed': 'cannot listen on %(host)s:%(port)d (%(error)s); '
+                                 'the port may be in use or reserved by the system',
+    'proxy.error.listen_failed_owner': 'cannot listen on %(host)s:%(port)d: the '
+                                       'port is already used by %(process)s '
+                                       '(PID %(pid)d)',
     'proxy.error.listener_failed': 'the %(scheme)s WebSocket listener did not start',
 
     # -- connection failure reasons (logged and sent to the player) --
@@ -129,7 +133,10 @@ EN = {
 ZH = {
     # -- configuration / listener errors --
     'proxy.error.bad_config': '配置有误: %(problems)s',
-    'proxy.error.listen_failed': '无法监听 %(host)s:%(port)d (%(error)s)',
+    'proxy.error.listen_failed': '无法监听 %(host)s:%(port)d (%(error)s); '
+                                 '端口可能被其他程序占用或被系统保留',
+    'proxy.error.listen_failed_owner': '无法监听 %(host)s:%(port)d: 该端口已被 '
+                                       '%(process)s (PID %(pid)d) 占用',
     'proxy.error.listener_failed': '%(scheme)s WebSocket 监听器未能启动',
 
     # -- connection failure reasons --
