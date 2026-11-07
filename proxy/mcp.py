@@ -1294,13 +1294,10 @@ def _handle_message(message) -> dict | None:
         arguments = params.get('arguments') or {}
         if not isinstance(arguments, dict):
             return _error(message_id, -32602, 'Invalid params')
-        handler = _HANDLERS.get(name)
-        if handler is None:
-            return _error(message_id, -32602, 'Unknown tool: %s' % name)
         try:
-            result = handler(arguments)
-        except Exception as exc:  # a tool failure is a result, not a transport error
-            result = _text_result({'error': str(exc)}, True)
+            result, _is_error = call_tool(name, arguments)
+        except KeyError:
+            return _error(message_id, -32602, 'Unknown tool: %s' % name)
         return {'jsonrpc': '2.0', 'id': message_id, 'result': result}
     if method == 'resources/list':
         return {'jsonrpc': '2.0', 'id': message_id,
@@ -1342,6 +1339,37 @@ def handle_payload(payload):
     return _handle_message(payload)
 
 
+def call_tool(name: str, arguments: dict | None = None) -> tuple[dict, bool]:
+    """Invoke one MCP tool and return ``(result, is_error)``.
+
+    This is the single implementation source for both the JSON-RPC ``/mcp``
+    endpoint and the REST ``/api/v1`` surface: a tool's behaviour is defined
+    once here and reused by both transports, so they cannot drift.
+
+    ``result`` is the tool's raw MCP result (``{'content': [...],
+    'isError': bool}``).  The JSON-RPC transport renders it verbatim; the
+    REST transport unwraps ``content[0].text`` (a JSON object for most
+    tools, plain text for ``export_logs``).  A tool-level failure is a
+    result, not a transport error, exactly as MCP specifies.
+
+    Raises :class:`KeyError` for an unknown tool name and :class:`TypeError`
+    for non-dict arguments.
+    """
+    name = str(name or '').strip()
+    if arguments is None:
+        arguments = {}
+    if not isinstance(arguments, dict):
+        raise TypeError('arguments must be an object')
+    handler = _HANDLERS.get(name)
+    if handler is None:
+        raise KeyError(name)
+    try:
+        result = handler(arguments)
+    except Exception as exc:  # a tool failure is a result, not a transport error
+        result = _text_result({'error': str(exc)}, True)
+    return result, bool(result.get('isError'))
+
+
 # ---------------------------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------------------------
@@ -1350,7 +1378,7 @@ def _presented_key(headers) -> str:
     value = (headers.get('Authorization') or '').strip()
     if value.lower().startswith('bearer '):
         return value[7:].strip()
-    return (headers.get('X-MCP-Key') or '').strip()
+    return (headers.get('X-MCP-Key') or headers.get('X-API-Key') or '').strip()
 
 
 def authorized(remote_addr: str, headers) -> bool:

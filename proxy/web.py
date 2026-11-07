@@ -14,7 +14,7 @@ them schedules a restart of this listener and reports the new URL.
 
 from __future__ import annotations
 
-from . import (web_routes, webauth)
+from . import (api_routes, web_routes, webauth)
 from .i18n import (get_language, tr)
 from .runtime import get_manager
 from .web_html import LOGIN_HTML
@@ -104,6 +104,10 @@ def create_app(config_path: str | None = None) -> Flask:
         if not webauth.is_enabled():
             return None
         if request.path in ('/login', '/favicon.ico', '/mcp'):
+            return None
+        if request.path.startswith('/api/v1/'):
+            # The automation API authenticates itself with the MCP key (or the
+            # loopback exemption); it must not sit behind the session cookie.
             return None
         if webauth.is_loopback(request.remote_addr or ''):
             return None
@@ -220,4 +224,5 @@ def create_app(config_path: str | None = None) -> Flask:
         return response
 
     web_routes.register(app, fail)
+    api_routes.register(app)
     return app
