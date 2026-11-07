@@ -476,7 +476,7 @@ def _tool_update_config(arguments: dict) -> dict:
     if not isinstance(body, dict):
         raise ValueError('config must be an object')
     try:
-        config, language_changed, web_changed = _save_body(body)
+        config, language_changed, web_changed, service_restart = _save_body(body)
     except ValueError as exc:
         return _text_result({'error': str(exc)}, True)
     return _text_result({
@@ -486,6 +486,7 @@ def _tool_update_config(arguments: dict) -> dict:
         'problems': config.validate(),
         'language_changed': language_changed,
         'web_restart': web_changed,
+        'service_restart': service_restart,
         'web_url': config.web_url(),
     })
 

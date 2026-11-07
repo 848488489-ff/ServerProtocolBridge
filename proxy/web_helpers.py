@@ -176,17 +176,50 @@ def _config_from_body(body: dict) -> config_module.Config:
     if problems:
         raise ValueError('\n'.join(problems))
     return config
-def _save_body(body: dict) -> tuple[config_module.Config, bool, bool]:
+def _save_body(body: dict) -> tuple[config_module.Config, bool, bool, bool]:
     manager = get_manager()
     old = manager.config
     config = _config_from_body(body)
     web_changed = ((old.web_host or '').strip() != (config.web_host or '').strip()
                    or int(old.web_port) != int(config.web_port))
     language_changed = (old.language or '').lower() != (config.language or '').lower()
+    # Whether the running proxy must be restarted for the new configuration to
+    # take effect: the service reads these fields when it starts, so changing
+    # any of them while it is up needs a restart.  UI/theme/language/log fields
+    # apply live and are deliberately excluded.
+    service_restart = (bool(manager.running)
+                       and _needs_service_restart(old, config))
     manager.save_config(config)
     if web_changed:
         _schedule_web_restart(config.web_host, config.web_port)
-    return manager.config, language_changed, web_changed
+    return manager.config, language_changed, web_changed, service_restart
+
+
+# Fields the proxy reads at startup (or only applies at startup).  Changing any
+# of these while the service is running requires a restart; the rest of the
+# configuration applies live (language, log level/buffer, theme/appearance,
+# Web UI bind handled separately, and GUI-only switches).
+_RESTART_FIELDS = frozenset({
+    'listen_host', 'wss_port', 'ws_port',
+    'target', 'routes', 'suffix_route', 'use_srv',
+    'rewrite_handshake_host', 'eagler_translate', 'login_ack',
+    'resource_pack_mode',
+    'server_brand', 'server_brand_version', 'spoof_client', 'spoof_brand',
+    'tls_enabled',
+    'cert_dir', 'cert_common_name', 'cert_extra_names', 'cert_days',
+    'cert_generator',
+    'connect_timeout', 'heartbeat_sec', 'max_payload_mb',
+    'status_cache', 'status_cache_ttl',
+})
+
+
+def _needs_service_restart(old: config_module.Config,
+                           new: config_module.Config) -> bool:
+    """True when a running proxy would need a restart to pick up *new*."""
+    for name in _RESTART_FIELDS:
+        if getattr(old, name) != getattr(new, name):
+            return True
+    return False
 def _schedule_web_restart(host: str, port: int) -> None:
     def run() -> None:
         time.sleep(1.0)
