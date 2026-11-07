@@ -127,6 +127,12 @@ EN = {
     'web.mcp_saved': 'MCP key updated.',
     'web.mcp_cleared': 'MCP key removed.',
     'web.mcp_copy': 'Copy endpoint',
+    'web.api_section': 'REST API',
+    'web.api_endpoint': 'API base URL',
+    'web.api_docs_label': 'Documentation',
+    'web.api_open_docs': 'Open /api/v1/docs',
+    'web.api_auth_hint': 'Automation JSON API under /api/v1/. Authentication matches the MCP endpoint: loopback is free, otherwise the MCP key (Bearer / X-MCP-Key / X-API-Key). See the docs page for every endpoint and curl examples.',
+    'web.api_copy': 'Copy API URL',
 }
 
 ZH = {
@@ -254,4 +260,10 @@ ZH = {
     'web.mcp_saved': 'MCP 密钥已更新。',
     'web.mcp_cleared': 'MCP 密钥已移除。',
     'web.mcp_copy': '复制端点',
+    'web.api_section': 'REST API',
+    'web.api_endpoint': 'API 基础地址',
+    'web.api_docs_label': '说明文档',
+    'web.api_open_docs': '打开 /api/v1/docs',
+    'web.api_auth_hint': '/api/v1/ 下的面向自动化 JSON API。鉴权与 MCP 端点一致：回环免密，否则需 MCP 密钥（Bearer / X-MCP-Key / X-API-Key）。全部端点与 curl 示例见说明页。',
+    'web.api_copy': '复制 API 地址',
 }

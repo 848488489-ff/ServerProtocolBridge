@@ -534,6 +534,22 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
         </div>
       </div>
 
+      <div class="tabpane card" data-pane="api">
+        <h2 data-i18n="web.api_section"></h2>
+        <div class="grid2">
+          <label data-i18n="web.api_endpoint"></label>
+          <input id="api-endpoint" readonly>
+          <label data-i18n="web.api_docs_label"></label>
+          <a class="btn ghost" id="btn-api-docs" target="_blank" rel="noreferrer"
+             data-i18n="web.api_open_docs"></a>
+          <div class="hint" data-i18n="web.api_auth_hint"></div>
+        </div>
+        <div class="actions" style="margin-top:12px">
+          <button class="btn ghost" id="btn-copy-api" data-i18n="web.api_copy"></button>
+          <span class="hint" id="api-msg"></span>
+        </div>
+      </div>
+
       <div class="tabpane card" data-pane="cert">
         <h2 data-i18n="gui.section.certificate"></h2>
         <div class="grid2">
@@ -902,6 +918,7 @@ function renderConfig(data) {
   fillConfig(data.config, data.options || {}, data.problems || []);
   if (data.auth) renderAuth(data.auth);
   if (data.mcp) renderMcp(data.mcp);
+  if (data.api) renderApi(data.api);
 }
 
 /* The spoof brand is only meaningful for the "custom" client-identity preset:
@@ -1208,6 +1225,20 @@ function renderMcp(mcp) {
   const endpoint = $('#mcp-endpoint');
   if (endpoint) endpoint.value = state.mcp.endpoint || '';
   updateMcpAvailability();
+}
+
+/* ---------- REST API ----------
+   The automation JSON API shares the Web UI listener.  This card shows its
+   base URL and links to the in-program documentation page. */
+function renderApi(api) {
+  state.api = api || { endpoint: '', docs: '' };
+  const endpoint = $('#api-endpoint');
+  if (endpoint) endpoint.value = state.api.endpoint || '';
+  const docs = $('#btn-api-docs');
+  if (docs) {
+    docs.href = state.api.docs || '/api/v1/docs';
+    docs.hidden = !state.api.docs;
+  }
 }
 
 function updateMcpAvailability() {
@@ -1831,6 +1862,7 @@ function bindEvents() {
   $('#btn-save-mcp').addEventListener('click', saveMcp);
   $('#btn-clear-mcp').addEventListener('click', clearMcp);
   $('#btn-copy-mcp').addEventListener('click', () => copyText($('#mcp-endpoint').value));
+  $('#btn-copy-api').addEventListener('click', () => copyText($('#api-endpoint').value));
   $('#btn-route-add').addEventListener('click', () => addRouteRow('', ''));
   $('#suffix_route').addEventListener('change', updateSuffixRouteState);
   $('#btn-web-restart').addEventListener('click', async () => {

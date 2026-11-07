@@ -18,7 +18,7 @@ from .gui_shell import update_window_title as _update_native_title
 from .runtime import get_manager
 from .utils import config_dir
 from .version import VERSION
-from .web_helpers import (_account_payload, _cert_payload, _config_options, _i18n_payload, _jobs, _jobs_lock, _mcp_info, _ms_worker, _prune_jobs, _save_body, _schedule_web_restart, _web_info)
+from .web_helpers import (_account_payload, _api_info, _cert_payload, _config_options, _i18n_payload, _jobs, _jobs_lock, _mcp_info, _ms_worker, _prune_jobs, _save_body, _schedule_web_restart, _web_info)
 from .web_html import INDEX_HTML
 from flask import (Response, jsonify, request, session)
 def register(app, fail):
@@ -55,6 +55,7 @@ def register(app, fail):
         data['log_seq'] = manager.hub.seq
         data['auth'] = webauth.state()
         data['mcp'] = _mcp_info()
+        data['api'] = _api_info()
         data['loopback_bind'] = data['mcp']['loopback_bind']
         return jsonify(data)
     @app.route('/api/config', methods=['GET', 'POST'])
@@ -71,6 +72,7 @@ def register(app, fail):
                 'web': _web_info(),
                 'auth': webauth.state(),
                 'mcp': _mcp_info(),
+                'api': _api_info(),
                 'loopback_bind': webauth.is_loopback_host(manager.config.web_host),
             })
         body = request.get_json(silent=True) or {}
@@ -101,6 +103,7 @@ def register(app, fail):
             'language_changed': language_changed,
             'auth': webauth.state(),
             'mcp': _mcp_info(),
+            'api': _api_info(),
             'loopback_bind': webauth.is_loopback_host(config.web_host),
         })
     @app.route('/api/auth', methods=['GET', 'POST'])

@@ -75,6 +75,7 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(body['ok'])
         self.assertEqual(body['version'], VERSION)
         self.assertEqual(body['name'], 'server-protocol-bridge')
+        self.assertEqual(body['docs'], '/api/v1/docs')
         names = {tool['name'] for tool in body['tools']}
         self.assertIn('status', names)
         self.assertIn('get_config', names)
@@ -82,6 +83,31 @@ class ApiTests(unittest.TestCase):
         self.assertNotIn('get_tutorial', names)
         self.assertNotIn('open_tutorial', names)
         self.assertGreaterEqual(len(body['tools']), 30)
+
+    def test_docs_page_bilingual_default_english(self):
+        response = self._get('/docs')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('text/html', response.content_type)
+        html = response.get_data(as_text=True)
+        # English is the default, Chinese block starts hidden.
+        self.assertIn('<html lang="en" data-lang="en">', html)
+        self.assertIn('<div class="lang-zh" hidden>', html)
+        self.assertIn('<div class="lang-en">', html)
+        # The switch uses each language's native name, never "英文"/"EN".
+        self.assertIn('>中文<', html)
+        self.assertIn('>English<', html)
+        self.assertNotIn('英文', html)
+        self.assertNotIn("'EN'", html)
+        # Both languages carry the endpoint surface.
+        self.assertIn('/api/v1/status', html)
+        self.assertIn('/api/v1/service/start', html)
+        self.assertIn('/api/v1/tools/&lt;name&gt;', html)
+
+    def test_docs_page_needs_no_auth(self):
+        # A remote caller without a key can still read the documentation page.
+        response = self.client.get('/api/v1/docs', **self._remote)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('text/html', response.content_type)
 
     def test_status_and_config(self):
         response = self._get('/status')
