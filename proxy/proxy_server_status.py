@@ -6,11 +6,12 @@ through ``self``.
 
 import asyncio
 import json
+import os
 import socket
 import ssl
 import threading
 import time
-from . import resolver
+from . import portowner, resolver
 from .i18n import tr
 from .proxy import (Bridge, STATUS_TIMEOUT, WS_MAX_QUEUE, WS_WRITE_LIMIT, _NoDelayServerConnection)
 from .version import (SERVICE_NAME, VERSION)
@@ -130,14 +131,27 @@ class ProxyStatus:
         host = config.listen_host or '127.0.0.1'
         family = socket.AF_INET6 if ':' in host else socket.AF_INET
         listener = socket.socket(family, socket.SOCK_STREAM)
-        listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if os.name == 'nt' and hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+            # Windows: SO_REUSEADDR lets another process bind the same port
+            # (port hijacking) and turns an honest conflict into a confusing
+            # WinError 10013.  Either this process owns the port or start()
+            # fails; a listener is never shared and never moved.
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        else:
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             listener.bind((host, int(port)))
             listener.listen(128)
         except OSError as exc:
             listener.close()
+            owner = portowner.listener(int(port))
+            if owner:
+                raise OSError(tr('proxy.error.listen_failed_owner',
+                                 host=host, port=int(port),
+                                 process=owner['process'],
+                                 pid=owner['pid'])) from None
             raise OSError(tr('proxy.error.listen_failed',
-                             host=host, port=int(port), error=exc))
+                             host=host, port=int(port), error=exc)) from None
 
         entry = {
             'server': None,

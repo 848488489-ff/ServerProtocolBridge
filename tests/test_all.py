@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from proxy import certs, config as config_module, der, resolver, webauth, wsproto, x509  # noqa: E402
+from proxy import certs, config as config_module, der, portowner, resolver, webauth, wsproto, x509  # noqa: E402
 from proxy.config import Config  # noqa: E402
 from proxy.i18n import tr  # noqa: E402
 from proxy.logger import Logger  # noqa: E402
@@ -534,6 +534,62 @@ class LoggerLevelTests(unittest.TestCase):
         self.assertEqual(lines, ['warn', 'debug'])
 
 
+# ---------------------------------------------------------------- Listener failures
+
+
+def _block_port():
+    """Hold a loopback port exclusively so a second bind must fail.
+
+    SO_EXCLUSIVEADDRUSE matters on Windows: without it a second socket is
+    allowed to bind the same port, and the test would not exercise the failure.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    exclusive = getattr(socket, 'SO_EXCLUSIVEADDRUSE', None)
+    if exclusive is not None:
+        sock.setsockopt(socket.SOL_SOCKET, exclusive, 1)
+    sock.bind(('127.0.0.1', 0))
+    sock.listen(1)
+    return sock, sock.getsockname()[1]
+
+
+class ListenerFailureTests(unittest.TestCase):
+    """A busy port is fatal: no fallback port, no skipped listener."""
+
+    def test_port_owner_lookup_finds_the_listener(self):
+        blocker, port = _block_port()
+        try:
+            owner = portowner.listener(port)
+            if owner is None:
+                self.skipTest('no port-owner lookup available on this platform')
+            self.assertEqual(owner['pid'], os.getpid())
+        finally:
+            blocker.close()
+
+    def test_busy_port_refuses_to_start(self):
+        blocker, port = _block_port()
+        config = Config()
+        config.tls_enabled = False
+        config.target = '127.0.0.1:25565'
+        config.listen_host = '127.0.0.1'
+        config.wss_port = 0
+        config.ws_port = port
+        config.heartbeat_sec = 0
+        server = ProxyServer(config, Logger('error', echo=False))
+        try:
+            with self.assertRaises(OSError) as caught:
+                server.start()
+            message = str(caught.exception)
+            self.assertIn(str(port), message)
+            self.assertFalse(server.running)
+            self.assertEqual(server._servers, [])
+            owner = portowner.listener(port)
+            if owner is not None:
+                self.assertIn('PID %d' % os.getpid(), message)
+                self.assertIn(owner['process'], message)
+        finally:
+            blocker.close()
+
+
 # ---------------------------------------------------------------- Configuration
 
 
@@ -884,10 +940,19 @@ class McpTests(unittest.TestCase):
         self._original_path = webauth.auth_path
         webauth.auth_path = lambda: self.tmp / 'web_auth.json'
         webauth.clear_failures('')
+        from proxy import config as config_module
         from proxy.runtime import get_manager
 
         self.manager = get_manager()
-        self._original_host = self.manager.config.web_host
+        # The manager is process-wide and normally reads and writes the real
+        # config.json in the user's profile.  Point it at the test directory so
+        # a machine whose saved config has suffix_route/routes set cannot make
+        # a tool test fail, and so the tests never edit the operator's file.
+        self._config_module = config_module
+        self._original_resolve = config_module.resolve_path
+        config_module.resolve_path = lambda name: self.tmp / name
+        self._original_config = config_module.Config.from_dict(
+            self.manager.config.to_dict())
         # A password/key may only be set on a non-loopback bind, which is what
         # the authentication cases below exercise.
         self.manager.config.web_host = '0.0.0.0'
@@ -898,7 +963,8 @@ class McpTests(unittest.TestCase):
         self.client = app.test_client()
 
     def tearDown(self):
-        self.manager.config.web_host = self._original_host
+        self._config_module.resolve_path = self._original_resolve
+        self.manager.save_config(self._original_config)
         webauth.auth_path = self._original_path
         webauth.clear_failures('')
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -1136,7 +1202,7 @@ class McpTests(unittest.TestCase):
                            'arguments': {'path': 'survival/',
                                          'target': '127.0.0.1:25565'}}})
             payload = json.loads(added.get_json()['result']['content'][0]['text'])
-            self.assertTrue(payload['ok'])
+            self.assertTrue(payload['ok'], payload)
             self.assertEqual(payload['routes']['/survival'], '127.0.0.1:25565')
 
             listed = self._rpc({
