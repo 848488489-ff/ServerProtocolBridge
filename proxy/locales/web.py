@@ -134,6 +134,8 @@ EN = {
     'web.api_auth_hint': 'Automation JSON API under /api/v1/. Authentication matches the MCP endpoint: loopback is free, otherwise the MCP key (Bearer / X-MCP-Key / X-API-Key). See the docs page for every endpoint and curl examples.',
     'web.api_copy': 'Copy API URL',
     'web.service_restart_hint': 'Some settings only take effect after the service is restarted.',
+    'web.auto_saved': 'Auto-saved.',
+    'web.auto_save_error': 'Auto-save failed.',
 }
 
 ZH = {
@@ -268,4 +270,6 @@ ZH = {
     'web.api_auth_hint': '/api/v1/ 下的面向自动化 JSON API。鉴权与 MCP 端点一致：回环免密，否则需 MCP 密钥（Bearer / X-MCP-Key / X-API-Key）。全部端点与 curl 示例见说明页。',
     'web.api_copy': '复制 API 地址',
     'web.service_restart_hint': '部分设置项需重新启动服务后才会生效。',
+    'web.auto_saved': '已自动保存。',
+    'web.auto_save_error': '自动保存失败。',
 }

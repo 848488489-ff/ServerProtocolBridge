@@ -185,10 +185,9 @@ def _save_body(body: dict) -> tuple[config_module.Config, bool, bool, bool]:
     language_changed = (old.language or '').lower() != (config.language or '').lower()
     # Whether the running proxy must be restarted for the new configuration to
     # take effect: the service reads these fields when it starts, so changing
-    # any of them while it is up needs a restart.  UI/theme/language/log fields
-    # apply live and are deliberately excluded.
-    service_restart = (bool(manager.running)
-                       and _needs_service_restart(old, config))
+    # any of them needs a restart (or a start, if it is not running yet).
+    # UI/theme/language/log fields apply live and are deliberately excluded.
+    service_restart = _needs_service_restart(old, config)
     manager.save_config(config)
     if web_changed:
         _schedule_web_restart(config.web_host, config.web_port)

@@ -18,7 +18,7 @@ from .gui_shell import update_window_title as _update_native_title
 from .runtime import get_manager
 from .utils import config_dir
 from .version import VERSION
-from .web_helpers import (_account_payload, _api_info, _cert_payload, _config_options, _i18n_payload, _jobs, _jobs_lock, _mcp_info, _ms_worker, _prune_jobs, _save_body, _schedule_web_restart, _web_info)
+from .web_helpers import (_account_payload, _api_info, _cert_payload, _config_options, _i18n_payload, _jobs, _jobs_lock, _mcp_info, _ms_worker, _needs_service_restart, _prune_jobs, _save_body, _schedule_web_restart, _web_info)
 from .web_html import INDEX_HTML
 from flask import (Response, jsonify, request, session)
 def register(app, fail):
@@ -84,6 +84,10 @@ def register(app, fail):
             web_changed = ((old.web_host or '').strip()
                            != (config.web_host or '').strip()
                            or int(old.web_port) != int(config.web_port))
+            # The reset restores the defaults, so whether the running proxy
+            # needs a restart is decided by comparing those defaults with the
+            # fields it reads at startup.
+            service_restart = _needs_service_restart(old, config)
             manager.save_config(config)
             if web_changed:
                 _schedule_web_restart(config.web_host, config.web_port)
