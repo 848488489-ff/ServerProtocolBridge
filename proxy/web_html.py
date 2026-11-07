@@ -219,6 +219,7 @@ tr:last-child td { border-bottom: 0; }
 .log-warn { color: #f0b45a; }
 .log-error { color: #ff7b7b; }
 .hint { color: var(--muted); font-size: 12px; }
+.hint.warn { color: var(--warn); font-weight: 600; }
 .problems { color: var(--warn); font-size: 12px; white-space: pre-line; margin-top: 8px; }
 .banner {
   display: none; border: 1px solid var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--card));
@@ -374,6 +375,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
         <button class="btn primary" data-action="save-config" data-i18n="gui.button.save_config"></button>
         <button class="btn ghost" data-action="reset-defaults" data-i18n="gui.button.reset_defaults"></button>
         <span class="spacer"></span>
+        <span class="hint warn" id="service-restart-note" hidden
+              data-i18n="web.service_restart_hint"></span>
         <span class="hint" data-i18n="gui.hint.endpoint"></span>
       </div>
 
@@ -540,8 +543,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <label data-i18n="web.api_endpoint"></label>
           <input id="api-endpoint" readonly>
           <label data-i18n="web.api_docs_label"></label>
-          <a class="btn ghost" id="btn-api-docs" target="_blank" rel="noreferrer"
-             data-i18n="web.api_open_docs"></a>
+          <a class="btn ghost" id="btn-api-docs" target="_blank" rel="noreferrer"></a>
           <div class="hint" data-i18n="web.api_auth_hint"></div>
         </div>
         <div class="actions" style="margin-top:12px">
@@ -1236,7 +1238,9 @@ function renderApi(api) {
   if (endpoint) endpoint.value = state.api.endpoint || '';
   const docs = $('#btn-api-docs');
   if (docs) {
-    docs.href = state.api.docs || '/api/v1/docs';
+    const url = state.api.docs || '/api/v1/docs';
+    docs.href = url;
+    docs.textContent = t('web.api_open_docs', { url });
     docs.hidden = !state.api.docs;
   }
 }
@@ -1354,6 +1358,11 @@ async function saveConfig(silent) {
   state.config = data.config;
   state.seenRevision = data.revision;
   renderProblems(data.problems || []);
+  // A running proxy reads some settings only at startup: tell the user a
+  // restart is needed, but never restart it automatically (no hot reload).
+  const note = $('#service-restart-note');
+  if (note) note.hidden = !data.service_restart;
+  if (data.service_restart) toast(t('web.service_restart_hint'), 'warn', 6000);
   if (!silent) toast(t('web.saved'), 'ok');
   if (data.language_changed) {
     toast(t('web.language_reload'), 'warn');
@@ -1392,6 +1401,8 @@ async function startService() {
   try {
     await saveConfig(true);
     await api('/api/service/start', { method: 'POST', body: {} });
+    const note = $('#service-restart-note');
+    if (note) note.hidden = true;
     toast(t('web.started'), 'ok');
     loadStatus();
   } catch (err) {

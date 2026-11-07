@@ -193,6 +193,50 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertFalse(response.get_json()['ok'])
 
+    # ------------------------------------------------------ restart required
+
+    def test_needs_service_restart(self):
+        from proxy.web_helpers import _needs_service_restart
+        from proxy.config import Config
+
+        old = Config()
+        new = Config()
+        # A proxy-runtime field change requires a restart.
+        new.target = 'other.example:25565'
+        self.assertTrue(_needs_service_restart(old, new))
+        # A live-applied field does not.
+        new = Config()
+        new.log_max_lines = 999
+        self.assertFalse(_needs_service_restart(old, new))
+        new = Config()
+        new.theme = 'dark'
+        self.assertFalse(_needs_service_restart(old, new))
+        # Routes are restart-required too.
+        new = Config()
+        new.routes = {'/x': 'a:1'}
+        self.assertTrue(_needs_service_restart(old, new))
+
+    def test_config_save_reports_service_restart(self):
+        # While the service is running, changing a restart field is reported.
+        from proxy import runtime as runtime_module
+
+        original_state = self.manager.state
+        snapshot = self.manager.config.to_dict()
+        self.manager.set_state(runtime_module.RUNNING)
+        try:
+            response = self._post('/config', {'target': 'restart-test.example:25565'})
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.get_json()['service_restart'])
+
+            # Changing only a live field does not need a restart.
+            response = self._post('/config', {'log_max_lines': 999})
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.get_json()['service_restart'])
+        finally:
+            self.manager.set_state(original_state)
+            self.manager.save_config(
+                config_module.Config.from_dict(snapshot))
+
     # -------------------------------------------------------------- auth gate
 
     def test_loopback_needs_no_auth(self):

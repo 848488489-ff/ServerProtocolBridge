@@ -89,7 +89,7 @@ def register(app, fail):
                 _schedule_web_restart(config.web_host, config.web_port)
         else:
             try:
-                config, language_changed, web_changed = _save_body(body)
+                config, language_changed, web_changed, service_restart = _save_body(body)
             except ValueError as exc:
                 return fail(exc)
         return jsonify({
@@ -101,6 +101,7 @@ def register(app, fail):
             'web_restart': web_changed,
             'web_url': config.web_url(),
             'language_changed': language_changed,
+            'service_restart': service_restart,
             'auth': webauth.state(),
             'mcp': _mcp_info(),
             'api': _api_info(),
