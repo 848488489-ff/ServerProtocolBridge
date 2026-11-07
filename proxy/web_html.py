@@ -219,6 +219,8 @@ tr:last-child td { border-bottom: 0; }
 .log-warn { color: #f0b45a; }
 .log-error { color: #ff7b7b; }
 .hint { color: var(--muted); font-size: 12px; }
+.auto-save-indicator { color: var(--success); font-weight: 600; opacity: 0; transition: opacity .25s; }
+.auto-save-indicator.show { opacity: 1; }
 .problems { color: var(--warn); font-size: 12px; white-space: pre-line; margin-top: 8px; }
 .banner {
   display: none; border: 1px solid var(--warn); background: color-mix(in srgb, var(--warn) 12%, var(--card));
@@ -385,16 +387,17 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
         <button class="btn primary" data-action="save-config" data-i18n="gui.button.save_config"></button>
         <button class="btn ghost" data-action="reset-defaults" data-i18n="gui.button.reset_defaults"></button>
         <span class="spacer"></span>
+        <span class="hint auto-save-indicator" id="auto-save-indicator" hidden></span>
         <span class="hint" data-i18n="gui.hint.endpoint"></span>
       </div>
 
-      <div class="settings-search">
+      <div class="settings-search" data-no-autosave>
         <input type="search" id="settings-search" class="field"
                data-i18n-placeholder="web.settings_search" autocomplete="off">
         <span class="hint" id="settings-search-empty" data-i18n="web.settings_no_match" hidden></span>
       </div>
 
-      <div class="tabpane card" data-pane="appearance">
+      <div class="tabpane card" data-pane="appearance" data-no-autosave>
         <h2 data-i18n="gui.section.appearance"></h2>
         <div class="grid2">
           <label data-i18n="gui.label.appearance_preset"></label>
@@ -500,7 +503,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
         <div class="hint" data-i18n="gui.hint.log_max_lines"></div>
       </div>
 
-      <div class="tabpane card" data-pane="web">
+      <div class="tabpane card" data-pane="web" data-no-autosave>
         <h2 data-i18n="gui.section.web"></h2>
         <div class="grid2">
           <label data-i18n="gui.label.web_host"></label>
@@ -526,7 +529,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
         </div>
       </div>
 
-      <div class="tabpane card" data-pane="mcp">
+      <div class="tabpane card" data-pane="mcp" data-no-autosave>
         <h2 data-i18n="web.mcp_section"></h2>
         <div class="grid2">
           <label data-i18n="web.mcp_endpoint"></label>
@@ -545,7 +548,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
         </div>
       </div>
 
-      <div class="tabpane card" data-pane="api">
+      <div class="tabpane card" data-pane="api" data-no-autosave>
         <h2 data-i18n="web.api_section"></h2>
         <div class="grid2">
           <label data-i18n="web.api_endpoint"></label>
@@ -1377,6 +1380,44 @@ async function loadConfig() {
   }
 }
 
+/* ---------- auto save ----------
+   Editing a config field saves it automatically after a short debounce, so the
+   "needs a restart" notice appears on its own without a manual save.  The
+   save is silent (no toast): the savebar indicator and the persistent
+   restart notice are the feedback.  Panes marked data-no-autosave keep their
+   own save buttons (appearance, Web UI/auth, MCP key, API info) and the
+   settings search box is excluded. */
+let autoSaveTimer = null;
+let autoSaveFlashTimer = null;
+
+function scheduleAutoSave() {
+  clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(runAutoSave, 900);
+}
+
+async function runAutoSave() {
+  autoSaveTimer = null;
+  try {
+    await saveConfig(true);
+    flashAutoSaved(t('web.auto_saved'));
+  } catch (err) {
+    flashAutoSaved(t('web.auto_save_error'));
+  }
+}
+
+function flashAutoSaved(message) {
+  const indicator = $('#auto-save-indicator');
+  if (!indicator) return;
+  indicator.textContent = message;
+  indicator.hidden = false;
+  requestAnimationFrame(() => indicator.classList.add('show'));
+  clearTimeout(autoSaveFlashTimer);
+  autoSaveFlashTimer = setTimeout(() => {
+    indicator.classList.remove('show');
+    autoSaveFlashTimer = setTimeout(() => { indicator.hidden = true; }, 300);
+  }, 1800);
+}
+
 async function saveConfig(silent) {
   const config = collectConfig();
   const data = await api('/api/config', { method: 'POST', body: config });
@@ -1900,6 +1941,26 @@ function bindEvents() {
   $('#btn-service-restart-close').addEventListener('click', () => renderServiceRestart(false));
   $('#btn-route-add').addEventListener('click', () => addRouteRow('', ''));
   $('#suffix_route').addEventListener('change', updateSuffixRouteState);
+  /* Auto-save config fields as they change (debounced).  The settings search
+     box and panes with their own save buttons are marked data-no-autosave. */
+  $('#page-settings').addEventListener('input', (event) => {
+    const target = event.target;
+    if (target instanceof Element && !target.closest('[data-no-autosave]')) {
+      scheduleAutoSave();
+    }
+  });
+  $('#page-settings').addEventListener('change', (event) => {
+    const target = event.target;
+    if (target instanceof Element && !target.closest('[data-no-autosave]')) {
+      scheduleAutoSave();
+    }
+  });
+  /* Removing a route row changes the config even though it is a button. */
+  $('#page-settings').addEventListener('click', (event) => {
+    if (event.target instanceof Element && event.target.closest('.route-remove')) {
+      scheduleAutoSave();
+    }
+  });
   $('#btn-web-restart').addEventListener('click', async () => {
     try {
       const data = await api('/api/web/restart', { method: 'POST', body: {} });

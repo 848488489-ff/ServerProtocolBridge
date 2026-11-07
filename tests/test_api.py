@@ -217,12 +217,10 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(_needs_service_restart(old, new))
 
     def test_config_save_reports_service_restart(self):
-        # While the service is running, changing a restart field is reported.
-        from proxy import runtime as runtime_module
-
-        original_state = self.manager.state
+        # Changing a restart field is reported whether or not the service is
+        # running: the notice tells the user to start/restart the service, and
+        # the fields are read at startup either way.
         snapshot = self.manager.config.to_dict()
-        self.manager.set_state(runtime_module.RUNNING)
         try:
             response = self._post('/config', {'target': 'restart-test.example:25565'})
             self.assertEqual(response.status_code, 200)
@@ -233,7 +231,28 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertFalse(response.get_json()['service_restart'])
         finally:
-            self.manager.set_state(original_state)
+            self.manager.save_config(
+                config_module.Config.from_dict(snapshot))
+
+    def test_config_reset_reports_service_restart(self):
+        # Resetting to defaults also reports whether a restart is needed.  The
+        # reset branch lives on the Web UI /api/config route (the REST /api/v1
+        # surface reuses MCP update_config, which has no reset concept).
+        snapshot = self.manager.config.to_dict()
+        try:
+            response = self.client.post('/api/config',
+                                        json={'target': 'reset-test.example:25565'})
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.get_json()['service_restart'])
+            response = self.client.post('/api/config', json={'reset': True})
+            self.assertEqual(response.status_code, 200)
+            self.assertTrue(response.get_json()['service_restart'])
+            # The reset restored the default target, so a further reset (no
+            # change) no longer needs one.
+            response = self.client.post('/api/config', json={'reset': True})
+            self.assertEqual(response.status_code, 200)
+            self.assertFalse(response.get_json()['service_restart'])
+        finally:
             self.manager.save_config(
                 config_module.Config.from_dict(snapshot))
 
