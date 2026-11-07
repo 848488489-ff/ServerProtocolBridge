@@ -12,7 +12,7 @@ import re
 import threading
 import time
 import uuid
-from . import (accounts, certs, config as config_module, eagler, mcp, third_party, tutorial, update, webauth)
+from . import (accounts, certs, config as config_module, eagler, mcp, third_party, update, webauth)
 from .i18n import (LANGUAGES, get_language, tr)
 from .gui_shell import update_window_title as _update_native_title
 from .runtime import get_manager
@@ -484,20 +484,6 @@ def register(app, fail):
                  'url': item['url']} for item in third_party.COMPONENTS],
             'stdlib': list(third_party.STDLIB_MODULES),
         })
-    @app.route('/api/tutorial')
-    def api_tutorial():
-        kind = request.args.get('kind', 'mcp')
-        return jsonify({'ok': True, **tutorial.tutorial(kind)})
-    @app.route('/api/tutorial/open', methods=['POST'])
-    def api_tutorial_open():
-        body = request.get_json(silent=True) or {}
-        kind = str(body.get('kind') or 'mcp')
-        language = body.get('language')
-        try:
-            path = tutorial.open_tutorial(kind, language)
-        except Exception as exc:
-            return fail(str(exc), status=500)
-        return jsonify({'ok': True, 'path': path})
     @app.route('/api/web/restart', methods=['POST'])
     def api_web_restart():
         config = get_manager().config

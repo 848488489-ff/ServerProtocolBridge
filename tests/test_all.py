@@ -1090,8 +1090,7 @@ class McpTests(unittest.TestCase):
             'add_thirdparty_account', 'start_microsoft_login',
             'get_microsoft_job', 'export_logs', 'reset_config',
             'set_appearance', 'list_routes', 'set_route', 'remove_route',
-            'reload_config', 'set_log_limit', 'get_tutorial',
-            'open_tutorial'}.issubset(names))
+            'reload_config', 'set_log_limit'}.issubset(names))
 
     def test_resources_and_prompts(self):
         listing = self._rpc({'jsonrpc': '2.0', 'id': 1, 'method': 'resources/list'})
@@ -1234,7 +1233,7 @@ class McpTests(unittest.TestCase):
         finally:
             manager.save_config(config_module.Config.from_dict(original))
 
-    def test_reload_loglimit_and_tutorial_tools(self):
+    def test_reload_and_loglimit_tools(self):
         from proxy import config as config_module
 
         manager = self.manager
@@ -1256,20 +1255,6 @@ class McpTests(unittest.TestCase):
                 'params': {'name': 'set_log_limit', 'arguments': {'limit': 123}}})
             payload = json.loads(resized.get_json()['result']['content'][0]['text'])
             self.assertEqual(payload['limit'], 123)
-
-            tutorial = self._rpc({
-                'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call',
-                'params': {'name': 'get_tutorial',
-                           'arguments': {'kind': 'mcp', 'language': 'zh'}}})
-            payload = json.loads(tutorial.get_json()['result']['content'][0]['text'])
-            self.assertIn('MCP', payload['body'])
-            self.assertEqual(payload['kind'], 'mcp')
-
-            bad_kind = self._rpc({
-                'jsonrpc': '2.0', 'id': 4, 'method': 'tools/call',
-                'params': {'name': 'get_tutorial',
-                           'arguments': {'kind': 'web'}}})
-            self.assertTrue(bad_kind.get_json()['result']['isError'])
         finally:
             manager.set_log_limit(limit_before)
             manager.save_config(config_module.Config.from_dict(snapshot))

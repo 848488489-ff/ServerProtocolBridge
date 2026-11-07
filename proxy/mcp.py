@@ -29,7 +29,7 @@ import time
 import uuid
 
 from . import (accounts, certs, config as config_module, eagler, third_party,
-               tutorial, update, webauth)
+               update, webauth)
 from .i18n import LANGUAGES
 from .runtime import get_manager
 from .utils import config_dir
@@ -390,33 +390,6 @@ TOOLS = (
             'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100000,
                       'description': 'Number of log lines to keep.'},
         }, ['limit']),
-    },
-    {
-        'name': 'get_tutorial',
-        'description': (
-            "Return the usage tutorial text for this program.  kind is 'mcp' "
-            "(default) or 'cli'; language is en or zh and defaults to the "
-            'interface language.'),
-        'inputSchema': _schema({
-            'kind': {'type': 'string', 'enum': ['mcp', 'cli'],
-                     'description': 'Which tutorial to return.'},
-            'language': {'type': 'string', 'enum': ['en', 'zh'],
-                         'description': 'en or zh; defaults to the interface language.'},
-        }),
-    },
-    {
-        'name': 'open_tutorial',
-        'description': (
-            "Open the usage tutorial in the system's default application, "
-            "like the buttons on the About page.  kind is 'mcp' (default) or "
-            "'cli'; language is en or zh and defaults to the interface "
-            'language.  Returns the path of the temporary file opened.'),
-        'inputSchema': _schema({
-            'kind': {'type': 'string', 'enum': ['mcp', 'cli'],
-                     'description': 'Which tutorial to open.'},
-            'language': {'type': 'string', 'enum': ['en', 'zh'],
-                         'description': 'en or zh; defaults to the interface language.'},
-        }),
     },
 )
 
@@ -1029,43 +1002,6 @@ def _tool_set_log_limit(arguments: dict) -> dict:
     return _text_result({'ok': True, 'limit': applied})
 
 
-_TUTORIAL_KINDS = ('mcp', 'cli')
-_TUTORIAL_LANGS = ('en', 'zh')
-
-
-def _tutorial_args(arguments: dict) -> tuple[str, str | None]:
-    kind = str(arguments.get('kind') or 'mcp').strip().lower()
-    if kind not in _TUTORIAL_KINDS:
-        raise ValueError("kind must be 'mcp' or 'cli'")
-    language = str(arguments.get('language') or '').strip().lower()
-    if language and language not in _TUTORIAL_LANGS:
-        raise ValueError("language must be 'en' or 'zh'")
-    return kind, language or None
-
-
-def _tool_get_tutorial(arguments: dict) -> dict:
-    try:
-        kind, language = _tutorial_args(arguments)
-    except ValueError as exc:
-        return _text_result({'error': str(exc)}, True)
-    return _text_result(tutorial.tutorial(kind, language))
-
-
-def _tool_open_tutorial(arguments: dict) -> dict:
-    try:
-        kind, language = _tutorial_args(arguments)
-    except ValueError as exc:
-        return _text_result({'error': str(exc)}, True)
-    info = tutorial.tutorial(kind, language)
-    try:
-        path = tutorial.open_tutorial(kind, language)
-    except Exception as exc:
-        return _text_result({'error': str(exc)}, True)
-    return _text_result({'ok': True, 'kind': kind,
-                         'language': info['language'],
-                         'path': path})
-
-
 def _tool_reset_config(_arguments: dict) -> dict:
     from .web_helpers import _schedule_web_restart
 
@@ -1127,8 +1063,6 @@ _HANDLERS = {
     'remove_route': _tool_remove_route,
     'reload_config': _tool_reload_config,
     'set_log_limit': _tool_set_log_limit,
-    'get_tutorial': _tool_get_tutorial,
-    'open_tutorial': _tool_open_tutorial,
 }
 
 
@@ -1154,8 +1088,7 @@ def _initialize(params: dict) -> dict:
             'set_log_limit resizes the buffer; list_routes, set_route and '
             'remove_route manage the path routes; set_appearance '
             'personalizes the interface; reload_config re-reads config.json '
-            'from disk; the account and certificate tools mirror the Web UI; '
-            'get_tutorial and open_tutorial read or open the usage guides, '
+            'from disk; the account and certificate tools mirror the Web UI, '
             'and resources/list exposes logs, status, config, about and the '
             'MCP state as read-only resources.'),
     }

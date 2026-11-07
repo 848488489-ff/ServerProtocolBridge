@@ -127,9 +127,6 @@ EN = {
     'web.mcp_saved': 'MCP key updated.',
     'web.mcp_cleared': 'MCP key removed.',
     'web.mcp_copy': 'Copy endpoint',
-    'web.tutorial_open_mcp': 'MCP usage guide',
-    'web.tutorial_open_cli': 'CLI usage guide',
-    'web.tutorial_opened': 'Opened in the default app.',
 }
 
 ZH = {
@@ -257,7 +254,4 @@ ZH = {
     'web.mcp_saved': 'MCP 密钥已更新。',
     'web.mcp_cleared': 'MCP 密钥已移除。',
     'web.mcp_copy': '复制端点',
-    'web.tutorial_open_mcp': 'MCP 使用教程',
-    'web.tutorial_open_cli': 'CLI 使用教程',
-    'web.tutorial_opened': '已用默认应用打开。',
 }

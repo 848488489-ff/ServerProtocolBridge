@@ -626,11 +626,6 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
         <h2 id="about-title"></h2>
         <p id="about-blurb"></p>
         <p class="hint" id="about-license"></p>
-        <div class="actions" style="margin-top:12px">
-          <button class="btn ghost" id="btn-tutorial-mcp" data-i18n="web.tutorial_open_mcp"></button>
-          <button class="btn ghost" id="btn-tutorial-cli" data-i18n="web.tutorial_open_cli"></button>
-          <span class="hint" id="tutorial-status"></span>
-        </div>
       </div>
       <div class="card">
         <h2 data-i18n="gui.about.components"></h2>
@@ -1769,23 +1764,6 @@ async function loadAbout() {
   } catch (err) { toast(err.message, 'error'); }
 }
 
-/* Open a usage tutorial in the system's default viewer.  The backend renders
-   the text for the current UI language and asks the OS to open it, so the
-   button works on Windows, macOS and Linux alike. */
-async function openTutorial(kind) {
-  const status = $('#tutorial-status');
-  if (status) status.textContent = '';
-  try {
-    const data = await api('/api/tutorial/open', {
-      method: 'POST', body: { kind }
-    });
-    if (status) status.textContent = t('web.tutorial_opened');
-  } catch (err) {
-    if (status) status.textContent = err.message;
-    toast(err.message, 'error', 6000);
-  }
-}
-
 /* ---------- clipboard / theme / language ---------- */
 async function copyText(text) {
   if (!text) return;
@@ -1853,8 +1831,6 @@ function bindEvents() {
   $('#btn-save-mcp').addEventListener('click', saveMcp);
   $('#btn-clear-mcp').addEventListener('click', clearMcp);
   $('#btn-copy-mcp').addEventListener('click', () => copyText($('#mcp-endpoint').value));
-  $('#btn-tutorial-mcp').addEventListener('click', () => openTutorial('mcp'));
-  $('#btn-tutorial-cli').addEventListener('click', () => openTutorial('cli'));
   $('#btn-route-add').addEventListener('click', () => addRouteRow('', ''));
   $('#suffix_route').addEventListener('change', updateSuffixRouteState);
   $('#btn-web-restart').addEventListener('click', async () => {
