@@ -44,7 +44,7 @@ APP_FILES = (
     "start.bat",
     "start.sh",
 )
-APP_DIRS = ("proxy", "tests", "tools")
+APP_DIRS = ("proxy", "tests", "tools", "android")
 APP_SKIP_DIRS = {
     "__pycache__",
     ".pytest_cache",
@@ -55,12 +55,16 @@ APP_SKIP_DIRS = {
     "dist",
     "certs",
     "源码",
+    ".gradle",
+    ".idea",
+    "captures",
 }
 APP_SKIP_FILES = {
     "config.json",
     "config.example.json",
     ".DS_Store",
     "Thumbs.db",
+    "local.properties",
 }
 APP_SKIP_SUFFIXES = {
     ".pyc",
@@ -69,6 +73,7 @@ APP_SKIP_SUFFIXES = {
     ".exe",
     ".log",
     ".zip",
+    ".iml",
 }
 
 WEB_FILES = (
@@ -317,6 +322,11 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
        py -3 -m pip install -r requirements-build.txt
        py -3 tools/build.py
 
+   Android 原生 APK(需要 Android Studio):
+      android/ 目录是 Android Studio Gradle 项目, 用 Chaquopy 嵌入
+      Python, 控制面板由内置 WebView 显示。打开 android/ 后构建
+      APK; 详见 android/README.md。
+
    第三方组件及其完整许可证文本见 THIRD_PARTY_NOTICES.txt,
    可用下面的命令重新生成:
        py -3 tools/collect_licenses.py
@@ -396,6 +406,11 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
    way on Linux / macOS.  Build the Windows program on Windows:
        py -3 -m pip install -r requirements-build.txt
        py -3 tools/build.py
+
+   Android native APK (requires Android Studio):
+      android/ is an Android Studio Gradle project that embeds Python via
+      Chaquopy; the control panel is shown in a built-in WebView.  Open
+      android/ and build the APK; see android/README.md.
 
    Third-party components and their full licence texts are in
    THIRD_PARTY_NOTICES.txt.  Regenerate that file with:
