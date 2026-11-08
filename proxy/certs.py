@@ -21,6 +21,7 @@ from pathlib import Path
 
 from . import x509
 from .i18n import tr
+from .utils import is_android
 
 CERT_FILENAME = 'cert.pem'
 KEY_FILENAME = 'key.pem'
@@ -236,6 +237,10 @@ def _decode_command_output(stdout: bytes, stderr: bytes) -> str:
 def install_to_trust_store(cert_path: Path, logger=None) -> tuple[bool, str]:
     """Import the certificate into the current user's "Trusted Root Certification Authorities" store (Windows)."""
     cert_path = Path(cert_path)
+    # Android has no certutil / system trust-store import; the client app must
+    # trust the certificate itself, so the whole flow is skipped there.
+    if is_android():
+        return False, tr('certs.android_no_import')
     if not cert_path.exists():
         return False, tr('certs.file_missing', path=cert_path)
     if platform.system() != 'Windows':

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Small status-bar notification icon: two white arrows (the brand mark),
+     monochrome so Android tints it for the notification shade. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4,6 L14,6 L14,3.5 L20,8 L14,12.5 L14,10 L4,10 Z M20,14 L10,14 L10,11.5 L4,16 L10,20.5 L10,18 L20,18 Z" />
+</vector>

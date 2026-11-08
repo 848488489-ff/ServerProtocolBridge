@@ -23,6 +23,9 @@ EN = {
     'certs.file_missing': 'Certificate file not found: %(path)s',
     'certs.windows_only': 'Automatic import is only supported on Windows; add the '
                           'certificate to the system / browser trust store manually',
+    'certs.android_no_import': 'Android cannot import certificates into the system '
+                               'trust store automatically; trust the certificate '
+                               'in the client app instead',
     'certs.certutil_failed': 'Failed to run certutil: %(error)s',
     'certs.installed': "Certificate imported into the current user's Trusted Root "
                        'Certification Authorities store: %(path)s',
@@ -101,6 +104,7 @@ ZH = {
     'certs.alt_names': '证书包含的名称: %(names)s',
     'certs.file_missing': '证书文件不存在: %(path)s',
     'certs.windows_only': '自动导入仅支持 Windows, 请手动把证书加入系统/浏览器信任库',
+    'certs.android_no_import': 'Android 无法自动把证书导入系统信任库, 请在客户端应用内信任该证书',
     'certs.certutil_failed': '执行 certutil 失败: %(error)s',
     'certs.installed': '证书已导入当前用户的受信任根证书库: %(path)s',
     'certs.restart_browser': '请重启浏览器后生效(Firefox 需要单独导入, 见 README)。',
