@@ -248,9 +248,6 @@ def log_update_outcome(logger: Logger, outcome, announce_current: bool = False) 
         size = outcome.get('file_size') or 0
         if size:
             logger.info(tr('core.cli.update_file_size', size=human_bytes(size)))
-        digest = outcome.get('sha256') or ''
-        if digest:
-            logger.info(tr('core.cli.update_sha256', sha256=digest))
         notes = (outcome.get('notes') or '').strip()
         if notes:
             logger.info(tr('core.cli.update_notes_header'))
