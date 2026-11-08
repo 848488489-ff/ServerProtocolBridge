@@ -14,9 +14,9 @@ android {
         versionCode = 250
         versionName = "2.5.0"
         ndk {
-            // Current Android devices + emulators.  Python 3.12+ is 64-bit
-            // only, which is why armeabi-v7a / x86 are not listed.
-            abiFilters += ["arm64-v8a", "x86_64"]
+            // arm64-v8a only: keeps the APK small enough to install anywhere.
+            // Add x86_64 back only for emulator testing.
+            abiFilters += ["arm64-v8a"]
         }
     }
 
@@ -68,7 +68,6 @@ chaquopy {
             options("--extra-index-url", "https://chaquo.com/pypi-13.1/")
             install("cryptography==42.0.8")
             install("cffi>=1.12")
-            install("pycryptodome==3.21.0")
             install("websockets>=15")
             install("flask>=3.0")
             install("requests>=2.31")
