@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Windows Version Information Resource for PyInstaller
-# Server Protocol Bridge v2.5.0.2
+# Server Protocol Bridge v2.6.0
 #
 # This file is evaluated as Python by PyInstaller.  It must produce a
 # VSVersionInfo instance, so the class names below are the ones defined in
@@ -18,8 +18,8 @@
 
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(2, 5, 0, 2),
-    prodvers=(2, 5, 0, 2),
+    filevers=(2, 6, 0, 0),
+    prodvers=(2, 6, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -35,13 +35,13 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'not'),
             StringStruct(u'FileDescription', u'Server Protocol Bridge'),
-            StringStruct(u'FileVersion', u'2.5.0.2'),
+            StringStruct(u'FileVersion', u'2.6.0.0'),
             StringStruct(u'InternalName', u'Server Protocol Bridge'),
             StringStruct(u'LegalCopyright', u'Public Domain (Unlicense)'),
             StringStruct(u'LegalTrademarks', u''),
             StringStruct(u'OriginalFilename', u'Server Protocol Bridge.exe'),
             StringStruct(u'ProductName', u'Server Protocol Bridge'),
-            StringStruct(u'ProductVersion', u'2.5.0.2'),
+            StringStruct(u'ProductVersion', u'2.6.0.0'),
             StringStruct(u'Comments', u''),
           ]
         ),
@@ -50,13 +50,13 @@ VSVersionInfo(
           [
             StringStruct(u'CompanyName', u'not'),
             StringStruct(u'FileDescription', u'Server Protocol Bridge'),
-            StringStruct(u'FileVersion', u'2.5.0.2'),
+            StringStruct(u'FileVersion', u'2.6.0.0'),
             StringStruct(u'InternalName', u'Server Protocol Bridge'),
             StringStruct(u'LegalCopyright', u'Public Domain (Unlicense)'),
             StringStruct(u'LegalTrademarks', u''),
             StringStruct(u'OriginalFilename', u'Server Protocol Bridge.exe'),
             StringStruct(u'ProductName', u'Server Protocol Bridge'),
-            StringStruct(u'ProductVersion', u'2.5.0.2'),
+            StringStruct(u'ProductVersion', u'2.6.0.0'),
             StringStruct(u'Comments', u''),
           ]
         ),
