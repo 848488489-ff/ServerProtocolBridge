@@ -1,9 +1,12 @@
 package com.serverprotocolbridge;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Message;
 import android.webkit.WebChromeClient;
@@ -30,6 +33,22 @@ public class MainActivity extends Activity {
 
         if (!Python.isStarted()) {
             Python.start(new AndroidPlatform(this));
+        }
+
+        // Pin the process to the foreground so Android does not kill the
+        // proxy when the app goes to the background (persistent notification).
+        Intent keepAlive = new Intent(this, KeepAliveService.class);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(keepAlive);
+        } else {
+            startService(keepAlive);
+        }
+        // Android 13+ needs a runtime permission to show the notification.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                   != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(
+                    new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
         }
 
         // Bring up the Flask Web UI; it returns the URL the WebView should load.
