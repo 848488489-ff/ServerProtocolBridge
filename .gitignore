@@ -1,27 +1,12 @@
-# Python
+# Python bytecode
 __pycache__/
 *.py[cod]
-*.egg-info/
-.venv/
-venv/
 
-# 打包产物
-build/
-dist/
-*.spec
-/*.exe
-
-# 运行时生成
-certs/
-config.json
-web_auth.json
-*.log
-
-# 源码/发布包导出
-*.zip
-/发布文件/
-/源码/
-
-# 编辑器
-.vscode/
-.idea/
+# Android (Chaquopy project): build outputs and machine-local settings
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/.idea/
+android/captures/
+*.iml

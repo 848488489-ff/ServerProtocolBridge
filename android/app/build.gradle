@@ -1,0 +1,81 @@
+plugins {
+    id("com.android.application")
+    id("com.chaquo.python")
+}
+
+android {
+    namespace = "com.serverprotocolbridge"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.serverprotocolbridge"
+        minSdk = 24
+        targetSdk = 35
+        versionCode = 250
+        versionName = "2.5.0"
+        ndk {
+            // Current Android devices + emulators.  Python 3.12+ is 64-bit
+            // only, which is why armeabi-v7a / x86 are not listed.
+            abiFilters += ["arm64-v8a", "x86_64"]
+        }
+    }
+
+    buildTypes {
+        release {
+            // Signed with the debug key so the APK installs directly; replace
+            // with a real keystore before publishing to a store.
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+// Copy the proxy package into the Chaquopy source directory before the build
+// collects Python sources, so the APK always carries the current code instead
+// of a stale copy.  The Chaquopy source directory is under build/ (never
+// committed) and the sources are pulled from the repository root (../..).
+def pythonSrcDir = file("build/generated/python")
+def syncPython = tasks.register("syncPythonSource", Sync) {
+    into(pythonSrcDir)
+    from("../../proxy") {
+        into("proxy")
+    }
+}
+["preBuild", "generatePythonSource", "generatePythonBuild"].each { name ->
+    tasks.matching { it.name == name }.configureEach {
+        dependsOn(syncPython)
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        // Python 3.13 is the newest version for which the Chaquopy native
+        // package repository has cryptography (42.0.8, cp313).
+        version = "3.13"
+        pip {
+            // The Chaquopy package repository carries the native wheels
+            // (cryptography, cffi, pycryptodome, markupsafe, ...); pure-Python
+            // packages (websockets, flask, requests, mcauth3, certifi, ...)
+            // come from PyPI.
+            options("--extra-index-url", "https://chaquo.com/pypi-13.1/")
+            install("cryptography==42.0.8")
+            install("cffi>=1.12")
+            install("pycryptodome==3.21.0")
+            install("websockets>=15")
+            install("flask>=3.0")
+            install("requests>=2.31")
+            install("mcauth3>=1.1")
+            install("certifi")
+        }
+    }
+    sourceSets {
+        getByName("main") {
+            srcDir("build/generated/python")
+        }
+    }
+}
