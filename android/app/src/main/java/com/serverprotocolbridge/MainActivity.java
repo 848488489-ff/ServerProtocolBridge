@@ -13,6 +13,7 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Toast;
 
 import com.chaquo.python.PyObject;
 import com.chaquo.python.Python;
@@ -96,6 +97,23 @@ public class MainActivity extends Activity {
         });
         web.loadUrl(url);
         setContentView(web);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == 1) {
+            boolean granted = grantResults.length > 0
+                    && grantResults[0] == PackageManager.PERMISSION_GRANTED;
+            if (!granted) {
+                Toast.makeText(this,
+                        "通知权限未授予：常驻通知不会显示，后台代理可能被系统停止。"
+                                + "请在系统设置里允许通知。",
+                        Toast.LENGTH_LONG).show();
+            }
+        }
     }
 
     @Override

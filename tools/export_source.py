@@ -3,7 +3,7 @@
 
 Copies the application source into ``源码/procedure`` and the download page
 source into ``源码/web``, writes a manifest, then creates a versioned ZIP next
-to this project.  Finally it records the ZIP size and SHA-256 in the website's
+to this project.  Finally it records the ZIP size in the website's
 ``api/version.json`` so the "Get source" button can show trustworthy metadata.
 
 Usage (from anywhere):
@@ -198,7 +198,7 @@ def build_zip(source_root: Path, zip_path: Path) -> None:
 def sanitize_packaged_version(web_root_dest: Path) -> None:
     """Remove self-referential archive metadata from the packaged web copy.
 
-    The ZIP cannot contain its own final size or SHA-256, and the live
+    The ZIP cannot contain its own final size, and the live
     api/version.json is updated from the finished archive after compression.
     Keeping stale numbers inside the package would make the bundled site lie.
     """
@@ -206,7 +206,7 @@ def sanitize_packaged_version(web_root_dest: Path) -> None:
     if not version_json.exists():
         return
     data = json.loads(version_json.read_text(encoding="utf-8-sig"))
-    for key in ("source_size", "source_sha256", "source_updated"):
+    for key in ("source_size", "source_updated"):
         data.pop(key, None)
     version_json.write_text(
         json.dumps(data, ensure_ascii=False, indent=2) + "\n",
@@ -220,7 +220,6 @@ def update_version_json(version_json: Path, zip_path: Path | None, version: str)
     data = json.loads(version_json.read_text(encoding="utf-8-sig"))
     if zip_path and zip_path.exists():
         data["source_size"] = zip_path.stat().st_size
-        data["source_sha256"] = sha256_of(zip_path)
         data["source_name"] = zip_path.name
         data["source_version"] = version
         data["source_updated"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -290,11 +289,8 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
 
    发布站点的 api/version.json 是权威清单:
      version        版本号
-     sha256         程序的 SHA-256
      file_size      程序的字节数
-     source_sha256  源码压缩包的 SHA-256
      source_size    源码压缩包的字节数
-   下载后核对哈希; 不一致说明文件被改动过, 请重新下载。
 
 
 2. 目录结构
@@ -338,8 +334,8 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
    静态文件服务器托管整个目录。发布数据来自 api/version.json, 常见问题
    来自 api/faq.json, 接口文档是 api/index.html。
 
-   包内 api/version.json 故意省略了 source_size、source_sha256 与
-   source_updated: 压缩包无法包含自己的最终哈希。这三个字段以线上站点
+   包内 api/version.json 故意省略了 source_size 与
+   source_updated: 压缩包无法包含自己的最终哈希。这两个字段以线上站点
    的 api/version.json 为准。
 
 
@@ -376,12 +372,8 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
 
    The site's api/version.json is the authoritative manifest:
      version        release number
-     sha256         SHA-256 of the program
      file_size      size of the program in bytes
-     source_sha256  SHA-256 of this archive
      source_size    size of this archive in bytes
-   Verify the hash after downloading; a mismatch means the file changed, so
-   download it again.
 
 
 2. Layout
@@ -424,7 +416,7 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
    api/version.json, FAQ content from api/faq.json, and the API reference is
    api/index.html.
 
-   The packaged api/version.json omits source_size, source_sha256 and
+   The packaged api/version.json omits source_size and
    source_updated on purpose: an archive cannot contain its own final hash.
    The live site's api/version.json is authoritative for those fields.
 
@@ -538,8 +530,7 @@ def main() -> int:
         update_version_json(web_root / "api" / "version.json", zip_path, version)
         size_mb = zip_path.stat().st_size / (1024 * 1024)
         log(f"      size:   {size_mb:.2f} MB ({zip_path.stat().st_size} bytes)")
-        log(f"      sha256: {sha256_of(zip_path)}")
-        log("[4/4] updated api/version.json with source_size and source_sha256")
+        log("[4/4] updated api/version.json with source_size")
         log("      upload the ZIP to your netdisk, then put the direct link in api/version.json -> source_url")
     else:
         log("[3/4] skipped ZIP (--no-zip)")

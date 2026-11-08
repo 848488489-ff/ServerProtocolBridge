@@ -10,7 +10,6 @@ compares it with the version that is running:
                                      "force_update": false,
                                      "release_date": "2026-10-19",
                                      "changelog": "...",
-                                     "sha256": "...",
                                      "file_size": 28665610}
 
 Only the known fields are read -- ``version``, the optional download and source
@@ -69,7 +68,6 @@ NOTES_ZH_KEYS = ('changelog_zh', 'notes_zh', 'changelog_chinese', 'description_z
 MIN_VERSION_KEYS = ('min_version', 'minimum_version', 'min_supported')
 FORCE_KEYS = ('force_update', 'force', 'required', 'mandatory')
 DATE_KEYS = ('release_date', 'date', 'published', 'published_at', 'released')
-SHA_KEYS = ('sha256', 'sha', 'checksum', 'digest')
 SIZE_KEYS = ('file_size', 'size', 'bytes', 'length')
 
 # Request identity: the public endpoint may gate on it, so it always mentions
@@ -77,9 +75,6 @@ SIZE_KEYS = ('file_size', 'size', 'bytes', 'length')
 USER_AGENT = 'wss-proxy (ServerProtocolBridge/%s)' % VERSION
 
 VERSION_TOKEN = re.compile(r'v?(\d+(?:\.\d+)*)')
-# A usable checksum is a full 64-character hexadecimal SHA256 digest; anything
-# shorter or with other characters is treated as "not published".
-SHA256_TOKEN = re.compile(r'[0-9a-f]{64}')
 
 
 class UpdateError(Exception):
@@ -187,12 +182,6 @@ def _first_int(payload: dict, keys) -> int:
     return 0
 
 
-def _clean_digest(value: str) -> str:
-    """Keep a full SHA256 digest (lower case); '' when it does not look like one."""
-    text = value.strip().lower()
-    return text if SHA256_TOKEN.fullmatch(text) else ''
-
-
 def split_urls(text) -> list[str]:
     """Split a configured endpoint list (commas, spaces or newlines separate).
 
@@ -212,7 +201,7 @@ def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
 
     Returns the release document as a dictionary with ``version``, ``page``,
     ``source``, ``notes`` and the policy fields ``min_version``,
-    ``force_update``, ``release_date``, ``sha256`` and ``file_size``.  Optional
+    ``force_update``, ``release_date`` and ``file_size``.  Optional
     entries fall back to ``''`` / ``0`` / ``False`` when the endpoint does not
     send them.
     """
@@ -236,7 +225,7 @@ def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
         raise UpdateError(tr('update.error.empty', url=url))
 
     version, page, source, notes = '', '', '', ''
-    min_version, release_date, digest, file_size = '', '', '', 0
+    min_version, release_date, file_size = '', '', 0
     force_update = False
     try:
         payload = json.loads(text)
@@ -249,7 +238,6 @@ def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
         notes = _localized_notes(payload, _first_string(payload, NOTES_KEYS))
         min_version = _first_string(payload, MIN_VERSION_KEYS)
         release_date = _first_string(payload, DATE_KEYS)
-        digest = _clean_digest(_first_string(payload, SHA_KEYS))
         file_size = _first_int(payload, SIZE_KEYS)
         force_update = _first_bool(payload, FORCE_KEYS)
     else:
@@ -266,7 +254,7 @@ def fetch_latest(url: str, timeout: float = TIMEOUT_SEC) -> dict:
             min_version = ''                   # a broken floor must not block updates
     return {'version': version, 'page': page, 'source': source, 'notes': notes,
             'min_version': min_version, 'force_update': force_update,
-            'release_date': release_date, 'sha256': digest,
+            'release_date': release_date,
             'file_size': file_size}
 
 
