@@ -956,6 +956,11 @@ class McpTests(unittest.TestCase):
         # A password/key may only be set on a non-loopback bind, which is what
         # the authentication cases below exercise.
         self.manager.config.web_host = '0.0.0.0'
+        # 路由工具测试不依赖操作者的实际配置：suffix_route 开启时 set_route 会
+        # 拒绝写入，而操作者的 config.json 可能恰好开着它，导致工具测试在部分
+        # 机器上失败。把会干扰的字段归零，保证结果与机器配置无关。
+        self.manager.config.suffix_route = False
+        self.manager.config.routes = {}
         from proxy.web import create_app
 
         app = create_app()

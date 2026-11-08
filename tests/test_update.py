@@ -306,8 +306,9 @@ class ReleaseFieldsTests(_ServerTest):
         self.assertEqual(result['min_version'], '1.1.0')
         self.assertEqual(result['release_date'], '2026-10-18T09:00:00Z')
         self.assertEqual(result['notes'], 'New settings window\nFixed the checkbox mark')
-        self.assertEqual(result['sha256'],
-                         'cdcddd109cc921037229de2b580f6fdae4f45ff1699fc921316e39d2ca2ec798')
+        # SHA-256 已从发布文档移除（commit fb1cf85）：程序不再解析，服务端即使
+        # 仍然下发也绝不进入结果，测试必须明确断言这一点而不是静默忽略。
+        self.assertNotIn('sha256', result)
         self.assertEqual(result['file_size'], 28665610)
         self.assertTrue(result['newer'])
         self.assertFalse(result['must_update'])
@@ -346,7 +347,7 @@ class ReleaseFieldsTests(_ServerTest):
         self.assertEqual(result['min_version'], '')
         self.assertEqual(result['source'], '')
         self.assertEqual(result['release_date'], '')
-        self.assertEqual(result['sha256'], '')
+        self.assertNotIn('sha256', result)
         self.assertEqual(result['file_size'], 0)
         self.assertFalse(result['force_update'])
         self.assertFalse(result['must_update'])
@@ -360,7 +361,7 @@ class ReleaseFieldsTests(_ServerTest):
         self.assertFalse(result['force_update'])
         self.assertFalse(result['must_update'])
         self.assertEqual(result['min_version'], '')
-        self.assertEqual(result['sha256'], '')
+        self.assertNotIn('sha256', result)
         self.assertEqual(result['file_size'], 0)
 
     def test_words_and_digit_strings_are_understood(self):
