@@ -16,7 +16,7 @@ import threading
 
 from . import accounts, certs, resolver, update
 from .config import Config, SPOOF_CLIENTS, parse_address
-from .i18n import LANGUAGES, set_language, tr
+from .i18n import LANGUAGES, set_language, tr, tr_in
 from .logger import Logger
 from .proxy import ProxyServer
 from .utils import config_dir, human_bytes
@@ -120,7 +120,7 @@ def run_check(config: Config, logger: Logger) -> int:
     """Check the configuration, the certificate and the target connectivity."""
     problems = config.validate()
     for problem in problems:
-        logger.error(tr('core.cli.config_problem', problem=problem))
+        logger.error(tr_in('en', 'core.cli.config_problem', problem=problem))
     logger.info(tr('core.cli.config_dir', path=config_dir()))
     logger.info(tr('core.cli.target_line', target=config.describe_target()))
 
@@ -145,7 +145,7 @@ def run_check(config: Config, logger: Logger) -> int:
         if not port:
             host, port = resolver.resolve_target(host, None, logger=logger, use_srv=config.use_srv)
     except ValueError as exc:
-        logger.error(tr('core.config.target_invalid', error=exc))
+        logger.error(tr_in('en', 'core.config.target_invalid', error=exc))
         return 2
     logger.info(tr('core.cli.probing', host=host, port=port))
     ok, elapsed, message = resolver.probe(host, port)
@@ -186,7 +186,7 @@ def run_selftest(config: Config, logger: Logger) -> int:
     except ImportError as exc:           # the symptom seen when difflib was dropped from the build
         logger.error(tr('core.cli.difflib_missing', error=exc))
     for problem in config.validate():
-        logger.warn(tr('core.cli.config_problem', problem=problem))
+        logger.warn(tr_in('en', 'core.cli.config_problem', problem=problem))
     return 0 if crypto.available() else 1
 
 

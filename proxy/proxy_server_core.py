@@ -10,7 +10,7 @@ import threading
 import time
 from . import (certs, resolver)
 from .config import (Config, parse_address)
-from .i18n import tr
+from .i18n import tr, tr_in
 from .logger import NullLogger
 from .proxy import (Bridge, STATUS_TIMEOUT, Stats, _discard_future_result, motd_lines)
 from .utils import human_bytes
@@ -40,7 +40,8 @@ class ProxyCore:
         config = self.config
         problems = config.validate()
         if problems:
-            raise ValueError(tr('proxy.error.bad_config', problems='; '.join(problems)))
+            raise ValueError(tr_in('en', 'proxy.error.bad_config',
+                                   problems='; '.join(problems)))
 
         ssl_context: ssl.SSLContext | None = None
         if config.tls_enabled:

@@ -43,7 +43,7 @@ EN = {
     'core.cli.log_level_help': 'Log level',
     'core.cli.heartbeat_help': 'WebSocket heartbeat interval in seconds; 0 disables it',
     'core.cli.max_payload_help': 'Max size of a single frame (MB)',
-    'core.cli.language_help': 'UI language: en (English) or zh (Chinese)',
+    'core.cli.language_help': 'UI language: auto (follow the system), en (English) or zh (Chinese)',
     'core.cli.check_update_help': 'Ask the cloud endpoint for the newest release, print the '
                                   'result and exit (exit code 1 = a newer release exists)',
     'core.cli.no_update_check_help': 'Do not check for a newer release on startup',
@@ -123,7 +123,7 @@ ZH = {
     'core.cli.log_level_help': '日志级别',
     'core.cli.heartbeat_help': 'WebSocket 心跳间隔秒数, 0 关闭',
     'core.cli.max_payload_help': '单帧上限(MB)',
-    'core.cli.language_help': '界面语言: en(英文) 或 zh(中文)',
+    'core.cli.language_help': '界面语言: auto(跟随系统)、en(英文) 或 zh(中文)',
     'core.cli.check_update_help': '向云端查询最新版本并退出(退出码 1 = 有新版本)',
     'core.cli.no_update_check_help': '启动时不自动检查新版本',
     'core.cli.config_problem': '配置: %(problem)s',

@@ -40,6 +40,7 @@ For more information, please refer to <https://unlicense.org>""",
     'gui.about.column_license': 'License',
     'gui.about.column_project': 'Project',
     'gui.about.hint': 'Click any row to open the official site or GitHub repository.',
+    'gui.about.copy': 'Copy component list',
     'gui.about.close': 'Close',
 }
 
@@ -76,5 +77,6 @@ ZH = {
     'gui.about.column_license': '许可证',
     'gui.about.column_project': '项目地址',
     'gui.about.hint': '点击任意一行打开官网或 GitHub 仓库。',
+    'gui.about.copy': '复制组件清单',
     'gui.about.close': '关闭',
 }

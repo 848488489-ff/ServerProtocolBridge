@@ -204,13 +204,14 @@ TOOLS = (
         'name': 'set_ui_preferences',
         'description': (
             'Change the interface theme and/or language and save them.  theme '
-            'is one of light/dark/system; language is en or zh.  For interface '
-            'colours, radius, density and font scale use set_appearance.'),
+            'is one of light/dark/system; language is auto, en or zh (auto '
+            'follows the system language).  For interface colours, radius, '
+            'density and font scale use set_appearance.'),
         'inputSchema': _schema({
             'theme': {'type': 'string',
                       'description': 'light, dark or system.'},
             'language': {'type': 'string',
-                         'description': 'en or zh.'},
+                         'description': 'auto, en or zh.'},
         }),
     },
     {

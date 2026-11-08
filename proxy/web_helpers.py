@@ -9,7 +9,7 @@ import socket
 import threading
 import time
 from . import (accounts, certs, config as config_module)
-from .i18n import (LANGUAGES, language_label, tr)
+from .i18n import (LANGUAGES, language_label, tr, tr_in)
 from .locales import EN as EN_TABLE
 from .runtime import get_manager
 # Dropdown value sets.  Labels are looked up as ``gui.log_level.<code>`` and
@@ -159,13 +159,13 @@ def _config_from_body(body: dict) -> config_module.Config:
     # a hand-written request could otherwise install an unbounded buffer.
     if 'log_max_lines' in body:
         if not 50 <= int(data['log_max_lines']) <= 100000:
-            raise ValueError(tr('core.config.log_max_lines_invalid'))
+            raise ValueError(tr_in('en', 'core.config.log_max_lines_invalid'))
 
     # Suffix routing and the path-route table cannot be enabled together: the
     # same request path cannot be read as both a route key and a server
     # address, so the merged configuration must never carry both
     if bool(data.get('suffix_route')) and (data.get('routes') or {}):
-        raise ValueError(tr('core.config.suffix_route_conflict'))
+        raise ValueError(tr_in('en', 'core.config.suffix_route_conflict'))
 
     config = config_module.Config.from_dict(data)
     if config.theme not in config_module.THEME_MODES:
@@ -202,7 +202,7 @@ _RESTART_FIELDS = frozenset({
     'listen_host', 'wss_port', 'ws_port',
     'target', 'routes', 'suffix_route', 'use_srv',
     'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-    'resource_pack_mode',
+    'packet_timing', 'resource_pack_mode',
     'server_brand', 'server_brand_version', 'spoof_client', 'spoof_brand',
     'tls_enabled',
     'cert_dir', 'cert_common_name', 'cert_extra_names', 'cert_days',

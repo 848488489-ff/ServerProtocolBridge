@@ -1,14 +1,15 @@
 """In-program documentation page for the REST JSON API (/api/v1).
 
 Served at ``/api/v1/docs`` by :mod:`proxy.api_routes`.  It is a self-contained
-bilingual page: English is shown by default, and a language switch (labelled
-with each language's native name, "English" and "中文") toggles between the two
-blocks and remembers the choice in localStorage.  The page describes only the
+bilingual page.  The default follows the program's interface language, and a
+language switch (Auto / Chinese (simplified) / English, with the labels
+translated into the active interface language) toggles between the two blocks
+and remembers the choice in localStorage.  The page describes only the
 endpoint surface -- it needs no live data, so it is served without the API key.
 """
 
 API_DOCS_HTML = r"""<!doctype html>
-<html lang="en" data-lang="en">
+<html lang="__DEFAULT_LANG__" data-lang="__DEFAULT_LANG__">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -58,8 +59,9 @@ API_DOCS_HTML = r"""<!doctype html>
       <div class="edition" data-i18n="edition">REST API · /api/v1/ · v__VERSION__</div>
     </div>
     <div class="lang-switch" role="group" aria-label="Language">
-      <button type="button" data-lang="zh" aria-pressed="false">中文</button>
-      <button type="button" data-lang="en" aria-pressed="true">English</button>
+      <button type="button" data-lang="auto" aria-pressed="true">__LABEL_AUTO__</button>
+      <button type="button" data-lang="zh" aria-pressed="false">__LABEL_ZH__</button>
+      <button type="button" data-lang="en" aria-pressed="false">__LABEL_EN__</button>
     </div>
   </div>
 </header>
@@ -215,21 +217,23 @@ curl -s -X POST http://127.0.0.1:8765/api/v1/tools/get_config \
 (function () {
   'use strict';
   var root = document.documentElement;
-  function apply(lang) {
+  var defaultLang = '__DEFAULT_LANG__';
+  function apply(mode) {
+    var lang = mode === 'auto' ? defaultLang : mode;
     root.setAttribute('data-lang', lang);
     root.lang = lang === 'zh' ? 'zh-CN' : 'en';
     Array.prototype.forEach.call(document.querySelectorAll('.lang-en, .lang-zh'),
       function (block) { block.hidden = !block.classList.contains('lang-' + lang); });
     Array.prototype.forEach.call(document.querySelectorAll('.lang-switch button'),
       function (btn) {
-        var active = btn.getAttribute('data-lang') === lang;
+        var active = btn.getAttribute('data-lang') === mode;
         btn.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
   }
   var stored = null;
   try { stored = localStorage.getItem('spb-api-docs-lang'); } catch (e) {}
-  var lang = (stored === 'zh' || stored === 'en') ? stored : 'en';
-  apply(lang);
+  var mode = (stored === 'auto' || stored === 'zh' || stored === 'en') ? stored : 'auto';
+  apply(mode);
   Array.prototype.forEach.call(document.querySelectorAll('.lang-switch button'),
     function (btn) {
       btn.addEventListener('click', function () {

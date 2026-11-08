@@ -15,7 +15,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from proxy import config as config_module, webauth
+from proxy import config as config_module, i18n, webauth
 from proxy.version import VERSION
 
 
@@ -36,6 +36,9 @@ class ApiTests(unittest.TestCase):
         from proxy.runtime import get_manager
 
         self.manager = get_manager()
+        # 说明页的默认语言跟随界面语言，测试里固定成英文以保证断言稳定。
+        self._original_language = i18n.get_language()
+        i18n.set_language('en')
         # Point config at the scratch directory, like McpTests.
         self._original_resolve = config_module.resolve_path
         config_module.resolve_path = lambda name: self.tmp / name
@@ -63,6 +66,7 @@ class ApiTests(unittest.TestCase):
         config_module.resolve_path = self._original_resolve
         webauth.auth_path = self._original_auth_path
         webauth.clear_failures('')
+        i18n.set_language(self._original_language)
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _get(self, path, **kw):
@@ -90,20 +94,29 @@ class ApiTests(unittest.TestCase):
         self.assertNotIn('open_tutorial', names)
         self.assertGreaterEqual(len(body['tools']), 30)
 
-    def test_docs_page_bilingual_default_english(self):
+    def test_docs_page_follows_the_interface_language(self):
+        # 英文界面：默认英文，按钮标签也按英文界面显示。
         response = self._get('/docs')
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/html', response.content_type)
         html = response.get_data(as_text=True)
-        # English is the default, Chinese block starts hidden.
         self.assertIn('<html lang="en" data-lang="en">', html)
         self.assertIn('<div class="lang-zh" hidden>', html)
         self.assertIn('<div class="lang-en">', html)
-        # The switch uses each language's native name, never "英文"/"EN".
-        self.assertIn('>中文<', html)
+        self.assertIn('>Auto<', html)
+        self.assertIn('>Chinese (simplified)<', html)
         self.assertIn('>English<', html)
-        self.assertNotIn('英文', html)
-        self.assertNotIn("'EN'", html)
+        # 中文界面：默认中文，按钮标签随之变化。
+        i18n.set_language('zh')
+        html = self._get('/docs').get_data(as_text=True)
+        self.assertIn('<html lang="zh" data-lang="zh">', html)
+        # 静态块保持原样，由页面脚本按 data-lang 切换显示。
+        self.assertIn('<div class="lang-zh" hidden>', html)
+        self.assertIn('<div class="lang-en">', html)
+        self.assertIn("var defaultLang = 'zh';", html)
+        self.assertIn('>自动<', html)
+        self.assertIn('>简体中文<', html)
+        self.assertIn('>英语<', html)
         # Both languages carry the endpoint surface.
         self.assertIn('/api/v1/status', html)
         self.assertIn('/api/v1/service/start', html)

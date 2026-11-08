@@ -12,13 +12,22 @@ import json
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
-from .i18n import LANGUAGES, tr
+from .i18n import LANGUAGES, tr, tr_in
 from .utils import config_dir, resolve_path
 
 CONFIG_FILENAME = 'config.json'
 
 # Address prefixes we accept; anything else is treated as host[:port] text.
 _SCHEMES = ('minecraft://', 'mc://', 'tcp://', 'wss://', 'ws://', 'https://', 'http://')
+
+
+def _problem(key: str, **values) -> str:
+    """配置校验信息固定输出英文。
+
+    这些问题主要给日志、自动化脚本和排查用，不面向普通用户；固定英文可以
+    避免切换界面语言时诊断文本跟着变化，也不会因为缺少某条翻译而回退成键名。
+    """
+    return tr_in('en', key, **values)
 
 
 def _bracket_host(host: str) -> str:
@@ -39,7 +48,7 @@ def parse_address(text: str, default_port: int | None = None) -> tuple[str, int 
     """
     value = (text or '').strip()
     if not value:
-        raise ValueError(tr('core.config.address_empty'))
+        raise ValueError(_problem('core.config.address_empty'))
     lowered = value.lower()
     for scheme in _SCHEMES:
         if lowered.startswith(scheme):
@@ -47,7 +56,7 @@ def parse_address(text: str, default_port: int | None = None) -> tuple[str, int 
             break
     value = value.split('/', 1)[0].strip()
     if not value:
-        raise ValueError(tr('core.config.address_empty'))
+        raise ValueError(_problem('core.config.address_empty'))
     if value.startswith('['):
         host, _, rest = value[1:].partition(']')
         port_text = rest.lstrip(':').strip()
@@ -68,7 +77,7 @@ def normalize_route_path(path: str) -> str:
     """
     text = str(path or '').strip()
     if not text:
-        raise ValueError(tr('core.config.route_missing_path'))
+        raise ValueError(_problem('core.config.route_missing_path'))
     if not text.startswith('/'):
         text = '/' + text
     return text.rstrip('/') or '/'
@@ -87,16 +96,16 @@ def parse_routes_text(text: str) -> dict:
         if not line or line.startswith('#'):
             continue
         if '=' not in line:
-            raise ValueError(tr('core.config.route_format'))
+            raise ValueError(_problem('core.config.route_format'))
         path, _, target = line.partition('=')
         path = path.strip()
         target = target.strip()
         # Neither side may be empty: a blank path would silently become the
         # catch-all "/" route, and a blank target would route to nowhere.
         if not path:
-            raise ValueError(tr('core.config.route_missing_path'))
+            raise ValueError(_problem('core.config.route_missing_path'))
         if not target:
-            raise ValueError(tr('core.config.route_missing_target', path=path))
+            raise ValueError(_problem('core.config.route_missing_target', path=path))
         routes[normalize_route_path(path)] = target
     return routes
 
@@ -184,6 +193,13 @@ class Config:
     # their place so the target can leave the login state (see translator.py).
     # Off = nothing is sent and everything passes through untouched.
     login_ack: bool = True
+    # 数据包发送时序控制（默认开启）：浏览器客户端在卡顿、后台标签页节流或
+    # 网络抖动之后，会把多个游戏刻的数据包挤在同一瞬间发出，服务器端的反作弊
+    # （例如 Grim 的 Post / PacketOrderE 检查）会把动作包判定为不在预期的移动
+    # 刻顺序上。开启后，代理保证客户端到服务器方向的任意两个包之间至少间隔
+    # 12 毫秒；正常节奏本来就大于这个间隔，不增加延迟，只有突发会被摊开。
+    # 只按时间整形，不解析包内容，因此与游戏版本无关。
+    packet_timing: bool = True
     # How the proxy handles the server's resource pack prompt. The choices are
     # 'forward' (pass the prompt through), 'accept' (answer accept and drop the
     # prompt), 'reject' (answer reject and drop the prompt), or 'spoof' (answer
@@ -378,82 +394,85 @@ class Config:
 
     # ---------- Validation ----------
     def validate(self) -> list[str]:
-        """Return a list of configuration problems (empty means all good)."""
+        """Return a list of configuration problems (empty means all good).
+
+        这些信息固定英文，便于日志检索和自动化处理，不随界面语言变化。
+        """
         problems: list[str] = []
         if not (self.listen_host or '').strip():
-            problems.append(tr('core.config.listen_host_empty'))
-        for name, port in ((tr('core.config.port_wss'), self.wss_port),
-                           (tr('core.config.port_ws'), self.ws_port)):
+            problems.append(_problem('core.config.listen_host_empty'))
+        for name, port in ((_problem('core.config.port_wss'), self.wss_port),
+                           (_problem('core.config.port_ws'), self.ws_port)):
             if not 0 <= int(port) <= 65535:
-                problems.append(tr('core.config.port_range', name=name))
+                problems.append(_problem('core.config.port_range', name=name))
         if self.tls_enabled and int(self.wss_port) <= 0:
-            problems.append(tr('core.config.tls_needs_wss_port'))
+            problems.append(_problem('core.config.tls_needs_wss_port'))
         if not self.tls_enabled and int(self.ws_port) <= 0:
-            problems.append(tr('core.config.tls_needs_ws_port'))
+            problems.append(_problem('core.config.tls_needs_ws_port'))
         if self.tls_enabled and int(self.wss_port) > 0 and int(self.ws_port) == int(self.wss_port):
-            problems.append(tr('core.config.ports_conflict'))
+            problems.append(_problem('core.config.ports_conflict'))
         if not (self.target or '').strip():
-            problems.append(tr('core.config.target_empty'))
+            problems.append(_problem('core.config.target_empty'))
         else:
             try:
                 host, _ = parse_address(self.target)
                 if not host:
-                    problems.append(tr('core.config.target_empty'))
+                    problems.append(_problem('core.config.target_empty'))
             except ValueError as exc:
-                problems.append(tr('core.config.target_invalid', error=exc))
+                problems.append(_problem('core.config.target_invalid', error=exc))
         for path, target in (self.routes or {}).items():
             # Both sides of a route must be non-empty; a hand-edited config file
             # can carry a half route that parse_routes_text would never produce.
             if not (path or '').strip():
-                problems.append(tr('core.config.route_missing_path'))
+                problems.append(_problem('core.config.route_missing_path'))
             if not (target or '').strip():
-                problems.append(tr('core.config.route_missing_target', path=path))
+                problems.append(_problem('core.config.route_missing_target', path=path))
                 continue
             try:
                 parse_address(target)
             except ValueError:
-                problems.append(tr('core.config.route_target_invalid', path=path, target=target))
+                problems.append(_problem('core.config.route_target_invalid', path=path, target=target))
         if self.suffix_route and (self.routes or {}):
-            problems.append(tr('core.config.suffix_route_conflict'))
+            problems.append(_problem('core.config.suffix_route_conflict'))
         # Brand / version strings are written into the handshake packet one byte
         # per character, and the client reads them back as ASCII.
         for name, value, limit, required in (
-            (tr('core.config.brand_server'), self.server_brand, 128, True),
-            (tr('core.config.brand_server_version'), self.server_brand_version, 128, False),
-            (tr('core.config.brand_spoof'), self.spoof_brand, 200, False),
+            (_problem('core.config.brand_server'), self.server_brand, 128, True),
+            (_problem('core.config.brand_server_version'), self.server_brand_version, 128, False),
+            (_problem('core.config.brand_spoof'), self.spoof_brand, 200, False),
         ):
             text = (value or '').strip()
             if not text:
                 if required:
-                    problems.append(tr('core.config.name_required', name=name))
+                    problems.append(_problem('core.config.name_required', name=name))
                 continue
             try:
                 text.encode('ascii')
             except UnicodeEncodeError:
-                problems.append(tr('core.config.brand_ascii', name=name))
+                problems.append(_problem('core.config.brand_ascii', name=name))
                 continue
             if len(text) > limit:
-                problems.append(tr('core.config.brand_too_long', name=name, limit=limit))
+                problems.append(_problem('core.config.brand_too_long', name=name, limit=limit))
         preset = (self.spoof_client or '').strip().lower()
         if preset not in SPOOF_CLIENTS:
-            problems.append(tr('core.config.spoof_client_invalid',
-                               choices=' / '.join(SPOOF_CLIENTS)))
+            problems.append(_problem('core.config.spoof_client_invalid',
+                                     choices=' / '.join(SPOOF_CLIENTS)))
         if preset == 'custom' and not (self.spoof_brand or '').strip():
-            problems.append(tr('core.config.spoof_custom_required'))
+            problems.append(_problem('core.config.spoof_custom_required'))
         if int(self.max_payload_mb) <= 0:
-            problems.append(tr('core.config.max_payload_positive'))
+            problems.append(_problem('core.config.max_payload_positive'))
         if float(self.connect_timeout) <= 0:
-            problems.append(tr('core.config.connect_timeout_positive'))
+            problems.append(_problem('core.config.connect_timeout_positive'))
         if int(self.heartbeat_sec) < 0:
-            problems.append(tr('core.config.heartbeat_non_negative'))
+            problems.append(_problem('core.config.heartbeat_non_negative'))
         if not 1 <= int(self.status_cache_ttl) <= 86400:
-            problems.append(tr('core.config.status_cache_ttl_range'))
+            problems.append(_problem('core.config.status_cache_ttl_range'))
         if self.log_level not in ('debug', 'info', 'warn', 'error'):
-            problems.append(tr('core.config.log_level_invalid'))
+            problems.append(_problem('core.config.log_level_invalid'))
         if not 50 <= int(self.log_max_lines) <= 100000:
-            problems.append(tr('core.config.log_max_lines_invalid'))
+            problems.append(_problem('core.config.log_max_lines_invalid'))
         if (self.language or '').strip().lower() not in LANGUAGES:
-            problems.append(tr('core.config.language_invalid'))
+            problems.append(_problem('core.config.language_invalid'))
         return problems
 
     # ---------- Display ----------
@@ -483,12 +502,15 @@ class Config:
         return 'http://%s:%d/' % (host, int(self.web_port))
 
     def validate_web(self) -> list[str]:
-        """Problems that only concern the Web UI listener (never the proxy)."""
+        """Problems that only concern the Web UI listener (never the proxy).
+
+        与 validate() 一样固定英文。
+        """
         problems: list[str] = []
         if not (self.web_host or '').strip():
-            problems.append(tr('core.config.web_host_empty'))
+            problems.append(_problem('core.config.web_host_empty'))
         if not 0 <= int(self.web_port) <= 65535:
-            problems.append(tr('core.config.web_port_range'))
+            problems.append(_problem('core.config.web_port_range'))
         return problems
 
     def wss_url(self) -> str | None:
