@@ -44,7 +44,11 @@ APP_FILES = (
     "start.bat",
     "start.sh",
 )
-APP_DIRS = ("proxy", "tests", "tools", "android")
+# ``superdebug`` is the Minecraft debug plugin: its source, build script and
+# the built SuperDebug-1.1.0.jar ship in the source package (the JAR is a
+# release artifact, not a binary of this program, so ARCHIVE_SKIP_SUFFIXES
+# deliberately does not contain .jar).
+APP_DIRS = ("proxy", "tests", "tools", "android", "superdebug")
 APP_SKIP_DIRS = {
     "__pycache__",
     ".pytest_cache",
