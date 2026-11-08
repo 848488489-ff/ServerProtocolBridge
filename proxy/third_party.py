@@ -1,5 +1,11 @@
 """Third-party components shown in the About window.
 
+Only components that are actually bundled into the program are listed here.
+System runtimes that the program merely calls (for example the Edge WebView2
+Runtime on Windows) are deliberately absent: they are not packaged, Android
+has no WebView2 at all, and the desktop build falls back to the system browser
+when one is missing.
+
 Keep this list in sync with the runtime imports and with
 ``THIRD_PARTY_NOTICES.txt`` (regenerate it with ``tools/collect_licenses.py``).
 The About window only lists the component, its license and a project link;
@@ -55,8 +61,6 @@ COMPONENTS = (
      'url': 'https://github.com/pythonnet/pythonnet'},
     {'name': 'clr_loader', 'license': 'MIT',
      'url': 'https://github.com/pythonnet/clr-loader'},
-    {'name': 'Microsoft Edge WebView2', 'license': 'BSD-3-Clause',
-     'url': 'https://learn.microsoft.com/microsoft-edge/webview2/'},
     {'name': 'OpenSSL (bundled)', 'license': 'Apache-2.0',
      'url': 'https://www.openssl.org/'},
     {'name': 'websockets', 'license': 'BSD-3-Clause', 'url': 'https://github.com/python-websockets/websockets'},

@@ -477,6 +477,9 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <label class="switch"><input type="checkbox" id="eagler_translate"><span class="knob"></span></label>
           <label for="login_ack" data-i18n="gui.label.login_ack"></label>
           <label class="switch"><input type="checkbox" id="login_ack"><span class="knob"></span></label>
+          <label for="packet_timing" data-i18n="gui.label.packet_timing"></label>
+          <label class="switch"><input type="checkbox" id="packet_timing"><span class="knob"></span></label>
+          <div class="hint" data-i18n="gui.hint.packet_timing"></div>
           <label data-i18n="gui.label.resource_pack_mode"></label>
           <select id="resource_pack_mode"></select>
           <label for="auto_exit" data-i18n="gui.label.auto_exit"></label>
@@ -659,7 +662,13 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
       <div class="card">
         <h2 data-i18n="gui.about.components"></h2>
         <div class="list" id="about-components"></div>
+        <h2 data-i18n="gui.about.stdlib"></h2>
+        <div class="list" id="about-stdlib"></div>
         <p class="hint" data-i18n="gui.about.hint"></p>
+        <div class="actions">
+          <button type="button" class="btn ghost" id="btn-copy-about"
+                  data-i18n="gui.about.copy"></button>
+        </div>
       </div>
     </section>
   </main>
@@ -680,7 +689,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
 <script>
 const I18N = __I18N__;
 const state = {
-  config: null, status: null, accounts: [], logSeq: 0, language: '__LANG__',
+  config: null, status: null, accounts: [], about: null, logSeq: 0, language: '__LANG__',
   theme: '__THEME__', update: null, page: 'dashboard', seenRevision: undefined,
   auth: { enabled: false, has_password: false },
   mcp: { enabled: false, has_key: false, endpoint: '', loopback_bind: false },
@@ -1099,7 +1108,7 @@ function fillConfig(config, options, problems) {
   fields.forEach(id => { const el = $('#' + id); if (el) el.value = config[id] ?? ''; });
   renderRoutes(config.routes);
   ['use_srv', 'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-   'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
+   'packet_timing', 'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
     const el = $('#' + id); if (el) el.checked = !!config[id];
   });
   updateSuffixRouteState();
@@ -1365,7 +1374,7 @@ function collectConfig() {
   config.theme = $('#theme-select').value;
   config.language = $('#language-select').value;
   ['use_srv', 'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-   'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
+   'packet_timing', 'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
     const el = $('#' + id);
     if (el) config[id] = el.checked;
   });
@@ -1846,27 +1855,61 @@ async function checkUpdate() {
   }
 }
 
+/* Build the text copied by the About page.  Headings come from the active
+   interface language; component names, licences and URLs are language-neutral. */
+function aboutComponentText(data) {
+  const lines = [t('core.app_name') + '  v' + data.version, ''];
+  lines.push(t('gui.about.components'));
+  (data.components || []).forEach(component => {
+    lines.push('- ' + component.name + '  ·  ' + component.license + '  ·  ' + component.url);
+  });
+  lines.push('', t('gui.about.stdlib'));
+  (data.stdlib || []).forEach(name => {
+    lines.push('- ' + name + '  ·  PSF-2.0  ·  '
+      + 'https://docs.python.org/3/library/' + name + '.html');
+  });
+  return lines.join('\n');
+}
+
+function renderAboutRows(container, rows) {
+  container.innerHTML = '';
+  rows.forEach(row => {
+    const item = document.createElement('div');
+    item.className = 'component';
+    const label = document.createElement('span');
+    label.textContent = row.label;
+    const link = document.createElement('a');
+    link.href = row.url;
+    link.target = '_blank';
+    link.rel = 'noreferrer';
+    link.textContent = '↗';
+    item.append(label, link);
+    container.appendChild(item);
+  });
+}
+
 async function loadAbout() {
   try {
     const data = await api('/api/about');
+    state.about = data;
     $('#about-title').textContent = t('core.app_name') + '  v' + data.version;
     $('#about-blurb').textContent = data.blurb;
     $('#about-license').textContent = data.license;
-    const list = $('#about-components');
-    list.innerHTML = '';
-    (data.components || []).forEach(component => {
-      const row = document.createElement('div');
-      row.className = 'component';
-      const name = document.createElement('span');
-      name.textContent = component.name + '  ·  ' + component.license;
-      const link = document.createElement('a');
-      link.href = component.url;
-      link.target = '_blank';
-      link.rel = 'noreferrer';
-      link.textContent = '↗';
-      row.append(name, link);
-      list.appendChild(row);
-    });
+    renderAboutRows($('#about-components'), (data.components || []).map(component => ({
+      label: component.name + '  ·  ' + component.license,
+      url: component.url,
+    })));
+    renderAboutRows($('#about-stdlib'), (data.stdlib || []).map(name => ({
+      label: name + '  ·  PSF-2.0',
+      url: 'https://docs.python.org/3/library/' + name + '.html',
+    })));
+    const copy = $('#btn-copy-about');
+    if (copy && !copy.dataset.bound) {
+      copy.dataset.bound = '1';
+      copy.addEventListener('click', () => {
+        if (state.about) copyText(aboutComponentText(state.about));
+      });
+    }
   } catch (err) { toast(err.message, 'error'); }
 }
 

@@ -84,6 +84,15 @@ class LanguageTests(unittest.TestCase):
         self.assertTrue(any(i18n.tr('core.config.language_invalid') in item
                             for item in config.validate()))
 
+    def test_config_problems_stay_english(self):
+        """配置校验信息固定英文，不随界面语言切换。"""
+        i18n.set_language('zh')
+        config = Config()
+        config.language = 'fr'
+        problems = config.validate()
+        self.assertIn(i18n.tr_in('en', 'core.config.language_invalid'), problems)
+        self.assertNotIn(i18n.tr_in('zh', 'core.config.language_invalid'), problems)
+
     def test_cli_language_argument(self):
         from proxy.cli import apply_arguments, build_parser
 

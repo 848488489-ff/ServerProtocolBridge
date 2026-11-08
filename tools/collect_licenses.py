@@ -38,7 +38,7 @@ DIST_NAMES = {
     "certifi": "certifi",
     "idna": "idna",
     "pywebview": "pywebview",
-    "pythonnet": "pythonnet",
+    "pythonnet (.NET bridge)": "pythonnet",
     "clr_loader": "clr_loader",
     "Flask": "flask",
     "Werkzeug": "werkzeug",
@@ -56,9 +56,10 @@ EXTRA_PACKAGES = (
 )
 
 OPENSSL_NOTE = (
-    "OpenSSL is statically linked into the cryptography wheel. OpenSSL 3.x is "
-    "licensed under the Apache License 2.0; its copyright notice is retained by "
-    "the cryptography project. Project: https://www.openssl.org/"
+    "OpenSSL 3.x ships with the program as the libssl/libcrypto DLLs that the "
+    "Python ssl module loads. OpenSSL is licensed under the Apache License 2.0; "
+    "its copyright notice is retained by the OpenSSL project. "
+    "Project: https://www.openssl.org/"
 )
 
 
@@ -135,24 +136,10 @@ def main() -> int:
         if name == "OpenSSL (bundled)":
             entries.append({
                 "name": name,
-                "version": "3.x (statically linked in cryptography)",
+                "version": "3.x (libssl/libcrypto DLLs)",
                 "license": str(component["license"]),
                 "url": str(component["url"]),
                 "role": "Runtime",
-                "refs": [],
-            })
-            continue
-
-        if name == "Microsoft Edge WebView2":
-            # The WebView2 Runtime is a Windows system component (delivered via
-            # Windows Update / the Evergreen installer), not a Python package, so
-            # there is no license file to collect here.
-            entries.append({
-                "name": name,
-                "version": "system (WebView2 Runtime)",
-                "license": str(component["license"]),
-                "url": str(component["url"]),
-                "role": "System component",
                 "refs": [],
             })
             continue

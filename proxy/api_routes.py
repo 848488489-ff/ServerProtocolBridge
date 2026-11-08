@@ -22,6 +22,7 @@ import json
 
 from . import mcp
 from .api_docs import API_DOCS_HTML
+from .i18n import get_language, tr
 from .version import VERSION
 from flask import Blueprint, Response, jsonify, request
 
@@ -92,8 +93,13 @@ def index():
 
 @api.get('/docs')
 def docs():
-    """The in-program, bilingual documentation page (default English)."""
-    html = API_DOCS_HTML.replace('__VERSION__', VERSION)
+    """程序内双语说明页：默认跟随界面语言，语言按钮标签也按界面语言显示。"""
+    html = (API_DOCS_HTML
+            .replace('__VERSION__', VERSION)
+            .replace('__DEFAULT_LANG__', get_language())
+            .replace('__LABEL_AUTO__', tr('gui.language.auto'))
+            .replace('__LABEL_ZH__', tr('gui.language.zh'))
+            .replace('__LABEL_EN__', tr('gui.language.en')))
     return Response(html, mimetype='text/html')
 
 

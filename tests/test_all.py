@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from proxy import certs, config as config_module, der, portowner, resolver, webauth, wsproto, x509  # noqa: E402
 from proxy.config import Config  # noqa: E402
-from proxy.i18n import tr  # noqa: E402
+from proxy.i18n import tr, tr_in  # noqa: E402
 from proxy.logger import Logger  # noqa: E402
 from proxy.proxy import ProxyServer  # noqa: E402
 from proxy.version import VERSION  # noqa: E402
@@ -1568,11 +1568,12 @@ class ProxyEndToEndTests(unittest.TestCase):
         config.target = '127.0.0.1:25565'
         config.suffix_route = True
         config.routes = {'/x': '127.0.0.1:25566'}
-        self.assertIn(config_module.tr('core.config.suffix_route_conflict'),
+        # 配置校验信息固定英文。
+        self.assertIn(tr_in('en', 'core.config.suffix_route_conflict'),
                       config.validate())
         data = config.to_dict()
         data['routes'] = {}
-        self.assertNotIn(config_module.tr('core.config.suffix_route_conflict'),
+        self.assertNotIn(tr_in('en', 'core.config.suffix_route_conflict'),
                          config_module.Config.from_dict(data).validate())
 
     def test_target_unreachable_closes_with_1011(self):

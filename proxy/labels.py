@@ -13,7 +13,7 @@ tests can both import them without starting a GUI.
 from __future__ import annotations
 
 from . import config as config_module
-from .i18n import LANGUAGES, tr, tr_in
+from .i18n import tr, tr_in
 
 LOG_LEVELS = ('all', 'debug', 'info', 'warn', 'error')
 # How many log lines the hub keeps.  Offered as presets so the choice is one
@@ -41,7 +41,8 @@ def _label_for(code: str, keys: dict, fallback: str) -> str:
 def _code_for(label: str, keys: dict, fallback: str) -> str:
     text = (label or '').strip()
     for code, key in keys.items():
-        for language in LANGUAGES:
+        # 'auto' 不是翻译表，只遍历真实语言。
+        for language in ('en', 'zh'):
             if tr_in(language, key) == text:
                 return code
     return text.lower() or fallback

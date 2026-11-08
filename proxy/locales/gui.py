@@ -8,6 +8,9 @@ from . import gui_accounts, gui_about, gui_update, gui_dialog, gui_log, gui_cont
 
 EN = {
     'gui.language': 'Language',
+    'gui.language.auto': 'Auto',
+    'gui.language.en': 'English',
+    'gui.language.zh': 'Chinese (simplified)',
     'gui.cert_generator.auto': 'Automatic',
     'gui.cert_generator.python': 'Python (built-in)',
     'gui.cert_generator.openssl': 'OpenSSL',
@@ -66,6 +69,14 @@ EN = {
                                   '(required for clients that use wss:// or ws://)',
     'gui.label.login_ack': 'Login acknowledge for 1.20.2+ targets '
                             '(sent on the client\'s behalf; modern servers need it)',
+    'gui.label.packet_timing': 'Packet send timing control '
+                               '(spreads browser-side bursts; works on every game version)',
+    'gui.hint.packet_timing': 'Browser clients send several game ticks of packets at once '
+                              'after a stall or background throttling. Anti-cheat systems '
+                              'such as Grim then see action packets out of the expected '
+                              'movement-tick order. This keeps at least 12 ms between '
+                              'packets in the client-to-server direction; normal traffic '
+                              'is unaffected. Default: on.',
     'gui.label.resource_pack_mode': 'Resource pack handling',
     'gui.resource_pack_mode.forward': 'Forward prompt',
     'gui.resource_pack_mode.accept': 'Accept if present',
@@ -152,6 +163,9 @@ A: Ignore it. The line comes from the graphics driver, not from this program,
 
 ZH = {
     'gui.language': '界面语言',
+    'gui.language.auto': '自动',
+    'gui.language.en': '英语',
+    'gui.language.zh': '简体中文',
     'gui.cert_generator.auto': '自动',
     'gui.cert_generator.python': 'Python（内置）',
     'gui.cert_generator.openssl': 'OpenSSL',
@@ -201,6 +215,11 @@ ZH = {
     'gui.label.rewrite_host': '按目标域名改写握手地址(服务器按地址校验/分流时勾选)',
     'gui.label.eagler_translate': 'WebSocket 客户端协议翻译(使用 wss:// 或 ws:// 的客户端必需)',
     'gui.label.login_ack': '补发登录确认包(1.20.2+ 服务器必需, 否则进服即断)',
+    'gui.label.packet_timing': '数据包发送时序控制(摊开网页端突发, 所有游戏版本通用)',
+    'gui.hint.packet_timing': '网页版客户端卡顿或后台节流后会把多个游戏刻的包挤在一起发出，'
+                              'Grim 等反作弊会因此把动作包判定为不在预期的移动刻顺序上。'
+                              '开启后客户端到服务器方向任意两个包至少间隔 12 毫秒，正常节奏'
+                              '不受影响。默认开启。',
     'gui.label.resource_pack_mode': '资源包处理方式',
     'gui.resource_pack_mode.forward': '转发提示',
     'gui.resource_pack_mode.accept': '有则允许',
