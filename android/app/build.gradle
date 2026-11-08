@@ -24,7 +24,7 @@ android {
         release {
             // Signed with the debug key so the APK installs directly; replace
             // with a real keystore before publishing to a store.
-            isMinifyEnabled = false
+            minifyEnabled = false
             signingConfig = signingConfigs.getByName("debug")
         }
     }
@@ -46,10 +46,13 @@ def syncPython = tasks.register("syncPythonSource", Sync) {
         into("proxy")
     }
 }
-["preBuild", "generatePythonSource", "generatePythonBuild"].each { name ->
-    tasks.matching { it.name == name }.configureEach {
-        dependsOn(syncPython)
-    }
+// Chaquopy collects Python sources in its merge*PythonSources tasks (one per
+// variant); make sure each of them runs after the sync so the source tree is
+// current.  preBuild / generatePythonSource are kept as belt-and-braces.
+tasks.matching {
+    it.name.contains("PythonSources") || it.name in ["preBuild", "generatePythonSource", "generatePythonBuild"]
+}.configureEach {
+    dependsOn(syncPython)
 }
 
 chaquopy {
