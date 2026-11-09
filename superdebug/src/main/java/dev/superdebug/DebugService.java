@@ -69,6 +69,8 @@ public final class DebugService implements Listener {
     private String watchMode = "all";
     /** GrimAC Post risk threshold in nanoseconds (default 10ms). */
     private long postRiskGapNanos = 10 * 1_000_000L;
+    /** How many recent inbound packets are kept per player. */
+    private int packetHistorySize = 40;
 
     public DebugService(SuperDebugPlugin plugin) {
         this.plugin = plugin;
@@ -97,6 +99,10 @@ public final class DebugService implements Listener {
 
     double postRiskGapMs() {
         return postRiskGapNanos / 1_000_000.0;
+    }
+
+    int packetHistorySize() {
+        return packetHistorySize;
     }
 
     public void start() {
@@ -132,6 +138,8 @@ public final class DebugService implements Listener {
         sniffToFile = plugin.getConfig().getBoolean("sniff-log-to-file", false);
         postRiskGapNanos = Math.max(1,
                 plugin.getConfig().getInt("post-risk-gap-ms", 10)) * 1_000_000L;
+        packetHistorySize = Math.max(4,
+                plugin.getConfig().getInt("packet-history-size", 40));
     }
 
     private void startSampler() {
@@ -201,8 +209,9 @@ public final class DebugService implements Listener {
                 "  debug traffic [player|all]          wire/frame byte and packet counters + rates",
                 "  debug traffic reset [player|all]    reset counters",
                 "  debug timing [player|all]           frame gap timing + GrimAC Post risk pairs",
+                "  debug packets [player|all]          packet names/categories, top packets, recent frames",
                 "  debug sniff <player|all> on [max] [hex] [filter]",
-                "                                      packet ids/lengths to console (filter: 0x1A,0x08)",
+                "                                      packet names/ids/lengths to console (filter: 0x1A,0x08)",
                 "  debug sniff <player|all> off        stop packet trace",
                 "  debug sniff status                  active packet traces",
                 "  debug watch [seconds] [ping|traffic|all]",
@@ -213,6 +222,7 @@ public final class DebugService implements Listener {
                 "  debug report                        write full report to plugins/SuperDebug/reports",
                 "  debug reload                        reload config.yml",
                 "",
+                "Packet names/categories are read from the live server (no hard-coded id table).",
                 "All reports go to the server console. Player senders also receive a copy.",
                 "No output is produced automatically."
         );
@@ -641,11 +651,13 @@ public final class DebugService implements Listener {
 
     private List<String> timingBlock(PlayerSession session) {
         PlayerSession.TrafficStats stats = session.stats();
+        PlayerSession.PacketStats packets = session.packetStats();
         List<String> lines = new ArrayList<>();
         lines.add(String.format(Locale.ROOT,
-                "%s   frames IN=%d OUT=%d   post-risk < %.1fms",
+                "%s   frames IN=%d OUT=%d   packets IN=%d OUT=%d   post-risk < %.1fms",
                 session.name(),
                 stats.frameInPackets.sum(), stats.frameOutPackets.sum(),
+                packets.inPackets.sum(), packets.outPackets.sum(),
                 postRiskGapMs()));
         lines.add(String.format(Locale.ROOT,
                 "  IN  gaps=%d  avg=%.2fms  max=%.2fms  POST=%d",
@@ -660,10 +672,97 @@ public final class DebugService implements Listener {
                 ms(stats.outMaxGapNanos.get()),
                 stats.outPostCount.sum()));
         lines.add(String.format(Locale.ROOT,
+                "  categories  IN move=%d action=%d misc=%d   OUT move=%d action=%d misc=%d",
+                packets.inMove.sum(), packets.inAction.sum(), packets.inMisc.sum(),
+                packets.outMove.sum(), packets.outAction.sum(), packets.outMisc.sum()));
+        lines.add(String.format(Locale.ROOT,
+                "  precise POST (action->move < %.1fms): %d   unknown-name=%d",
+                postRiskGapMs(), packets.postActionMove.sum(), packets.inUnknown.sum()));
+        lines.add(String.format(Locale.ROOT,
                 "  counters active since %s   reset via 'debug traffic reset'",
                 PlayerSession.duration(
                         Math.max(0, System.nanoTime() - stats.startedAtNanos) / 1_000_000L)));
         return lines;
+    }
+
+    public List<String> packetsReport(String target) {
+        boolean all = target == null || target.equalsIgnoreCase("all");
+        if (!all) {
+            PlayerSession session = findSession(target);
+            if (session == null) {
+                return Collections.singletonList("Player not online: " + target);
+            }
+            return packetsBlock(session);
+        }
+
+        List<PlayerSession> online = allSessions();
+        if (online.isEmpty()) {
+            return Collections.singletonList("No players online.");
+        }
+        List<String> lines = new ArrayList<>();
+        lines.add("=== Packet diagnostics (" + online.size() + " players) ===");
+        for (PlayerSession session : online) {
+            if (lines.size() > 1) {
+                lines.add("");
+            }
+            lines.addAll(packetsBlock(session));
+        }
+        return lines;
+    }
+
+    private List<String> packetsBlock(PlayerSession session) {
+        PlayerSession.PacketStats packets = session.packetStats();
+        List<String> lines = new ArrayList<>();
+        lines.add(String.format(Locale.ROOT,
+                "%s   packets IN=%d OUT=%d   precise POST (action->move < %.1fms)=%d",
+                session.name(),
+                packets.inPackets.sum(), packets.outPackets.sum(),
+                postRiskGapMs(), packets.postActionMove.sum()));
+        lines.add(String.format(Locale.ROOT,
+                "  categories  IN move=%d action=%d misc=%d   OUT move=%d action=%d misc=%d   unknown=%d",
+                packets.inMove.sum(), packets.inAction.sum(), packets.inMisc.sum(),
+                packets.outMove.sum(), packets.outAction.sum(), packets.outMisc.sum(),
+                packets.inUnknown.sum()));
+
+        List<Map.Entry<String, Long>> topIn = session.topInboundPackets(12);
+        List<Map.Entry<String, Long>> topOut = session.topOutboundPackets(12);
+        if (!topIn.isEmpty() || !topOut.isEmpty()) {
+            lines.add("  Top packets:");
+            int rows = Math.max(topIn.size(), topOut.size());
+            for (int i = 0; i < rows; i++) {
+                Map.Entry<String, Long> in = i < topIn.size() ? topIn.get(i) : null;
+                Map.Entry<String, Long> out = i < topOut.size() ? topOut.get(i) : null;
+                lines.add(String.format(Locale.ROOT,
+                        "    %-8s %-32s %-8s %-32s",
+                        in == null ? "" : in.getValue(),
+                        in == null ? "" : truncate(in.getKey(), 32),
+                        out == null ? "" : out.getValue(),
+                        out == null ? "" : truncate(out.getKey(), 32)));
+            }
+        }
+
+        List<PlayerSession.RecentFrame> recent = session.recentPacketSnapshot(12);
+        if (!recent.isEmpty()) {
+            lines.add("  Recent inbound (newest last):");
+            for (PlayerSession.RecentFrame frame : recent) {
+                lines.add(String.format(Locale.ROOT,
+                        "    %-8s %-32s %-6s%s",
+                        PlayerSession.duration((System.nanoTime() - frame.nanos) / 1_000_000L),
+                        truncate(frame.officialName == null ? "unknown" : frame.officialName, 32),
+                        frame.category.label,
+                        formatRecentGap(frame.gapNanos)));
+            }
+        }
+        return lines;
+    }
+
+    private String formatRecentGap(long gapNanos) {
+        if (gapNanos < 0) {
+            return "";
+        }
+        double millis = gapNanos / 1_000_000.0;
+        boolean post = gapNanos < postRiskGapNanos;
+        return String.format(Locale.ROOT, " gap=%.2fms%s", millis, post ? " POST" : "");
     }
 
     public List<String> sniffCommand(String[] args) {
@@ -971,6 +1070,8 @@ public final class DebugService implements Listener {
             lines.addAll(trafficBlock(session));
             lines.add("");
             lines.addAll(timingBlock(session));
+            lines.add("");
+            lines.addAll(packetsBlock(session));
             return lines;
         }
 
@@ -981,6 +1082,8 @@ public final class DebugService implements Listener {
         lines.addAll(trafficReport(null, false));
         lines.add("");
         lines.addAll(timingReport(null));
+        lines.add("");
+        lines.addAll(packetsReport(null));
         lines.add("");
         lines.addAll(netReport(null));
         lines.add("");
@@ -999,6 +1102,8 @@ public final class DebugService implements Listener {
         lines.addAll(trafficReport(null, false));
         lines.add("");
         lines.addAll(timingReport(null));
+        lines.add("");
+        lines.addAll(packetsReport(null));
         lines.add("");
         lines.addAll(netReport(null));
         lines.add("");
@@ -1029,7 +1134,8 @@ public final class DebugService implements Listener {
                 "  sniff-default-max-packets=" + sniffDefaultMax,
                 "  sniff-max-frame-bytes=" + sniffMaxFrameBytes,
                 "  sniff-log-to-file=" + sniffToFile,
-                "  post-risk-gap-ms=" + (postRiskGapNanos / 1_000_000L));
+                "  post-risk-gap-ms=" + (postRiskGapNanos / 1_000_000L),
+                "  packet-history-size=" + packetHistorySize);
     }
 
     public void emit(CommandSender sender, List<String> lines) {

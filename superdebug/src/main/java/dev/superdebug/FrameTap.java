@@ -5,6 +5,10 @@ import io.netty.channel.ChannelDuplexHandler;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelPromise;
 
+import java.util.Arrays;
+import java.util.zip.DataFormatException;
+import java.util.zip.Inflater;
+
 /**
  * Parses Minecraft's framed byte stream at the splitter/prepender boundary.
  *
@@ -22,6 +26,14 @@ final class FrameTap extends ChannelDuplexHandler {
 
     private static final int MAX_FRAME_LENGTH = 8 * 1024 * 1024;
 
+    /**
+     * How many bytes of the frame body are kept always (independent of sniffing)
+     * so the packet id can be decoded for every frame.  For compressed frames
+     * this covers the data-length VarInt plus enough deflate stream to recover
+     * the leading packet-id VarInt for all but the most pathological packets.
+     */
+    private static final int ID_PREFIX_MAX = 192;
+
     private final PlayerSession session;
     private final Direction direction;
 
@@ -33,6 +45,10 @@ final class FrameTap extends ChannelDuplexHandler {
     private byte[] capture;
     private int capturePosition;
     private boolean truncated;
+
+    /** Always-captured frame-body prefix used for packet-id decoding. */
+    private byte[] idPrefix = new byte[ID_PREFIX_MAX];
+    private int idPrefixPosition;
 
     /** Nanotime of the previous complete frame in this direction (0 = none). */
     private long lastFrameNanos;
@@ -91,6 +107,7 @@ final class FrameTap extends ChannelDuplexHandler {
 
                     frameLength = length;
                     remaining = length;
+                    idPrefixPosition = 0;
                     if (direction == Direction.IN) {
                         session.stats().frameInBytes.add(length + prefixBytes);
                         session.stats().frameInPackets.increment();
@@ -123,6 +140,11 @@ final class FrameTap extends ChannelDuplexHandler {
                     buffer.getBytes(index, capture, capturePosition, copy);
                     capturePosition += copy;
                 }
+                if (idPrefixPosition < idPrefix.length) {
+                    int copy = Math.min(available, idPrefix.length - idPrefixPosition);
+                    buffer.getBytes(index, idPrefix, idPrefixPosition, copy);
+                    idPrefixPosition += copy;
+                }
                 index += available;
                 remaining -= available;
                 if (remaining == 0) {
@@ -138,16 +160,73 @@ final class FrameTap extends ChannelDuplexHandler {
         long now = System.nanoTime();
         long gapNanos = lastFrameNanos == 0 ? -1 : now - lastFrameNanos;
         lastFrameNanos = now;
-        session.onFrameTiming(direction, frameLength, gapNanos);
 
-        if (capture != null && capturePosition > 0) {
-            session.onSniffFrame(direction, capture, capturePosition, frameLength,
-                    frameCompressed, truncated, gapNanos);
-        }
+        // 帧前缀里解码包 ID（尽力而为，不依赖嗅探是否开启）。
+        int packetId = decodePacketId(idPrefix, idPrefixPosition, frameCompressed);
+
+        session.onFrameTap(direction, frameLength, gapNanos, packetId,
+                capture, capturePosition, frameCompressed, truncated);
+
         capture = null;
         capturePosition = 0;
         truncated = false;
         remaining = -1;
+    }
+
+    /**
+     * Best-effort decode of the leading packet-id VarInt from the captured frame
+     * prefix.  Handles compression (data-length VarInt followed by a deflate
+     * stream).  Returns -1 when the prefix is too short or cannot be decoded.
+     */
+    private int decodePacketId(byte[] prefix, int length, boolean compressed) {
+        if (length <= 0) {
+            return -1;
+        }
+        try {
+            int offset = 0;
+            if (compressed) {
+                VarInts.Result dataLength = VarInts.read(prefix, 0, length);
+                if (!dataLength.ok) {
+                    return -1;
+                }
+                if (dataLength.value < 0) {
+                    return -1;
+                }
+                offset = dataLength.bytes;
+                if (dataLength.value > 0) {
+                    byte[] out = inflatePrefix(prefix, offset, length - offset, 32);
+                    if (out == null || out.length == 0) {
+                        return -1;
+                    }
+                    VarInts.Result id = VarInts.read(out, 0, out.length);
+                    return id.ok ? id.value : -1;
+                }
+            }
+            VarInts.Result id = VarInts.read(prefix, offset, length - offset);
+            return id.ok ? id.value : -1;
+        } catch (Throwable t) {
+            return -1;
+        }
+    }
+
+    private byte[] inflatePrefix(byte[] data, int offset, int length, int wanted) {
+        if (length <= 0 || wanted <= 0) {
+            return null;
+        }
+        Inflater inflater = new Inflater();
+        try {
+            inflater.setInput(data, offset, length);
+            byte[] out = new byte[wanted];
+            int read = inflater.inflate(out);
+            if (read <= 0) {
+                return null;
+            }
+            return read == out.length ? out : Arrays.copyOf(out, read);
+        } catch (DataFormatException e) {
+            return null;
+        } finally {
+            inflater.end();
+        }
     }
 
     private boolean compressionEnabled(ChannelHandlerContext ctx) {

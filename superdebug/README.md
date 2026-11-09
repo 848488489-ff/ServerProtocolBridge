@@ -11,7 +11,7 @@ powershell -ExecutionPolicy Bypass -File superdebug\build.ps1
 ```
 
 The script compiles against the Paper API and Netty jars in
-`D:\桌面\测试服务器\libraries`, then copies `SuperDebug-1.1.0.jar` to
+`D:\桌面\测试服务器\libraries`, then copies `SuperDebug-1.2.0.jar` to
 `D:\桌面\测试服务器\plugins`.
 
 ## Commands
@@ -25,6 +25,7 @@ debug net [player|all]               channel, pipeline, socket options, compress
 debug traffic [player|all]           wire bytes / frame bytes / packet counts and rates
 debug traffic reset [player|all]     reset counters
 debug timing [player|all]            frame gap timing + GrimAC Post risk pairs
+debug packets [player|all]           packet names/categories, top packets, recent frames
 debug sniff <player|all> on [max] [hex] [filter]
 debug sniff <player|all> off
 debug sniff status
@@ -44,6 +45,7 @@ debug ping
 debug ping nopp
 debug net nopp
 debug timing nopp
+debug packets nopp
 debug sniff nopp on 100 hex
 debug sniff nopp on 200 0x1A,0x08
 debug watch 5 all
@@ -51,8 +53,18 @@ debug watch 5 all
 
 `debug sniff` decodes Minecraft frame lengths and packet ids at the
 splitter/prepender boundary, so it works with compression and encryption
-enabled. Packet ids are numeric; use them with the protocol version shown by
-`debug net`.
+enabled. Each line shows the packet **name** (read from the live server) and
+its numeric id, for example `name=move_player_pos_rot id=0x1F(31)`.
+
+## Packet names
+
+Packet names and categories are **not hard-coded**. The plugin intercepts the
+already-decoded `net.minecraft.network.protocol.Packet` objects and reads each
+packet's registry name from `packet.type().id().getPath()` (for example
+`move_player_pos_rot`). Categories (movement / action / misc) are derived from
+that name, so they stay correct across server versions and need no packet-id
+table. This is what powers `debug packets`, the packet name in `debug sniff`,
+and the precise Post detection.
 
 ## Config
 
@@ -66,6 +78,8 @@ enabled. Packet ids are numeric; use them with the protocol version shown by
 - `post-risk-gap-ms` – gap below this many ms (same-direction client packets) is
   flagged as a GrimAC Post risk pair; sniff lines show `POST` and `debug timing`
   counts them
+- `packet-history-size` – number of recent inbound packets kept for
+  `debug packets`
 
 ## Frame timing
 
@@ -75,3 +89,12 @@ gap count, average, maximum and how many pairs fell below `post-risk-gap-ms`.
 `debug sniff` lines include `gap=XX.XXms` and, for client-to-server frames under
 the threshold, a `POST` marker — the signature of a web client that stalled and
 then flushed a burst, which is what GrimAC's PostCheck flags.
+
+## Precise Post detection
+
+`debug packets` also reports the precise action-to-movement Post count: an
+inbound ACTION packet (use item, use item on, player action, attack, interact,
+punch, ...) immediately followed by a MOVE packet (set player position /
+rotation, move vehicle, player input) inside `post-risk-gap-ms` is the exact
+GrimAC Post signature. The recent-inbound ring buffer in `debug packets` lets
+you see the actual burst packets with their gaps.
