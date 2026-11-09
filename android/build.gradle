@@ -1,6 +1,8 @@
-// Top-level build file.  Chaquopy 17.2 supports Android Gradle plugin 7.3-9.5;
-// 8.7.3 is the stable, widely-available choice and works with Gradle 8.9.
+// Top-level build file.  Chaquopy 17.2 supports Android Gradle plugin 7.3-9.5.
+// 9.0.0 is the first stable line that understands the new `.0` SDK platform
+// naming (android-37.0, the Android 17 platform) and compileSdk 37; it needs
+// Gradle 9.0+.
 plugins {
-    id("com.android.application") version "8.7.3" apply false
+    id("com.android.application") version "9.0.0" apply false
     id("com.chaquo.python") version "17.2.0" apply false
 }

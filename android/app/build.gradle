@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.serverprotocolbridge"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.serverprotocolbridge"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 37
         versionCode = 260
         versionName = "2.6.0"
         ndk {
