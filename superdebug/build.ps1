@@ -30,7 +30,7 @@ if ($LASTEXITCODE -ne 0) {
 Copy-Item (Join-Path $root 'src\main\resources\plugin.yml') $classes -Force
 Copy-Item (Join-Path $root 'src\main\resources\config.yml') $classes -Force
 
-$jarPath = Join-Path $root 'SuperDebug-1.1.0.jar'
+$jarPath = Join-Path $root 'SuperDebug-1.2.0.jar'
 Remove-Item $jarPath -Force -ErrorAction SilentlyContinue
 & jar --create --file $jarPath -C $classes .
 if ($LASTEXITCODE -ne 0) {
@@ -40,4 +40,4 @@ if ($LASTEXITCODE -ne 0) {
 $plugins = Join-Path $server 'plugins'
 Copy-Item $jarPath $plugins -Force
 Write-Host "Built: $jarPath"
-Write-Host "Installed: $(Join-Path $plugins 'SuperDebug-1.1.0.jar')"
+Write-Host "Installed: $(Join-Path $plugins 'SuperDebug-1.2.0.jar')"

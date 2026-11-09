@@ -15,7 +15,7 @@ import java.util.stream.Collectors;
 public final class DebugCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBCOMMANDS = Arrays.asList(
-            "help", "ping", "net", "traffic", "timing", "sniff", "watch",
+            "help", "ping", "net", "traffic", "timing", "packets", "sniff", "watch",
             "tps", "log", "dump", "report", "reload");
 
     private final DebugService service;
@@ -60,6 +60,10 @@ public final class DebugCommand implements CommandExecutor, TabCompleter {
                 case "timing" -> {
                     String target = args.length > 1 ? args[1] : null;
                     service.emit(sender, service.timingReport(target));
+                }
+                case "packets", "pkt", "packet" -> {
+                    String target = args.length > 1 ? args[1] : null;
+                    service.emit(sender, service.packetsReport(target));
                 }
                 case "sniff" -> service.emit(sender,
                         service.sniffCommand(Arrays.copyOfRange(args, 1, args.length)));
@@ -107,7 +111,9 @@ public final class DebugCommand implements CommandExecutor, TabCompleter {
         String sub = args[0].toLowerCase(Locale.ROOT);
         if (args.length == 2) {
             if (sub.equals("ping") || sub.equals("net") || sub.equals("channel")
-                    || sub.equals("traffic") || sub.equals("timing") || sub.equals("dump")) {
+                    || sub.equals("traffic") || sub.equals("timing")
+                    || sub.equals("packets") || sub.equals("packet")
+                    || sub.equals("pkt") || sub.equals("dump")) {
                 List<String> values = new ArrayList<>(onlineNames());
                 values.add("all");
                 if (sub.equals("traffic")) {

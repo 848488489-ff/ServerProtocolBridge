@@ -26,7 +26,7 @@ public final class SuperDebugPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(service, this);
 
         getLogger().info("SuperDebug " + getPluginMeta().getVersion() + " enabled.");
-        getLogger().info("Console usage: debug ping | debug net | debug traffic | debug timing | debug sniff | debug tps | debug help");
+        getLogger().info("Console usage: debug ping | debug net | debug traffic | debug timing | debug packets | debug sniff | debug tps | debug help");
         try {
             Class.forName("io.netty.channel.Channel");
             getLogger().info("Netty channel API is available to plugins.");

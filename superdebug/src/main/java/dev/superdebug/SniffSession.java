@@ -8,13 +8,10 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.zip.DataFormatException;
-import java.util.zip.Inflater;
 
 /**
  * One packet-trace session for one player. Both frame taps call into this
@@ -84,21 +81,16 @@ final class SniffSession {
         return emitted.get();
     }
 
-    synchronized void onFrame(Direction direction, byte[] body, int bodyLength,
-                              int frameLength, boolean compressed, boolean truncated,
-                              long gapNanos) {
+    synchronized void onDecodedPacket(Direction direction, String officialName,
+                                      int packetId, int frameLength, long gapNanos,
+                                      byte[] body, int bodyLength,
+                                      boolean compressed, boolean truncated) {
         if (!isActive()) {
             return;
         }
         seen.incrementAndGet();
 
-        Decoded decoded = decode(body, bodyLength, compressed);
-        if (decoded == null) {
-            errors.incrementAndGet();
-            return;
-        }
-
-        if (!filter.isEmpty() && !filter.contains(decoded.packetId)) {
+        if (!filter.isEmpty() && !filter.contains(packetId)) {
             filtered.incrementAndGet();
             return;
         }
@@ -110,8 +102,8 @@ final class SniffSession {
             return;
         }
 
-        String line = formatLine(direction, number, decoded, frameLength,
-                compressed, truncated, gapNanos);
+        String line = formatLine(direction, number, officialName, packetId,
+                frameLength, gapNanos, body, bodyLength, compressed, truncated);
         plugin.getLogger().info(line);
         if (file != null) {
             file.println(line);
@@ -150,24 +142,43 @@ final class SniffSession {
                 + (filePath == null ? "" : " file=" + filePath));
     }
 
-    private String formatLine(Direction direction, int number, Decoded decoded,
-                              int frameLength, boolean compressed, boolean truncated,
-                              long gapNanos) {
-        String preview = hex
-                ? " hex=" + VarInts.hex(decoded.preview, 0, decoded.preview.length, 40)
-                : "";
+    private String formatLine(Direction direction, int number, String officialName,
+                              int packetId, int frameLength, long gapNanos,
+                              byte[] body, int bodyLength,
+                              boolean compressed, boolean truncated) {
+        String name = officialName == null ? "unknown" : officialName;
+        String idPart = packetId < 0 ? "" : " id=" + VarInts.id(packetId);
+        String preview = hex ? hexPreview(body, bodyLength, compressed) : "";
         return String.format(Locale.ROOT,
-                "[sniff] %-16s %s #%d id=%s frame=%dB pkt=%dB comp=%s%s%s%s",
+                "[sniff] %-16s %s #%d name=%-30s%s frame=%dB%s%s%s%s",
                 playerName,
                 direction.label,
                 number,
-                VarInts.id(decoded.packetId),
+                name,
+                idPart,
                 frameLength,
-                decoded.packetLength,
-                compressed ? "yes" : "no",
+                compressed ? " comp=yes" : "",
                 truncated ? " trunc" : "",
                 formatGap(direction, gapNanos),
                 preview);
+    }
+
+    /** Hex preview of the packet body, skipping the compression header. */
+    private String hexPreview(byte[] body, int bodyLength, boolean compressed) {
+        if (body == null || bodyLength <= 0) {
+            return "";
+        }
+        int offset = 0;
+        if (compressed) {
+            VarInts.Result dataLength = VarInts.read(body, 0, bodyLength);
+            if (dataLength.ok && dataLength.value > 0) {
+                offset = dataLength.bytes;
+            }
+        }
+        if (offset >= bodyLength) {
+            return " hex=" + VarInts.hex(body, 0, bodyLength, 40);
+        }
+        return " hex=" + VarInts.hex(body, offset, bodyLength - offset, 40);
     }
 
     /**
@@ -185,68 +196,6 @@ final class SniffSession {
         boolean post = direction == Direction.IN
                 && gapNanos < plugin.getService().postRiskGapNanos();
         return String.format(Locale.ROOT, " gap=%.2fms%s", millis, post ? " POST" : "");
-    }
-
-    private Decoded decode(byte[] body, int bodyLength, boolean compressed) {
-        if (bodyLength <= 0) {
-            return null;
-        }
-
-        int offset = 0;
-        int dataLength = -1;
-
-        if (compressed) {
-            VarInts.Result dataLengthResult = VarInts.read(body, 0, bodyLength);
-            if (!dataLengthResult.ok) {
-                return null;
-            }
-            dataLength = dataLengthResult.value;
-            offset = dataLengthResult.bytes;
-            if (dataLength < 0) {
-                return null;
-            }
-        }
-
-        if (compressed && dataLength > 0) {
-            byte[] inflated = inflatePrefix(body, offset, bodyLength - offset,
-                    Math.min(64, Math.max(1, dataLength)));
-            if (inflated == null || inflated.length == 0) {
-                return null;
-            }
-            VarInts.Result id = VarInts.read(inflated, 0, inflated.length);
-            if (!id.ok) {
-                return null;
-            }
-            return new Decoded(id.value, dataLength, inflated);
-        }
-
-        VarInts.Result id = VarInts.read(body, offset, bodyLength - offset);
-        if (!id.ok) {
-            return null;
-        }
-        int previewLength = Math.min(48, bodyLength - offset);
-        byte[] preview = Arrays.copyOfRange(body, offset, offset + previewLength);
-        return new Decoded(id.value, bodyLength - offset, preview);
-    }
-
-    private byte[] inflatePrefix(byte[] data, int offset, int length, int wanted) {
-        if (length <= 0 || wanted <= 0) {
-            return null;
-        }
-        Inflater inflater = new Inflater();
-        try {
-            inflater.setInput(data, offset, length);
-            byte[] out = new byte[wanted];
-            int read = inflater.inflate(out);
-            if (read <= 0) {
-                return null;
-            }
-            return read == out.length ? out : Arrays.copyOf(out, read);
-        } catch (DataFormatException e) {
-            return null;
-        } finally {
-            inflater.end();
-        }
     }
 
     private void openFile() {
@@ -268,18 +217,6 @@ final class SniffSession {
             plugin.getLogger().warning("Could not open sniff file for " + playerName + ": " + t);
             file = null;
             filePath = null;
-        }
-    }
-
-    private static final class Decoded {
-        final int packetId;
-        final int packetLength;
-        final byte[] preview;
-
-        Decoded(int packetId, int packetLength, byte[] preview) {
-            this.packetId = packetId;
-            this.packetLength = packetLength;
-            this.preview = preview;
         }
     }
 }

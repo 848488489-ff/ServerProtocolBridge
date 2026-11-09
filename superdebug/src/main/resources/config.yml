@@ -23,3 +23,6 @@ sniff-log-to-file: false
 # a Post violation; a web client stalling and then flushing a burst of packets
 # is the classic trigger.
 post-risk-gap-ms: 10
+
+# Number of recent inbound packets kept per player for 'debug packets'.
+packet-history-size: 40
