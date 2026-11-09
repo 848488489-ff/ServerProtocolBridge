@@ -1,4 +1,4 @@
-# Python bytecode
+﻿# Python bytecode
 __pycache__/
 *.py[cod]
 
@@ -13,3 +13,6 @@ android/captures/
 
 # SuperDebug Paper plugin: javac/classes output (the built JAR is committed)
 superdebug/build/
+
+# Cloudflare Pages deploy credentials (never committed)
+cloudflare_credentials.json
