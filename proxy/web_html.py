@@ -292,7 +292,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
 <div class="app">
   <aside class="sidebar">
     <div class="brand">
-      <strong>__APP__</strong>
+      <strong data-i18n="core.app_name">__APP__</strong>
       <span>v__VERSION__</span>
     </div>
     <nav class="nav" id="nav">

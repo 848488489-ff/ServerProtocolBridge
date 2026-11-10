@@ -13,7 +13,7 @@ import threading
 import time
 import uuid
 from . import (accounts, certs, config as config_module, eagler, mcp, third_party, update, webauth)
-from .i18n import (LANGUAGES, get_language, tr)
+from .i18n import (LANGUAGES, get_language, set_language, tr)
 from .gui_shell import update_window_title as _update_native_title
 from .runtime import get_manager
 from .utils import config_dir
@@ -96,6 +96,9 @@ def register(app, fail):
                 config, language_changed, web_changed, service_restart = _save_body(body)
             except ValueError as exc:
                 return fail(exc)
+        # Keep the process-wide language in step with the saved config, so
+        # server-rendered text (brand name, i18n payload) matches the selection.
+        set_language(config.language)
         return jsonify({
             'ok': True,
             'revision': manager.revision,
@@ -249,8 +252,12 @@ def register(app, fail):
                 merged[key] = value
             config.appearance = merged
         manager.save_config(config)
-        # The embedded pywebview window title is set once at startup from the
-        # language at that time; a language change here must refresh it.
+        # The process-wide language is set at startup only; a language change
+        # from the Web UI must refresh it so server-rendered text (the brand
+        # name, the i18n payload) follows the selection.  The embedded
+        # pywebview window title is refreshed here too (it is set once at
+        # startup from the language at that time).
+        set_language(config.language)
         if old_language != config.language:
             _update_native_title()
         return jsonify({'ok': True, 'theme': config.theme,
