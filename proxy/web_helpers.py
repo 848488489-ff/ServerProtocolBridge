@@ -202,7 +202,7 @@ _RESTART_FIELDS = frozenset({
     'listen_host', 'wss_port', 'ws_port',
     'target', 'routes', 'suffix_route', 'use_srv',
     'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-    'packet_timing', 'resource_pack_mode',
+    'resource_pack_mode',
     'server_brand', 'server_brand_version', 'spoof_client', 'spoof_brand',
     'tls_enabled',
     'cert_dir', 'cert_common_name', 'cert_extra_names', 'cert_days',
