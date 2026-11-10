@@ -9,7 +9,6 @@ import threading
 import time
 from . import (eagler, handshake, vanilla)
 from .i18n import tr
-from .packet_timing import PacketPacer
 from .proxy import (CLOSE_GRACE, CONNECT_FAIL_WAIT, FIRST_MESSAGE_WAIT, RECV_SIZE, _SessionClosed, _discard_future_result, _set_socket_options, describe_connect_error)
 from .translator import note
 from websockets.asyncio.server import ServerConnection
@@ -64,11 +63,6 @@ class BridgeInit:
 
         self._outbox: list[bytes] = []       # payloads to send to the client (one frame each)
         self._to_server: list[bytes] = []    # bytes to write to the target server
-        # 数据包发送时序控制（见 config.py 的 packet_timing）：只在游戏阶段
-        # 生效，保证客户端到服务器方向任意两个包至少间隔 12 毫秒。不解析包
-        # 内容，与游戏版本无关；正常节奏不受影响，只有突发会被摊开。
-        self._packet_timing = bool(getattr(server.config, 'packet_timing', True))
-        self._pacer = PacketPacer() if self._packet_timing else None
         # The translation layer may queue backend bytes from a worker thread
         # (login/transaction replies) while a pump drains the queue on the
         # event loop.  Copy-and-clear must be atomic with respect to appends,

@@ -193,13 +193,6 @@ class Config:
     # their place so the target can leave the login state (see translator.py).
     # Off = nothing is sent and everything passes through untouched.
     login_ack: bool = True
-    # 数据包发送时序控制（默认开启）：浏览器客户端在卡顿、后台标签页节流或
-    # 网络抖动之后，会把多个游戏刻的数据包挤在同一瞬间发出，服务器端的反作弊
-    # （例如 Grim 的 Post / PacketOrderE 检查）会把动作包判定为不在预期的移动
-    # 刻顺序上。开启后，代理保证客户端到服务器方向的任意两个包之间至少间隔
-    # 12 毫秒；正常节奏本来就大于这个间隔，不增加延迟，只有突发会被摊开。
-    # 只按时间整形，不解析包内容，因此与游戏版本无关。
-    packet_timing: bool = True
     # How the proxy handles the server's resource pack prompt. The choices are
     # 'forward' (pass the prompt through), 'accept' (answer accept and drop the
     # prompt), 'reject' (answer reject and drop the prompt), or 'spoof' (answer

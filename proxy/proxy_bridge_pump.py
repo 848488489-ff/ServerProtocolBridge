@@ -184,19 +184,6 @@ class BridgePump:
         await self._flush_to_server()
         await self._drain_outbox()
     # ---------- send/receive queues ----------
-    def _pace_active(self) -> bool:
-        """数据包发送时序控制是否应在当前阶段生效。
-
-        登录阶段的包必须尽快送达，不能被节奏控制拖慢；只有进入游戏阶段后，
-        移动包与动作包的相对时机才会被反作弊检查，因此也只在那里整形。
-        """
-        if self._pacer is None:
-            return False
-        translator = self.translator
-        if translator is not None:
-            return bool(translator.login_done)
-        return bool(self.plain_playing)
-
     async def _flush_to_server(self) -> None:
         # Note: the list must be drained in place. The translation layer holds
         # _to_server.append as its callback; swapping the attribute for a fresh
@@ -211,16 +198,8 @@ class BridgePump:
         if writer is None:
             return
         total = sum(len(chunk) for chunk in chunks)
-        # 游戏阶段才做节奏整形：给每个包预留发送时刻，必要时先等待再写入。
-        # 正常每秒约 20 个移动包，间隔远大于 12 毫秒，这里不会产生等待；
-        # 只有浏览器卡顿后挤在一起的突发包才会被摊开。
-        pacer = self._pacer if self._pace_active() else None
         try:
             for chunk in chunks:
-                if pacer is not None:
-                    delay = pacer.reserve()
-                    if delay > 0.0:
-                        await asyncio.sleep(delay)
                 writer.write(chunk)
             await writer.drain()
         except (OSError, RuntimeError) as exc:

@@ -477,9 +477,6 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <label class="switch"><input type="checkbox" id="eagler_translate"><span class="knob"></span></label>
           <label for="login_ack" data-i18n="gui.label.login_ack"></label>
           <label class="switch"><input type="checkbox" id="login_ack"><span class="knob"></span></label>
-          <label for="packet_timing" data-i18n="gui.label.packet_timing"></label>
-          <label class="switch"><input type="checkbox" id="packet_timing"><span class="knob"></span></label>
-          <div class="hint" data-i18n="gui.hint.packet_timing"></div>
           <label data-i18n="gui.label.resource_pack_mode"></label>
           <select id="resource_pack_mode"></select>
           <label for="auto_exit" data-i18n="gui.label.auto_exit"></label>
@@ -1108,7 +1105,7 @@ function fillConfig(config, options, problems) {
   fields.forEach(id => { const el = $('#' + id); if (el) el.value = config[id] ?? ''; });
   renderRoutes(config.routes);
   ['use_srv', 'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-   'packet_timing', 'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
+   'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
     const el = $('#' + id); if (el) el.checked = !!config[id];
   });
   updateSuffixRouteState();
@@ -1374,7 +1371,7 @@ function collectConfig() {
   config.theme = $('#theme-select').value;
   config.language = $('#language-select').value;
   ['use_srv', 'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-   'packet_timing', 'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
+   'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
     const el = $('#' + id);
     if (el) config[id] = el.checked;
   });
