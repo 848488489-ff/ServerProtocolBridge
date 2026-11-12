@@ -81,12 +81,6 @@ def build_login_success(username='Tester', uuid_text=None) -> bytes:
     return vanilla.pack(vanilla.LOGIN_SUCCESS, body)
 
 
-def build_login_success_modern(username='Tester') -> bytes:
-    """1.16+ login success: 16 raw UUID bytes, name string, zero properties."""
-    body = eagler.offline_uuid(username) + vanilla.write_string(username) + b'\x00'
-    return vanilla.pack(vanilla.LOGIN_SUCCESS, body)
-
-
 def build_disconnect(message: str) -> bytes:
     text = json.dumps({'text': message})
     body = vanilla.write_varint(len(text.encode())) + text.encode()
@@ -435,7 +429,6 @@ class EaglerProtocolTests(unittest.TestCase):
         for name in ('ab', 'a' * 17, '名字', 'bad-name', 'has space'):
             self.assertIn('3-16', eagler.name_warning(name))
 
-
 # ---------------------------------------------------------------- State machine
 
 
@@ -494,52 +487,22 @@ class TranslatorUnitTests(unittest.TestCase):
         self.assertEqual(translator.phase, 'play')
         self.assertEqual(closed, [])
 
-    def test_configuration_phase_is_answered_for_the_client(self):
-        translator, _sent, _closed, to_backend = self.make()
-        translator.mc_protocol = 764
-        translator.login_done = True
-        translator.phase = 'play'
-        translator.config_phase = True
+    def test_configuration_packets_pass_through_to_the_client(self):
+        """1.20.2+ configuration packets are forwarded untouched.
 
-        # Keep Alive: the same 8 bytes come back, nothing reaches the client.
-        keep_alive = b'abcdefgh'
-        frames = translator.feed_server(
-            vanilla.pack(vanilla.CONFIG_KEEP_ALIVE, keep_alive))
-        self.assertEqual(frames, [])
-        self.assertTrue(translator.config_phase)
-
-        # Finish Configuration: answered, then the play state starts.
-        frames = translator.feed_server(
-            vanilla.pack(vanilla.CONFIG_FINISH_CONFIGURATION, b''))
-        self.assertEqual(frames, [])
-        self.assertFalse(translator.config_phase)
-
-        packets = vanilla.Decoder(0).feed(b''.join(to_backend))
-        self.assertEqual([packet.packet_id for packet in packets],
-                         [vanilla.CONFIG_KEEP_ALIVE,
-                          vanilla.CONFIG_FINISH_CONFIGURATION])
-        self.assertEqual(packets[0].body, keep_alive)
-
-    def test_configuration_phase_forwards_other_packets(self):
+        The browser client implements the configuration state itself (its
+        code carries ServerboundFinishConfigurationPacket and friends), so the
+        proxy must not answer or eat Finish Configuration / Keep Alive on its
+        behalf: doing so left the client waiting for a finish it never saw and
+        the join hung after the registry data.
+        """
         translator, _sent, _closed, _backend = self.make()
-        translator.mc_protocol = 764
+        translator.mc_protocol = 774
         translator.login_done = True
         translator.phase = 'play'
-        translator.config_phase = True
-        packet = vanilla.pack(0x05, b'\x01\x02')
-        self.assertEqual(translator.feed_server(packet), [unframed(packet)])
-
-    def test_login_success_enters_configuration_phase_only_when_enabled(self):
-        for enabled, expected in ((True, True), (False, False)):
-            translator, _sent, _closed, _backend = self.make(
-                config_ack=enabled)
-            translator.mc_protocol = 764
-            translator.phase = 'allow_sent'
-            translator.client_finished = True
-            packet = vanilla.Decoder(0).feed(
-                build_login_success_modern('Tester'))[0]
-            translator._handle_login_success(packet, [])
-            self.assertEqual(translator.config_phase, expected)
+        for packet_id in (0x03, 0x04):
+            packet = vanilla.pack(packet_id, b'\x00' * 8)
+            self.assertEqual(translator.feed_server(packet), [unframed(packet)])
 
     def test_play_passthrough_and_extension_filter(self):
         translator, sent, _closed, _backend = self.make()

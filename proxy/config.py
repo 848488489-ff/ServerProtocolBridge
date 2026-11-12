@@ -194,12 +194,6 @@ class Config:
     # their place so the target can leave the login state (see translator.py).
     # Off = nothing is sent and everything passes through untouched.
     login_ack: bool = True
-    # 1.20.2+ targets hold the connection in a configuration state between login
-    # and play.  Browser clients never answer the state's Finish Configuration /
-    # Keep Alive, so the proxy answers them in the client's place (see
-    # translator_config.py).  Off = nothing is answered and everything passes
-    # through untouched (the pre-2.8 behaviour).
-    config_ack: bool = True
     # How the proxy handles the server's resource pack prompt. The choices are
     # 'forward' (pass the prompt through), 'accept' (answer accept and drop the
     # prompt), 'reject' (answer reject and drop the prompt), or 'spoof' (answer

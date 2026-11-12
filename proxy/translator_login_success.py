@@ -54,11 +54,6 @@ class LoginSuccessMixin:
             # dropping the connection; so the proxy acknowledges on its behalf.
             # This is the "login acknowledge" switch in the settings.
             self._acknowledge_login()
-            # From now on the target is in its configuration state: its packets
-            # are answered by the proxy (Finish Configuration, Keep Alive) and
-            # the rest is forwarded exactly as before (see translator_config).
-            # With the switch off the classic pass-through path is kept.
-            self.config_phase = self.config_ack
         self.log.info('%s %s' % (self.tag, tr(
             'translator.log.backend_login_ok', username=self.username, uuid=uuid_text)))
         self._send(eagler.pack_allow_login(self.username, self.uuid, self.handshake_protocol))

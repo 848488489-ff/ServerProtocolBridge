@@ -477,8 +477,6 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <label class="switch"><input type="checkbox" id="eagler_translate"><span class="knob"></span></label>
           <label for="login_ack" data-i18n="gui.label.login_ack"></label>
           <label class="switch"><input type="checkbox" id="login_ack"><span class="knob"></span></label>
-          <label for="config_ack" data-i18n="gui.label.config_ack"></label>
-          <label class="switch"><input type="checkbox" id="config_ack"><span class="knob"></span></label>
           <label data-i18n="gui.label.resource_pack_mode"></label>
           <select id="resource_pack_mode"></select>
           <label for="auto_exit" data-i18n="gui.label.auto_exit"></label>
@@ -1093,8 +1091,13 @@ function fillConfig(config, options, problems) {
     else el.value = config[item[0]] ?? el.value;
   });
   const logFilter = $('#log-level');
-  if (options) fillSelect('#log-level', [{ code: 'all', label: t('web.all_levels') }]
-    .concat(options.log_levels || []), logFilter.value || 'all');
+  /* Only rebuild the filter when the full option list is present.  The
+     revision sync calls fillConfig(config, {}) on every change; rebuilding
+     with an empty list used to leave "all levels" as the only choice. */
+  if (logFilter && options.log_levels) {
+    fillSelect('#log-level', [{ code: 'all', label: t('web.all_levels') }]
+      .concat(options.log_levels), logFilter.value || 'all');
+  }
   state.theme = config.theme;
   state.language = config.language;
   document.documentElement.dataset.theme = config.theme;
@@ -1109,7 +1112,7 @@ function fillConfig(config, options, problems) {
   fields.forEach(id => { const el = $('#' + id); if (el) el.value = config[id] ?? ''; });
   renderRoutes(config.routes);
   ['use_srv', 'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-   'config_ack', 'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
+   'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
     const el = $('#' + id); if (el) el.checked = !!config[id];
   });
   updateSuffixRouteState();
@@ -1376,7 +1379,7 @@ function collectConfig() {
   config.theme = $('#theme-select').value;
   config.language = $('#language-select').value;
   ['use_srv', 'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-   'config_ack', 'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
+   'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
     const el = $('#' + id);
     if (el) config[id] = el.checked;
   });

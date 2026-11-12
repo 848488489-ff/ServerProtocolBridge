@@ -8,7 +8,7 @@ from .i18n import tr
 # the WebSocket Server header and other machine-facing places, so it is always
 # English and never translated.
 APP_NAME = 'Server Protocol Bridge'
-VERSION = '2.8'
+VERSION = '2.8.1'
 
 # Service identifier that shows up in the status page / handshake
 SERVICE_NAME = 'server-protocol-bridge'

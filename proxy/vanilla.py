@@ -50,19 +50,6 @@ LOGIN_COOKIE_RESPONSE = 0x04    # serverbound (1.20.5+)
 # the login state after Login Success until the client acknowledges it
 LOGIN_ACKNOWLEDGED = 0x03       # serverbound (1.20.2+), no content
 
-# Configuration-state packet ids (1.20.2+, protocol 764+).  A browser client
-# never answers the server's configuration handshake -- its login phase ends
-# with the EaglercraftX finish -- so the proxy acknowledges on its behalf the
-# two packets that must be answered or the target never leaves the state:
-#   Finish Configuration (clientbound 0x02)  ->  serverbound 0x02 (no content)
-#   Keep Alive         (clientbound 0x03)  ->  serverbound 0x03 (the same id)
-# Everything else in the state (registry data, feature flags, known packs,
-# plugin messages, cookie requests) is forwarded to the client as before; those
-# need no answer for the connection to proceed, and modern browser clients are
-# positioned for the game by the Eagler handshake regardless.
-CONFIG_FINISH_CONFIGURATION = 0x02   # clientbound, serverbound is 0x02 too
-CONFIG_KEEP_ALIVE = 0x03             # clientbound, serverbound is 0x03 too
-
 # Play-phase packet ids that matter to us (1.8.8)
 PLAY_KEEP_ALIVE = 0x00
 PLAY_JOIN_GAME = 0x01
