@@ -101,6 +101,10 @@ USERNAME_PATTERN = re.compile(r'^[A-Za-z0-9_]{3,16}$')
 # A name made only of control characters carries no identity; UTF-8 of any other
 # script is passed through untouched (see usable_name).
 _CONTROL_RE = re.compile(r'[\x00-\x1f\x7f]')
+# The name shape Mojang enforces and most public servers assume.  Names outside
+# it are still passed through (Chinese servers accept CJK names), so this only
+# drives a UI warning -- it is never used to reject a name.
+_VANILLA_NAME_RE = re.compile(r'^[A-Za-z0-9_]{3,16}$')
 MAX_STRING = 255
 MAX_LIST = 16
 
@@ -499,6 +503,20 @@ def usable_name(username: str) -> str:
     if not text or _CONTROL_RE.search(text):
         return ''
     return text
+
+
+def name_warning(username: str) -> str:
+    """Return a warning for a name outside the usual server shape, else ''.
+
+    Mojang accounts are restricted to 3-16 letters, digits and underscores, and
+    most public servers reject anything else at login.  CJK names are accepted
+    by many private servers, so the proxy must not block them; callers show the
+    returned text as a warning and let the user decide.
+    """
+    text = (username or '').strip()
+    if not text or _VANILLA_NAME_RE.match(text):
+        return ''
+    return tr('eagler.name.warning', name=text)
 
 
 def sanitize_username(username: str, fallback: str = 'Player') -> str:

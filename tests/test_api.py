@@ -89,6 +89,9 @@ class ApiTests(unittest.TestCase):
         names = {tool['name'] for tool in body['tools']}
         self.assertIn('status', names)
         self.assertIn('get_config', names)
+        self.assertIn('export_config', names)
+        self.assertIn('import_config', names)
+        self.assertIn('list_connections', names)
         # The tutorial module was removed; its tools must not be exposed.
         self.assertNotIn('get_tutorial', names)
         self.assertNotIn('open_tutorial', names)

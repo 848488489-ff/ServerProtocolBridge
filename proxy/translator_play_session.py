@@ -13,6 +13,10 @@ from .translator_chat import note, packet_name
 
 class PlaySessionMixin:
     def _note_packet(self, packet_id: int, state: str, to_client: bool) -> None:
+        # Hot path: this runs for every play packet.  Building the translated
+        # message only makes sense when debug logging is actually on.
+        if not self.log.enabled('debug'):
+            return
         seen = self._seen_server_ids if to_client else self._seen_client_ids
         key = (packet_id, state)
         if key in seen or len(seen) > 60:

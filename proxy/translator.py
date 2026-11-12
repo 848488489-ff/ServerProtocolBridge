@@ -46,6 +46,7 @@ from __future__ import annotations
 from .translator_chat import (PACKET_NAMES, _CHAT_KEYS, _looks_like_chat_component,
                               _unwrap_chat_json, chat_to_text, note, packet_name,
                               uuid_from_string)  # noqa: F401
+from .translator_config import TranslatorConfigMixin  # noqa: F401
 from .translator_feed import TranslatorFeedMixin  # noqa: F401
 from .translator_login import LoginMixin  # noqa: F401
 from .translator_login_queries import TranslatorLoginQueriesMixin  # noqa: F401
@@ -54,12 +55,14 @@ from .translator_state import TranslatorStateMixin  # noqa: F401
 
 
 class EaglerTranslator(TranslatorStateMixin, TranslatorFeedMixin,
-                       TranslatorLoginQueriesMixin, LoginMixin, PlayMixin):
+                       TranslatorLoginQueriesMixin, TranslatorConfigMixin,
+                       LoginMixin, PlayMixin):
     """Translates between the EaglercraftX browser protocol and the vanilla
-    Minecraft protocol (login and play phases).
+    Minecraft protocol (login, configuration and play phases).
 
     The state lives on TranslatorStateMixin, the two feed entry points and the
     backend encoder on TranslatorFeedMixin, the login-phase handshakes on
-    TranslatorLoginQueriesMixin, and the per-phase packet handlers on
+    TranslatorLoginQueriesMixin, the configuration-phase answers on
+    TranslatorConfigMixin, and the per-phase packet handlers on
     LoginMixin / PlayMixin.
     """

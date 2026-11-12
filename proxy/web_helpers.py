@@ -108,6 +108,14 @@ def _config_options() -> dict:
         'appearance_densities': [
             {'code': code, 'label': tr('gui.label.appearance_density_' + code)}
             for code in config_module.APPEARANCE_DENSITIES],
+        'protocol_toggles': [
+            {'code': 'login_ack', 'label': tr('gui.label.login_ack')},
+            {'code': 'config_ack', 'label': tr('gui.label.config_ack')},
+        ],
+        'runtime_limits': [
+            {'code': 'max_connections',
+             'label': tr('gui.label.max_connections')},
+        ],
     }
 def _int_field(body: dict, key: str, label: str) -> int | None:
     if key not in body:
@@ -135,6 +143,7 @@ def _config_from_body(body: dict) -> config_module.Config:
             ('log_max_lines', tr('gui.label.log_max_lines')),
             ('status_cache_ttl', tr('gui.label.status_cache_ttl')),
             ('max_payload_mb', tr('gui.label.max_payload')),
+            ('max_connections', tr('gui.label.max_connections')),
             ('cert_days', tr('gui.label.cert_days'))):
         value = _int_field(body, key, label)
         if value is not None:
@@ -201,13 +210,14 @@ def _save_body(body: dict) -> tuple[config_module.Config, bool, bool, bool]:
 _RESTART_FIELDS = frozenset({
     'listen_host', 'wss_port', 'ws_port',
     'target', 'routes', 'suffix_route', 'use_srv',
-    'rewrite_handshake_host', 'eagler_translate', 'login_ack',
+    'rewrite_handshake_host', 'eagler_translate', 'login_ack', 'config_ack',
     'resource_pack_mode',
     'server_brand', 'server_brand_version', 'spoof_client', 'spoof_brand',
     'tls_enabled',
     'cert_dir', 'cert_common_name', 'cert_extra_names', 'cert_days',
     'cert_generator',
     'connect_timeout', 'heartbeat_sec', 'max_payload_mb',
+    'max_connections',
     'status_cache', 'status_cache_ttl',
 })
 

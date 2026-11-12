@@ -81,6 +81,12 @@ def build_login_success(username='Tester', uuid_text=None) -> bytes:
     return vanilla.pack(vanilla.LOGIN_SUCCESS, body)
 
 
+def build_login_success_modern(username='Tester') -> bytes:
+    """1.16+ login success: 16 raw UUID bytes, name string, zero properties."""
+    body = eagler.offline_uuid(username) + vanilla.write_string(username) + b'\x00'
+    return vanilla.pack(vanilla.LOGIN_SUCCESS, body)
+
+
 def build_disconnect(message: str) -> bytes:
     text = json.dumps({'text': message})
     body = vanilla.write_varint(len(text.encode())) + text.encode()
@@ -421,6 +427,14 @@ class EaglerProtocolTests(unittest.TestCase):
             self.assertEqual(eagler.sanitize_username(bad), 'Player')
         self.assertEqual(eagler.sanitize_username('', fallback='Alt'), 'Alt')
 
+    def test_name_warning_only_for_non_vanilla_shape(self):
+        """The warning is advisory: valid Mojang-shaped names are quiet, every
+        other shape is flagged but still allowed through."""
+        for name in ('Tester', 'abc', 'a' * 16, 'Steve_123'):
+            self.assertEqual(eagler.name_warning(name), '')
+        for name in ('ab', 'a' * 17, '名字', 'bad-name', 'has space'):
+            self.assertIn('3-16', eagler.name_warning(name))
+
 
 # ---------------------------------------------------------------- State machine
 
@@ -479,6 +493,53 @@ class TranslatorUnitTests(unittest.TestCase):
         self.assertEqual(sent[3], play)
         self.assertEqual(translator.phase, 'play')
         self.assertEqual(closed, [])
+
+    def test_configuration_phase_is_answered_for_the_client(self):
+        translator, _sent, _closed, to_backend = self.make()
+        translator.mc_protocol = 764
+        translator.login_done = True
+        translator.phase = 'play'
+        translator.config_phase = True
+
+        # Keep Alive: the same 8 bytes come back, nothing reaches the client.
+        keep_alive = b'abcdefgh'
+        frames = translator.feed_server(
+            vanilla.pack(vanilla.CONFIG_KEEP_ALIVE, keep_alive))
+        self.assertEqual(frames, [])
+        self.assertTrue(translator.config_phase)
+
+        # Finish Configuration: answered, then the play state starts.
+        frames = translator.feed_server(
+            vanilla.pack(vanilla.CONFIG_FINISH_CONFIGURATION, b''))
+        self.assertEqual(frames, [])
+        self.assertFalse(translator.config_phase)
+
+        packets = vanilla.Decoder(0).feed(b''.join(to_backend))
+        self.assertEqual([packet.packet_id for packet in packets],
+                         [vanilla.CONFIG_KEEP_ALIVE,
+                          vanilla.CONFIG_FINISH_CONFIGURATION])
+        self.assertEqual(packets[0].body, keep_alive)
+
+    def test_configuration_phase_forwards_other_packets(self):
+        translator, _sent, _closed, _backend = self.make()
+        translator.mc_protocol = 764
+        translator.login_done = True
+        translator.phase = 'play'
+        translator.config_phase = True
+        packet = vanilla.pack(0x05, b'\x01\x02')
+        self.assertEqual(translator.feed_server(packet), [unframed(packet)])
+
+    def test_login_success_enters_configuration_phase_only_when_enabled(self):
+        for enabled, expected in ((True, True), (False, False)):
+            translator, _sent, _closed, _backend = self.make(
+                config_ack=enabled)
+            translator.mc_protocol = 764
+            translator.phase = 'allow_sent'
+            translator.client_finished = True
+            packet = vanilla.Decoder(0).feed(
+                build_login_success_modern('Tester'))[0]
+            translator._handle_login_success(packet, [])
+            self.assertEqual(translator.config_phase, expected)
 
     def test_play_passthrough_and_extension_filter(self):
         translator, sent, _closed, _backend = self.make()
@@ -1451,6 +1512,56 @@ class TranslatorSchedulingTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(
                 await bridge._translator_call(feed, b'second', translator), b'ok:second')
             self.assertEqual(threaded, [b'login', b'first'])
+
+
+class ConnectionLimitTests(unittest.TestCase):
+    def test_limit_refuses_extra_upgrades_and_frees_slots(self):
+        """max_connections caps simultaneous sessions at the upgrade.
+
+        websockets 17 no longer takes max_connections, so the cap lives in the
+        HTTP handler: a full listener answers 503 instead of completing a
+        WebSocket handshake, and closing a session frees its slot again.
+        """
+        target = FakeVanillaServer()
+        config = Config()
+        config.tls_enabled = False
+        config.wss_port = 0
+        config.ws_port = free_port()
+        config.listen_host = '127.0.0.1'
+        config.target = '127.0.0.1:%d' % target.port
+        config.use_srv = False
+        config.max_connections = 1
+        server = ProxyServer(config)
+        server.start()
+        first = None
+        second = None
+        try:
+            first, _headers = connect_ws(config.ws_port, tls=False)
+            deadline = time.time() + 5.0
+            while time.time() < deadline and not server.list_connections():
+                time.sleep(0.02)
+            self.assertEqual(len(server.list_connections()), 1)
+
+            with self.assertRaises(AssertionError) as raised:
+                connect_ws(config.ws_port, tls=False)
+            self.assertIn('503', str(raised.exception))
+
+            first.close()
+            first = None
+            deadline = time.time() + 5.0
+            while time.time() < deadline and server.list_connections():
+                time.sleep(0.02)
+            self.assertEqual(server.list_connections(), [])
+
+            second, _headers = connect_ws(config.ws_port, tls=False)
+            self.assertIsNotNone(second)
+        finally:
+            if second is not None:
+                second.close()
+            if first is not None:
+                first.close()
+            server.stop()
+            target.close()
 
 
 if __name__ == '__main__':

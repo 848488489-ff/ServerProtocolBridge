@@ -122,6 +122,9 @@ class ProxyCore:
             'server_brand_version': config.server_brand_version or VERSION,
             'spoof_client': getattr(config, 'spoof_client', 'off'),
             'spoof_brand': config.spoof_brand_value(),
+            'login_ack': bool(getattr(config, 'login_ack', True)),
+            'config_ack': bool(getattr(config, 'config_ack', True)),
+            'max_connections': int(getattr(config, 'max_connections', 0)),
             'status_cache': bool(config.status_cache),
             'status_cache_ttl': int(config.status_cache_ttl),
             'certificate': None,
@@ -168,6 +171,49 @@ class ProxyCore:
             if bridge in self._connections:
                 self._connections.discard(bridge)
                 self.stats.connection_closed()
+
+    def list_connections(self) -> list[dict]:
+        """Snapshot of the active client connections, newest id last.
+
+        Only immutable-ish fields and counters are copied; anything that can be
+        torn down concurrently is read defensively so a closing connection
+        cannot raise inside a status or MCP call.
+        """
+        with self._lock:
+            bridges = list(self._connections)
+        now = time.time()
+        items: list[dict] = []
+        for bridge in bridges:
+            try:
+                translator = getattr(bridge, 'translator', None)
+                endpoint = getattr(bridge, 'endpoint', None)
+                addr = getattr(bridge, 'addr', None) or ('', 0)
+                started = float(getattr(bridge, 'started_at', now) or now)
+                items.append({
+                    'id': int(getattr(bridge, 'id', 0)),
+                    'client': '%s:%s' % (addr[0], addr[1]),
+                    'path': str(getattr(bridge, 'path', '/')),
+                    'scheme': str(getattr(bridge, 'scheme', '')),
+                    'subprotocol': getattr(bridge, 'subprotocol', None),
+                    'target': str(getattr(bridge, 'target_text', '')
+                                  or getattr(bridge, 'route_host', '')),
+                    'endpoint': ('%s:%d' % (endpoint[0], int(endpoint[1]))
+                                 if endpoint else ''),
+                    'started_at': round(started, 3),
+                    'uptime_seconds': round(max(0.0, now - started), 1),
+                    'bytes_to_server': int(getattr(bridge, 'bytes_to_server', 0)),
+                    'bytes_to_client': int(getattr(bridge, 'bytes_to_client', 0)),
+                    'frames_in': int(getattr(bridge, 'frames_in', 0)),
+                    'phase': str(getattr(translator, 'phase', '') or
+                                 ('play' if getattr(bridge, 'plain_playing', False)
+                                  else 'unknown')),
+                    'username': str(getattr(translator, 'username', '') or ''),
+                    'protocol': int(getattr(translator, 'mc_protocol', 0) or 0),
+                })
+            except Exception:      # a closing bridge must not break the listing
+                continue
+        items.sort(key=lambda item: item['id'])
+        return items
     # ---------- routing / target resolution ----------
     def resolve_route(self, path: str) -> dict:
         config = self.config

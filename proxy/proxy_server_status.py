@@ -71,6 +71,18 @@ class ProxyStatus:
         Everything else is answered here without touching the game path.
         """
         if request.headers.get('Upgrade', '').lower() == 'websocket':
+            # Connection cap: websockets 17 dropped its own max_connections
+            # parameter, so refuse the upgrade here before the handshake.  0
+            # keeps the listener unlimited.
+            limit = int(getattr(self.config, 'max_connections', 0) or 0)
+            if limit > 0:
+                with self._lock:
+                    active = len(self._connections)
+                if active >= limit:
+                    return self._http_response(
+                        503, 'Service Unavailable',
+                        b'Too many connections\n',
+                        'text/plain; charset=utf-8')
             return None
 
         path = (request.path or '/').split('?', 1)[0] or '/'
@@ -114,9 +126,19 @@ class ProxyStatus:
         addr = (client[0], client[1])
         bridge = Bridge(self, connection, path, scheme, addr, self.log,
                         connection.subprotocol)
+        limit = int(getattr(self.config, 'max_connections', 0) or 0)
         with self._lock:
-            self._connections.add(bridge)
-            self.stats.connection_opened()
+            # Re-check after the upgrade: two clients can pass the process_request
+            # check at the same time, and only one may take the last slot.
+            if limit > 0 and len(self._connections) >= limit:
+                full = True
+            else:
+                full = False
+                self._connections.add(bridge)
+                self.stats.connection_opened()
+        if full:
+            await connection.close(1013, 'too many connections')
+            return
         await bridge.run()
     # ---------- listeners ----------
     def _start_listener(self, port: int, scheme: str,

@@ -631,6 +631,23 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded.status_cache_ttl, 120)
             self.assertEqual(loaded.config_version, 2)
             self.assertEqual(loaded.spoof_client, 'forge-1.8')
+            self.assertTrue(loaded.config_ack)
+
+    def test_save_leaves_no_temp_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'config.json'
+            Config().save(path)
+            self.assertTrue(path.exists())
+            self.assertFalse((Path(tmp) / 'config.json.tmp').exists())
+
+    def test_max_connections_validation(self):
+        config = Config()
+        config.target = 'play.example.net'
+        self.assertEqual(config.max_connections, 0)
+        self.assertEqual(config.validate(), [])
+        config.max_connections = -1
+        self.assertTrue(any(tr('core.config.max_connections_range') in item
+                            for item in config.validate()))
 
     def test_unknown_keys_ignored(self):
         config = Config.from_dict({'target': 'a:1', '不存在的键': 5, 'wss_port': '1234'})
