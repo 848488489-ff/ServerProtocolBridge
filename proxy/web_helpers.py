@@ -110,7 +110,6 @@ def _config_options() -> dict:
             for code in config_module.APPEARANCE_DENSITIES],
         'protocol_toggles': [
             {'code': 'login_ack', 'label': tr('gui.label.login_ack')},
-            {'code': 'config_ack', 'label': tr('gui.label.config_ack')},
         ],
         'runtime_limits': [
             {'code': 'max_connections',
@@ -210,7 +209,7 @@ def _save_body(body: dict) -> tuple[config_module.Config, bool, bool, bool]:
 _RESTART_FIELDS = frozenset({
     'listen_host', 'wss_port', 'ws_port',
     'target', 'routes', 'suffix_route', 'use_srv',
-    'rewrite_handshake_host', 'eagler_translate', 'login_ack', 'config_ack',
+    'rewrite_handshake_host', 'eagler_translate', 'login_ack',
     'resource_pack_mode',
     'server_brand', 'server_brand_version', 'spoof_client', 'spoof_brand',
     'tls_enabled',

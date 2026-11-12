@@ -631,7 +631,6 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(loaded.status_cache_ttl, 120)
             self.assertEqual(loaded.config_version, 2)
             self.assertEqual(loaded.spoof_client, 'forge-1.8')
-            self.assertTrue(loaded.config_ack)
 
     def test_save_leaves_no_temp_file(self):
         with tempfile.TemporaryDirectory() as tmp:

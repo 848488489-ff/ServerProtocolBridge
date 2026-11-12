@@ -43,8 +43,6 @@ def build_parser() -> argparse.ArgumentParser:
                         help=tr('core.cli.no_eagler_help'))
     parser.add_argument('--no-login-ack', action='store_true',
                         help=tr('core.cli.no_login_ack_help'))
-    parser.add_argument('--no-config-ack', action='store_true',
-                        help=tr('core.cli.no_config_ack_help'))
     parser.add_argument('--max-connections', type=int,
                         help=tr('core.cli.max_connections_help'))
     parser.add_argument('--account', help=tr('core.cli.account_help'))
@@ -90,8 +88,6 @@ def apply_arguments(config: Config, args: argparse.Namespace) -> Config:
         config.eagler_translate = False
     if args.no_login_ack:
         config.login_ack = False
-    if args.no_config_ack:
-        config.config_ack = False
     if args.max_connections is not None:
         config.max_connections = max(0, args.max_connections)
     if args.account:

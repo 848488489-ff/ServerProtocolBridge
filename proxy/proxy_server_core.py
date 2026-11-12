@@ -123,7 +123,6 @@ class ProxyCore:
             'spoof_client': getattr(config, 'spoof_client', 'off'),
             'spoof_brand': config.spoof_brand_value(),
             'login_ack': bool(getattr(config, 'login_ack', True)),
-            'config_ack': bool(getattr(config, 'config_ack', True)),
             'max_connections': int(getattr(config, 'max_connections', 0)),
             'status_cache': bool(config.status_cache),
             'status_cache_ttl': int(config.status_cache_ttl),
