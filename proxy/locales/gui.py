@@ -55,6 +55,7 @@ EN = {
                                    'immediately and refresh in the background.',
     'gui.label.connect_timeout': 'Connect Timeout (s)',
     'gui.label.max_payload': 'Max Frame Size (MB)',
+    'gui.label.max_connections': 'Max connections (0 = unlimited)',
     'gui.label.spoof_client': 'Client identity and brand spoofing',
     'gui.spoof.off': 'Off (no spoofing)',
     'gui.spoof.vanilla': 'Vanilla',
@@ -69,6 +70,8 @@ EN = {
                                   '(required for clients that use wss:// or ws://)',
     'gui.label.login_ack': 'Login acknowledge for 1.20.2+ targets '
                             '(sent on the client\'s behalf; modern servers need it)',
+    'gui.label.config_ack': 'Finish the 1.20.2+ configuration phase '
+                             '(answers Finish Configuration and keep-alives for the client)',
     'gui.label.resource_pack_mode': 'Resource pack handling',
     'gui.resource_pack_mode.forward': 'Forward prompt',
     'gui.resource_pack_mode.accept': 'Accept if present',
@@ -196,6 +199,7 @@ ZH = {
     'gui.label.status_cache_hint': '关闭后每次列表查询都会等待目标服务器；开启后优先返回缓存，并在后台刷新。',
     'gui.label.connect_timeout': '连接超时(秒)',
     'gui.label.max_payload': '单帧上限(MB)',
+    'gui.label.max_connections': '连接上限(0=不限)',
     'gui.label.spoof_client': '客户端标识与品牌伪装',
     'gui.spoof.off': '关闭(不伪装)',
     'gui.spoof.vanilla': '原版',
@@ -207,6 +211,7 @@ ZH = {
     'gui.label.rewrite_host': '按目标域名改写握手地址(服务器按地址校验/分流时勾选)',
     'gui.label.eagler_translate': 'WebSocket 客户端协议翻译(使用 wss:// 或 ws:// 的客户端必需)',
     'gui.label.login_ack': '补发登录确认包(1.20.2+ 服务器必需, 否则进服即断)',
+    'gui.label.config_ack': '代答 1.20.2+ 配置阶段(Finish Configuration 与保活包)',
     'gui.label.resource_pack_mode': '资源包处理方式',
     'gui.resource_pack_mode.forward': '转发提示',
     'gui.resource_pack_mode.accept': '有则允许',

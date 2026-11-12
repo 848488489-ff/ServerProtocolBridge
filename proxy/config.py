@@ -9,6 +9,7 @@ throw the settings away with it.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
@@ -193,6 +194,12 @@ class Config:
     # their place so the target can leave the login state (see translator.py).
     # Off = nothing is sent and everything passes through untouched.
     login_ack: bool = True
+    # 1.20.2+ targets hold the connection in a configuration state between login
+    # and play.  Browser clients never answer the state's Finish Configuration /
+    # Keep Alive, so the proxy answers them in the client's place (see
+    # translator_config.py).  Off = nothing is answered and everything passes
+    # through untouched (the pre-2.8 behaviour).
+    config_ack: bool = True
     # How the proxy handles the server's resource pack prompt. The choices are
     # 'forward' (pass the prompt through), 'accept' (answer accept and drop the
     # prompt), 'reject' (answer reject and drop the prompt), or 'spoof' (answer
@@ -245,6 +252,10 @@ class Config:
     connect_timeout: float = 10.0
     heartbeat_sec: int = 30       # WebSocket heartbeat interval in seconds; 0 = disabled
     max_payload_mb: int = 16      # Max size of a single frame
+    # Upper bound on simultaneous client connections.  0 = unlimited.  A
+    # listener exposed beyond loopback should set this so one peer cannot fill
+    # the process with idle sockets.
+    max_connections: int = 0
     # Server-list (Accept: MOTD) status cache.  When enabled, a fresh cached
     # answer is returned immediately and a stale one is refreshed in the
     # background.  When disabled, every list query asks the target server.
@@ -382,7 +393,22 @@ class Config:
         target = Path(path) if path else resolve_path(CONFIG_FILENAME)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = json.dumps(self.to_dict(), ensure_ascii=False, indent=2) + '\n'
-        target.write_text(payload, encoding='utf-8')
+        # Write a sibling temp file and swap it in: a crash, a disk-full error
+        # or a power loss during the write can then never leave a truncated
+        # config.json behind (os.replace is atomic on Windows and POSIX).
+        temp = target.with_name(target.name + '.tmp')
+        try:
+            with open(temp, 'w', encoding='utf-8') as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp, target)
+        except OSError:
+            try:
+                temp.unlink()
+            except OSError:
+                pass
+            raise
         return target
 
     # ---------- Validation ----------
@@ -404,6 +430,8 @@ class Config:
             problems.append(_problem('core.config.tls_needs_ws_port'))
         if self.tls_enabled and int(self.wss_port) > 0 and int(self.ws_port) == int(self.wss_port):
             problems.append(_problem('core.config.ports_conflict'))
+        if int(self.max_connections) < 0:
+            problems.append(_problem('core.config.max_connections_range'))
         if not (self.target or '').strip():
             problems.append(_problem('core.config.target_empty'))
         else:

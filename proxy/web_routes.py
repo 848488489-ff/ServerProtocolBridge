@@ -351,7 +351,8 @@ def register(app, fail):
             return fail(tr('gui.accounts.offline.bad_name'))
         account = accounts.add_account(
             accounts.Account(kind=accounts.KIND_OFFLINE, username=name))
-        return jsonify({'ok': True, 'account': _account_payload(account, '')})
+        return jsonify({'ok': True, 'warning': eagler.name_warning(name),
+                        'account': _account_payload(account, '')})
     @app.route('/api/accounts/thirdparty', methods=['POST'])
     def api_account_thirdparty():
         body = request.get_json(silent=True) or {}

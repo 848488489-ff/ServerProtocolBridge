@@ -58,6 +58,8 @@ class TranslatorFeedMixin:
                 self.packets_to_client += 1
                 if not self.login_done:
                     self._handle_login_packet(packet, frames)
+                elif self.config_phase:
+                    self._handle_config_packet(packet, frames)
                 else:
                     self._handle_play_packet(packet, frames)
                 if self.phase == 'closed':

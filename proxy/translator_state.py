@@ -18,7 +18,8 @@ class TranslatorStateMixin:
                  send_client=None, send_backend=None, request_close=None,
                  brand: str = 'ServerProtocolBridge', brand_version: str = '1.0',
                  spoof_client: str = 'off', spoof_brand: str = '',
-                 login_ack: bool = True, resource_pack_mode: str = 'forward',
+                 login_ack: bool = True, config_ack: bool = True,
+                 resource_pack_mode: str = 'forward',
                  account=None):
         self.target_host = target_host
         self.target_port = int(target_port)
@@ -36,6 +37,9 @@ class TranslatorStateMixin:
         # (see _handle_login_success); switchable because it is a guess about
         # what the browser client does, not part of the classic flow
         self.login_ack = bool(login_ack)
+        # Whether the 1.20.2+ configuration phase is answered in the client's
+        # place (see translator_config.py); the pre-2.8 behaviour is off.
+        self.config_ack = bool(config_ack)
         # How to treat the server's resource pack prompt (see config.py).
         self.resource_pack_mode = (resource_pack_mode or 'forward').strip().lower()
         # The account selected in the settings (accounts.py), if any: it
@@ -55,6 +59,11 @@ class TranslatorStateMixin:
         self.uuid = b''
         self.client_finished = False      # has the client sent "finish login" yet?
         self.login_done = False           # has the backend login succeeded yet?
+        # 1.20.2+ targets hold the connection in a "configuration" state between
+        # login and play; the proxy enters it after it acknowledges Login Success
+        # and leaves it when it answers the target's Finish Configuration (see
+        # translator_config.py).  False for older targets and untranslated flows.
+        self.config_phase = False
         self.close_reason = ''
 
         # The client direction uses no Decoder/Encoder: there, one frame is one bare

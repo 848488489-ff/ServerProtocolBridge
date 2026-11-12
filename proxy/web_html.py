@@ -477,6 +477,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <label class="switch"><input type="checkbox" id="eagler_translate"><span class="knob"></span></label>
           <label for="login_ack" data-i18n="gui.label.login_ack"></label>
           <label class="switch"><input type="checkbox" id="login_ack"><span class="knob"></span></label>
+          <label for="config_ack" data-i18n="gui.label.config_ack"></label>
+          <label class="switch"><input type="checkbox" id="config_ack"><span class="knob"></span></label>
           <label data-i18n="gui.label.resource_pack_mode"></label>
           <select id="resource_pack_mode"></select>
           <label for="auto_exit" data-i18n="gui.label.auto_exit"></label>
@@ -497,6 +499,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <input id="connect_timeout" inputmode="decimal">
           <label data-i18n="gui.label.max_payload"></label>
           <input id="max_payload_mb" inputmode="numeric">
+          <label data-i18n="gui.label.max_connections"></label>
+          <input id="max_connections" inputmode="numeric">
           <label for="update_check" data-i18n="gui.label.update_check"></label>
           <label class="switch"><input type="checkbox" id="update_check"><span class="knob"></span></label>
         </div>
@@ -1099,13 +1103,13 @@ function fillConfig(config, options, problems) {
   loadAppearanceControls(state.appearance);
   const fields = ['target', 'listen_host', 'wss_port', 'ws_port', 'server_brand',
     'server_brand_version', 'spoof_brand', 'log_level', 'heartbeat_sec',
-    'connect_timeout', 'max_payload_mb', 'cert_dir',
+    'connect_timeout', 'max_payload_mb', 'max_connections', 'cert_dir',
     'cert_common_name', 'cert_extra_names', 'cert_days', 'cert_generator',
     'web_host', 'web_port'];
   fields.forEach(id => { const el = $('#' + id); if (el) el.value = config[id] ?? ''; });
   renderRoutes(config.routes);
   ['use_srv', 'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-   'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
+   'config_ack', 'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
     const el = $('#' + id); if (el) el.checked = !!config[id];
   });
   updateSuffixRouteState();
@@ -1357,6 +1361,7 @@ function collectConfig() {
   config.heartbeat_sec = numberValue('heartbeat_sec', t('gui.label.heartbeat'), true);
   config.connect_timeout = numberValue('connect_timeout', t('gui.label.connect_timeout'), false);
   config.max_payload_mb = numberValue('max_payload_mb', t('gui.label.max_payload'), true);
+  config.max_connections = numberValue('max_connections', t('gui.label.max_connections'), true);
   config.cert_days = numberValue('cert_days', t('gui.label.cert_days'), true);
   const routes = routeText();
   if (routes.error) throw new Error(routes.error);
@@ -1371,7 +1376,7 @@ function collectConfig() {
   config.theme = $('#theme-select').value;
   config.language = $('#language-select').value;
   ['use_srv', 'rewrite_handshake_host', 'eagler_translate', 'login_ack',
-   'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
+   'config_ack', 'auto_exit', 'update_check', 'suffix_route'].forEach(id => {
     const el = $('#' + id);
     if (el) config[id] = el.checked;
   });
@@ -1682,11 +1687,20 @@ function addOffline() {
   const dialog = modal(t('gui.accounts.add.offline'),
     '<label>' + esc(t('web.offline_prompt')) + '</label><input id="offline-name" autocomplete="off">',
     [
-      { label: t('gui.accounts.add.offline'), kind: 'primary', onClick: async (dlg) => {
+      { label: t('gui.accounts.offline.submit'), kind: 'primary', onClick: async (dlg) => {
           const name = dlg.querySelector('#offline-name').value.trim();
+          if (!name) { toast(t('gui.accounts.offline.bad_name'), 'error'); return; }
+          /* Chinese names and other unusual shapes are accepted (many private
+             servers allow them), but public servers usually enforce the Mojang
+             shape; warn before adding instead of silently creating a name the
+             player may not be able to join with. */
+          if (!/^[A-Za-z0-9_]{3,16}$/.test(name)
+              && !confirm(t('gui.accounts.offline.warn_name', { name }))) return;
           try {
-            await api('/api/accounts/offline', { method: 'POST', body: { username: name } });
-            dlg.close(); toast(t('web.account_added'), 'ok'); loadAccounts();
+            const result = await api('/api/accounts/offline', { method: 'POST', body: { username: name } });
+            dlg.close();
+            toast(result.warning || t('web.account_added'), result.warning ? 'warn' : 'ok');
+            loadAccounts();
           } catch (err) { toast(err.message, 'error'); }
         } },
       { label: t('gui.settings.close'), onClick: dlg => dlg.close() }

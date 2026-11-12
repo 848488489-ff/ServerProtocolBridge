@@ -20,6 +20,9 @@ EN = {
                                'forward raw bytes only',
     'core.cli.no_login_ack_help': 'Disable the 1.20.2+ login acknowledge sent to the target '
                                   'server on the client\'s behalf',
+    'core.cli.no_config_ack_help': 'Disable answering the 1.20.2+ configuration phase '
+                                    '(Finish Configuration and keep-alives) on the client\'s behalf',
+    'core.cli.max_connections_help': 'Maximum simultaneous client connections; 0 = unlimited',
     'core.cli.account_help': 'Use this account (name or id from the account list) for this '
                              'run instead of the selected one',
     'core.cli.server_brand_help': 'Server brand shown to WebSocket clients '
@@ -106,6 +109,8 @@ ZH = {
     'core.cli.rewrite_host_help': '把握手包里的服务器地址改写成目标域名(服务器按地址校验/分流时使用)',
     'core.cli.no_eagler_help': '关闭 WebSocket 客户端协议翻译, 只做纯字节转发',
     'core.cli.no_login_ack_help': '关闭代客户端补发的 1.20.2+ 登录确认包',
+    'core.cli.no_config_ack_help': '关闭代客户端应答 1.20.2+ 配置阶段(Finish Configuration 与保活包)',
+    'core.cli.max_connections_help': '同时连接上限, 0 = 不限',
     'core.cli.account_help': '本次改用指定账号(账号名或列表里的 ID), 不改变已选账号',
     'core.cli.server_brand_help': 'WebSocket 客户端看到的"服务器品牌"(默认 ServerProtocolBridge)',
     'core.cli.server_version_help': 'WebSocket 客户端看到的"服务器版本"(空 = 用程序版本号)',

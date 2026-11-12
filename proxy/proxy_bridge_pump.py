@@ -31,6 +31,7 @@ class BridgePump:
             spoof_client=getattr(config, 'spoof_client', 'off'),
             spoof_brand=config.spoof_brand_value(),
             login_ack=bool(getattr(config, 'login_ack', True)),
+            config_ack=bool(getattr(config, 'config_ack', True)),
             resource_pack_mode=getattr(config, 'resource_pack_mode', 'forward'),
             account=self._selected_account(),
         )

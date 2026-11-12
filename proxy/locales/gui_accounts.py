@@ -6,7 +6,7 @@ EN = {
     'gui.accounts.col.uuid': 'UUID',
     'gui.accounts.col.state': 'In use',
     'gui.accounts.button.add': 'Add account',
-    'gui.accounts.add.offline': 'Offline account',
+    'gui.accounts.add.offline': 'Add offline account',
     'gui.accounts.add.thirdparty': 'Third-party account',
     'gui.accounts.add.microsoft': 'Microsoft account',
     'gui.accounts.button.active': 'Use this account',
@@ -31,6 +31,11 @@ EN = {
     'gui.accounts.offline.bad_name': 'That name cannot be used: it is empty, or contains '
                                      'only control characters. Length and the allowed '
                                      'characters are up to the target server.',
+    'gui.accounts.offline.warn_name': 'The name "%(name)s" is outside the usual server rules '
+                                      '(3-16 letters, digits or underscores); some servers '
+                                      'may reject it and you may be unable to join. '
+                                      'Add it anyway?',
+    'gui.accounts.offline.submit': 'Add',
     'gui.accounts.thirdparty.title': 'Add third-party account',
     'gui.accounts.thirdparty.server': 'Account service address',
     'gui.accounts.thirdparty.username': 'User name / e-mail',
@@ -79,7 +84,7 @@ ZH = {
     'gui.accounts.col.uuid': 'UUID',
     'gui.accounts.col.state': '当前',
     'gui.accounts.button.add': '添加账号',
-    'gui.accounts.add.offline': '离线账号',
+    'gui.accounts.add.offline': '添加离线账号',
     'gui.accounts.add.thirdparty': '第三方账号',
     'gui.accounts.add.microsoft': '微软账号',
     'gui.accounts.button.active': '设为当前',
@@ -101,6 +106,10 @@ ZH = {
     'gui.accounts.offline.prompt': '角色名',
     'gui.accounts.offline.bad_name': '这个名字不能使用：内容为空或只包含控制字符。'
                                     '长度和允许使用的字符由目标服务器决定。',
+    'gui.accounts.offline.warn_name': '昵称 "%(name)s" 不符合常见服务器规则'
+                                     '(建议 3~16 位英文、数字或下划线), 可能导致无法进入部分服务器。'
+                                     '仍要添加吗?',
+    'gui.accounts.offline.submit': '添加',
     'gui.accounts.thirdparty.title': '添加第三方账号',
     'gui.accounts.thirdparty.server': '账号服务地址',
     'gui.accounts.thirdparty.username': '用户名/邮箱',

@@ -70,6 +70,36 @@ TOOLS = (
         'inputSchema': _schema(),
     },
     {
+        'name': 'export_config',
+        'description': (
+            'Export the complete live configuration as a JSON-ready object for '
+            'backup or migration.  Include its config field when calling '
+            'import_config.'),
+        'inputSchema': _schema(),
+    },
+    {
+        'name': 'import_config',
+        'description': (
+            'Replace the configuration with a previously exported object (the '
+            'config field of export_config).  It is validated before saving; '
+            'a changed Web UI bind restarts the listener and a changed '
+            'language switches the interface.'),
+        'inputSchema': _schema(
+            {'config': {'type': 'object',
+                        'description': 'Complete configuration object.',
+                        'additionalProperties': True}},
+            ['config']),
+    },
+    {
+        'name': 'list_connections',
+        'description': (
+            'List the active client connections: id, client address, request '
+            'path, target server, protocol translation phase, client protocol, '
+            'username, uptime and traffic counters.  Use it to see who is '
+            'connected and how far each session got.'),
+        'inputSchema': _schema(),
+    },
+    {
         'name': 'update_config',
         'description': (
             'Merge configuration fields into the live configuration, validate '
@@ -135,7 +165,11 @@ TOOLS = (
     },
     {
         'name': 'add_offline_account',
-        'description': 'Add an offline (name-only) account.',
+        'description': (
+            'Add an offline (name-only) account.  The response carries a '
+            'warning when the name is outside the usual 3-16 letter/digit/'
+            'underscore shape; the account is still added because private '
+            'servers may accept such names.'),
         'inputSchema': _schema({
             'username': {'type': 'string', 'minLength': 1},
         }, ['username']),
@@ -470,6 +504,64 @@ def _tool_get_config(_arguments: dict) -> dict:
     })
 
 
+def _tool_export_config(_arguments: dict) -> dict:
+    manager = get_manager()
+    config = manager.config
+    return _text_result({
+        'version': VERSION,
+        'revision': manager.revision,
+        'config': config.to_dict(),
+        'problems': config.validate(),
+        'web_problems': config.validate_web(),
+    })
+
+
+def _tool_import_config(arguments: dict) -> dict:
+    from .web_helpers import _save_body
+
+    body = arguments.get('config')
+    if not isinstance(body, dict):
+        raise ValueError('config must be an object')
+    candidate = config_module.Config.from_dict(body)
+    problems = candidate.validate()
+    if problems:
+        return _text_result({'error': '\n'.join(problems),
+                             'problems': problems}, True)
+    try:
+        config, language_changed, web_changed, service_restart = _save_body(
+            candidate.to_dict())
+    except ValueError as exc:
+        return _text_result({'error': str(exc)}, True)
+    return _text_result({
+        'ok': True,
+        'revision': get_manager().revision,
+        'config': config.to_dict(),
+        'problems': config.validate(),
+        'language_changed': language_changed,
+        'web_restart': web_changed,
+        'service_restart': service_restart,
+        'web_url': config.web_url(),
+    })
+
+
+def _tool_list_connections(_arguments: dict) -> dict:
+    manager = get_manager()
+    server = getattr(manager, 'server', None)
+    connections: list[dict] = []
+    if server is not None:
+        try:
+            connections = server.list_connections()
+        except Exception as exc:
+            return _text_result({'error': str(exc)}, True)
+    return _text_result({
+        'state': manager.state,
+        'active': len(connections),
+        'max_connections': int(getattr(manager.config,
+                                       'max_connections', 0) or 0),
+        'connections': connections,
+    })
+
+
 def _tool_update_config(arguments: dict) -> dict:
     from .web_helpers import _save_body
 
@@ -555,7 +647,8 @@ def _tool_add_offline_account(arguments: dict) -> dict:
         return _text_result({'error': 'invalid username'}, True)
     account = accounts.add_account(
         accounts.Account(kind=accounts.KIND_OFFLINE, username=name))
-    return _text_result({'ok': True, 'account': _account_payload(account, '')})
+    return _text_result({'ok': True, 'warning': eagler.name_warning(name),
+                         'account': _account_payload(account, '')})
 
 
 def _tool_remove_account(arguments: dict) -> dict:
@@ -1031,6 +1124,9 @@ def _tool_reset_config(_arguments: dict) -> dict:
 _HANDLERS = {
     'status': _tool_status,
     'get_config': _tool_get_config,
+    'export_config': _tool_export_config,
+    'import_config': _tool_import_config,
+    'list_connections': _tool_list_connections,
     'update_config': _tool_update_config,
     'start_service': _tool_start_service,
     'stop_service': _tool_stop_service,
