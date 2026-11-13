@@ -236,17 +236,22 @@ def main() -> int:
     elif sys.platform == 'darwin':
         command += ['--hidden-import', 'webview.platforms.cocoa']
     else:
-        # Linux: do not bundle the GTK/WebKit stack.  pywebview's GTK backend
-        # drags in libgtk, WebKitGTK, librsvg, ICU data and the Adwaita icon
-        # theme -- about 40 MB of duplicated system libraries in a single-file
-        # build, while those libraries must be installed on the target machine
-        # anyway (python3-gi + gir1.2-webkit2-4.1).  Dropping them keeps the
-        # binary under the 25 MiB download limit; without the system bindings
-        # the desktop shell opens the Web UI in the default browser instead.
+        # Linux: keep pywebview's GTK backend, but load PyGObject, GTK and
+        # WebKitGTK from the system instead of bundling them.  They are system
+        # packages (python3-gi + gir1.2-webkit2-4.1) and pulling them into the
+        # single file adds about 50 MB of duplicated libraries, icons and ICU
+        # data.  proxy.gui_shell.extend_system_paths() adds the distribution's
+        # site-packages to sys.path at startup so ``import gi`` reaches the
+        # installed PyGObject; with those packages absent the shell falls back
+        # to the browser.  PyInstaller only ships stdlib modules the app
+        # imports, so list the ones PyGObject needs from the frozen runtime.
         command += [
+            '--hidden-import', 'webview.platforms.gtk',
             '--exclude-module', 'gi',
             '--exclude-module', 'gi.repository',
-            '--exclude-module', 'webview.platforms.gtk',
+            '--hidden-import', 'pkgutil',
+            '--hidden-import', '__future__',
+            '--hidden-import', 'optparse',
         ]
     for module in EXCLUDES:
         command += ['--exclude-module', module]

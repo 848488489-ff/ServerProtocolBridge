@@ -178,6 +178,12 @@ def run_selftest(config: Config, logger: Logger) -> int:
         logger.info(tr('core.cli.crypto_ok', backend=crypto.backend_name()))
     else:
         logger.error(tr('core.cli.crypto_missing'))
+
+    # A frozen Linux build gets PyGObject from the system; extend sys.path
+    # before testing the backend so the result matches what the GUI will see.
+    from .gui_shell import extend_system_paths
+
+    extend_system_paths()
     try:
         import webview  # noqa: F401
 
