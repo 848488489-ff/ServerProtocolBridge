@@ -181,6 +181,19 @@ def run_selftest(config: Config, logger: Logger) -> int:
     try:
         import webview  # noqa: F401
 
+        # pywebview is only a dispatcher: the actual window comes from a
+        # platform backend.  On Linux that backend is WebKitGTK, which a
+        # packaged build leaves to the system (python3-gi + WebKitGTK) to keep
+        # the download small; testing it reports the real capability.
+        if sys.platform.startswith('linux'):
+            import gi
+
+            gi.require_version('Gtk', '3.0')
+            gi.require_version('WebKit2', '4.1')
+        elif sys.platform == 'darwin':
+            from webview.platforms import cocoa  # noqa: F401
+        else:
+            from webview.platforms import winforms  # noqa: F401
         logger.info(tr('core.cli.gui_ok'))
     except Exception as exc:                       # the symptom seen when pywebview / the webview runtime is missing
         logger.error(tr('core.cli.gui_missing', error=exc))

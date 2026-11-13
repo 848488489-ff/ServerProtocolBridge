@@ -1,0 +1,5 @@
+# Shell scripts stay LF so they run unchanged inside WSL and Linux; Windows
+# batch/PowerShell files stay CRLF for cmd.exe and PowerShell.
+*.sh text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
