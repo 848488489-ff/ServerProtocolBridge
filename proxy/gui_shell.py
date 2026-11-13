@@ -18,7 +18,9 @@ the program still works.
 
 from __future__ import annotations
 
+import os
 import sys
+import time
 
 DEFAULT_WIDTH = 1160
 DEFAULT_HEIGHT = 790
@@ -123,6 +125,54 @@ def _open_browser(url: str) -> None:
         pass
 
 
+def extend_system_paths() -> None:
+    """Point a frozen Linux build at the distribution's PyGObject.
+
+    The Linux single-file build deliberately does not bundle GTK/WebKit:
+    python3-gi and gir1.2-webkit2-4.1 are system packages and would add about
+    50 MB to the download.  A frozen interpreter only searches its own bundle,
+    so add the distribution's site-packages directories here; ``import gi``
+    then resolves to the installed PyGObject and the webview backend can use
+    the real WebKitGTK window.  Without those packages the import still fails
+    and the shell falls back to the browser instead of crashing.
+    """
+    if not sys.platform.startswith('linux') or not getattr(sys, 'frozen', False):
+        return
+    import glob
+
+    candidates = [
+        '/usr/lib/python3/dist-packages',
+        '/usr/local/lib/python3/dist-packages',
+    ]
+    for pattern in (
+        '/usr/lib/python3*/dist-packages',
+        '/usr/lib/python3*/site-packages',
+        '/usr/lib64/python3*/site-packages',
+        '/usr/local/lib/python3*/site-packages',
+    ):
+        candidates.extend(sorted(glob.glob(pattern)))
+    for path in candidates:
+        if os.path.isdir(path) and path not in sys.path:
+            sys.path.append(path)
+
+
+def _wait_in_browser_mode() -> int:
+    """Keep the process alive after the Web UI moved to the browser.
+
+    The Flask server runs in a daemon thread, so returning from main() would
+    end the process and the page just opened in the browser would stop working
+    at once.  This is the normal path on a Linux build without WebKitGTK and
+    on a Windows machine without the WebView2 runtime.
+    """
+    _print('The Web UI is running; press Ctrl+C to stop.')
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        _print('\nShutting down...')
+        return 0
+
+
 def _message_box(title: str, message: str) -> None:
     """Show a native message box (Windows) or fall back to a terminal line.
 
@@ -167,12 +217,16 @@ def main(host=None, port=None) -> int:
 
     title = _window_title()
 
+    # Frozen Linux builds load PyGObject from the system (see the docstring of
+    # extend_system_paths); do it before pywebview initializes its backend.
+    extend_system_paths()
+
     try:
         import webview
     except ImportError:
         _print('pywebview is not installed; opening the Web UI in your browser.')
         _open_browser(url)
-        return 0
+        return _wait_in_browser_mode()
 
     try:
         global _window
@@ -191,8 +245,13 @@ def main(host=None, port=None) -> int:
     except Exception as exc:
         # WebView2 runtime missing on Windows, or the GTK/WebKit backend
         # missing on Linux: the program still works through a browser tab.
+        hint = ''
+        if sys.platform.startswith('linux'):
+            hint = ('  Install python3-gi and gir1.2-webkit2-4.1 for a native '
+                    'window on Debian/Ubuntu.\n')
         _write_stderr(
-            'Embedded window unavailable (%s); opening the Web UI in your browser.\n' % exc)
+            'Embedded window unavailable (%s); opening the Web UI in your browser.\n%s'
+            % (exc, hint))
         _open_browser(url)
-        return 0
+        return _wait_in_browser_mode()
     return 0
