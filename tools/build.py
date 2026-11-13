@@ -1,9 +1,14 @@
-"""Single-file Windows packaging.
+"""Single-file packaging (Windows EXE, Linux/macOS binary).
 
     python tools/build.py                 # build, do not execute the artifact
-    python tools/build.py --smoke         # build and run the packaged EXE checks
+    python tools/build.py --smoke         # build and run the packaged checks
     python tools/build.py --windowed      # GUI-subsystem build (no console; default keeps a console)
-    python tools/build.py --name MyTool   # custom EXE name
+    python tools/build.py --name MyTool   # custom binary name
+
+PyInstaller cannot cross-compile: the binary is always for the platform that
+runs this script.  Windows uses tools/build.bat, Linux/macOS tools/build.sh,
+and WSL2 users can run tools/build_wsl.ps1 (or tools/build_wsl.sh inside the
+distribution) for the Linux binary.
 
 The release EXE is a plain PyInstaller onefile build.  It is deliberately not
 touched by UPX or MPRESS: both packers rewrite the PE image, and Windows
@@ -108,6 +113,20 @@ def smoke_test(exe: Path) -> bool:
 
 def gui_smoke(exe: Path, seconds: float = 6.0) -> bool:
     """Start the GUI hidden and keep it alive for a few seconds."""
+    if not IS_WINDOWS:
+        # A Linux build host may still have a display (WSLg exports DISPLAY),
+        # but the window is not hidden on this platform: starting the app pops
+        # a real window on the user's desktop -- and, with no target configured,
+        # a "startup failed" notice on top of it.  Only run this test when the
+        # build was asked for it.
+        if os.environ.get('SPB_GUI_SMOKE') != '1':
+            print('    GUI launch test: skipped (set SPB_GUI_SMOKE=1 to run it)')
+            return True
+        if not (os.environ.get('DISPLAY') or os.environ.get('WAYLAND_DISPLAY')):
+            # Headless build hosts (CI, a WSL without WSLg): the packaged
+            # binary is still valid, there is simply nothing to show.
+            print('    GUI launch test: skipped (no display)')
+            return True
     startupinfo = None
     if os.name == 'nt':
         startupinfo = subprocess.STARTUPINFO()
@@ -190,9 +209,6 @@ def main() -> int:
         # and the pythonnet runtime that ships inside the packages.
         '--collect-binaries', 'webview',
         '--collect-data', 'webview',
-        '--collect-binaries', 'pythonnet',
-        '--collect-binaries', 'clr_loader',
-        '--hidden-import', 'clr',
         '--hidden-import', 'cryptography',       # required for the encryption handshake
         '--hidden-import', 'mcauth3',            # Microsoft sign-in (optional at runtime)
     ]
@@ -202,7 +218,12 @@ def main() -> int:
     # without it the frozen EXE silently loses cryptography and cannot do the
     # AES handshake.  The version resource is a Windows concept too.
     if IS_WINDOWS:
-        command += ['--hidden-import', 'webview.platforms.winforms']
+        command += [
+            '--collect-binaries', 'pythonnet',
+            '--collect-binaries', 'clr_loader',
+            '--hidden-import', 'clr',
+            '--hidden-import', 'webview.platforms.winforms',
+        ]
         abi3t_dll = Path(sys.base_prefix) / 'abi3t-compat' / 'python3t.dll'
         if abi3t_dll.is_file():
             command += ['--add-binary', '%s%s.' % (abi3t_dll, os.pathsep)]
@@ -215,7 +236,18 @@ def main() -> int:
     elif sys.platform == 'darwin':
         command += ['--hidden-import', 'webview.platforms.cocoa']
     else:
-        command += ['--hidden-import', 'webview.platforms.gtk']
+        # Linux: do not bundle the GTK/WebKit stack.  pywebview's GTK backend
+        # drags in libgtk, WebKitGTK, librsvg, ICU data and the Adwaita icon
+        # theme -- about 40 MB of duplicated system libraries in a single-file
+        # build, while those libraries must be installed on the target machine
+        # anyway (python3-gi + gir1.2-webkit2-4.1).  Dropping them keeps the
+        # binary under the 25 MiB download limit; without the system bindings
+        # the desktop shell opens the Web UI in the default browser instead.
+        command += [
+            '--exclude-module', 'gi',
+            '--exclude-module', 'gi.repository',
+            '--exclude-module', 'webview.platforms.gtk',
+        ]
     for module in EXCLUDES:
         command += ['--exclude-module', module]
     command.append(str(ROOT / 'main.py'))
@@ -233,7 +265,8 @@ def main() -> int:
     print('  size: %s, built in %.0f s' % (human(exe.stat().st_size), time.time() - started))
 
     report = [
-        'EXE: %s' % exe,
+        '%s: %s' % ('EXE' if IS_WINDOWS else 'binary', exe),
+        'platform: %s (%s)' % (sys.platform, 'x86_64' if sys.maxsize > 2**32 else 'x86'),
         'size: %s' % human(exe.stat().st_size),
         'packaging: PyInstaller onefile (no UPX/MPRESS)',
         'SHA256: %s' % sha256(exe),

@@ -263,6 +263,15 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
         data = json.loads(version_json.read_text(encoding="utf-8-sig"))
     page = str(data.get("page_url") or "").strip()
     exe_url = _join_url(page, str(data.get("download_url") or ""))
+    linux_url = _join_url(page, str(data.get("linux_url") or ""))
+    linux_line = (
+        "\n      Linux 程序 (x86_64, glibc 2.36+)\n       {0}\n".format(linux_url)
+        if linux_url else ""
+    )
+    linux_line_en = (
+        "\n   Linux program (x86_64, glibc 2.36+)\n     {0}\n".format(linux_url)
+        if linux_url else ""
+    )
     # Derive the archive name from the version instead of reading
     # ``source_name`` / ``source_url`` off the manifest: export_source only
     # rewrites the size and hash fields, so those two still point at the
@@ -287,7 +296,7 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
 
      Windows 程序
        {exe_url}
-
+{linux_line}
      源码压缩包 {zip_name}
        {zip_url}
 
@@ -315,12 +324,19 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
    Linux / macOS 用 python3 代替 py, 或直接运行:
        sh start.sh
 
-   PyInstaller 不支持交叉编译, 所以在 Linux / macOS 上从源码运行是
-   支持的用法; 需要 Windows 程序时在 Windows 上打包。
+   PyInstaller 不支持交叉编译, 每个平台只生成自己的二进制:
 
-   在 Windows 上自行打包(可选):
+   Linux / macOS 打包(可选):
+       sh tools/build.sh
+
+   Windows 打包(可选):
        py -3 -m pip install -r requirements-build.txt
        py -3 tools/build.py
+
+   Windows + WSL2 想构建 Linux 版本时, 在仓库根目录运行:
+       powershell -ExecutionPolicy Bypass -File tools\build_wsl.ps1
+   (首次运行会在 WSL 内自动创建虚拟环境并安装依赖; 结果为
+   dist/Server Protocol Bridge, 是 Linux ELF 可执行文件)
 
    Android 原生 APK(需要 Android Studio):
       android/ 目录是 Android Studio Gradle 项目, 用 Chaquopy 嵌入
@@ -370,7 +386,7 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
 
      Windows program
        {exe_url}
-
+{linux_line_en}
      Source archive {zip_name}
        {zip_url}
 
@@ -398,10 +414,19 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
    On Linux / macOS use python3 instead of py, or run:
        sh start.sh
 
-   PyInstaller cannot cross-compile, so running from source is the supported
-   way on Linux / macOS.  Build the Windows program on Windows:
+   PyInstaller cannot cross-compile, so each platform builds its own binary:
+
+   Linux / macOS (optional):
+       sh tools/build.sh
+
+   Windows (optional):
        py -3 -m pip install -r requirements-build.txt
        py -3 tools/build.py
+
+   On Windows with WSL2, build the Linux binary from the repository root:
+       powershell -ExecutionPolicy Bypass -File tools\build_wsl.ps1
+   (the first run creates a virtual environment inside WSL and installs the
+   dependencies; the result is dist/Server Protocol Bridge, a Linux ELF)
 
    Android native APK (requires Android Studio):
       android/ is an Android Studio Gradle project that embeds Python via

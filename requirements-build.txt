@@ -1,11 +1,13 @@
-# Windows EXE build dependencies.
+# Build dependencies (Windows EXE, Linux/macOS binary).
 #
 # Install these in a clean virtual environment, then run:
 #   py -3 -m pip install -r requirements-build.txt
-#   py -3 tools\build.py
+#   py -3 tools\build.py        # Windows
+#   sh tools/build.sh           # Linux/macOS
 #
-# PyInstaller only produces Windows EXEs here. Linux/macOS users run the
-# source package directly with start.sh; no cross-compiled binaries are shipped.
+# On Windows with WSL2, tools\build_wsl.ps1 builds the Linux binary inside the
+# WSL distribution (PyInstaller cannot cross-compile).  The GTK desktop shell
+# needs the distribution's python3-gi and gir1.2-webkit2-4.1 packages.
 
 -r requirements.txt
 
