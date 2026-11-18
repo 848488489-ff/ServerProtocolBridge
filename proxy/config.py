@@ -236,8 +236,11 @@ class Config:
     cert_generator: str = 'auto'  # auto / python / openssl
 
     # Run-time options
-    # Language for all user-visible text: 'en' (English, default) or 'zh' (Chinese)
-    language: str = 'en'
+    # Language for all user-visible text: 'auto' (detect the system language),
+    # 'en' (English) or 'zh' (Chinese)
+    language: str = 'auto'
+    # Show the "not yet mature" notice once the proxy starts listening.
+    startup_notice: bool = True
     # Web UI: the browser interface the window starts automatically.  It binds
     # to loopback by default; set web_host to 0.0.0.0 to expose it on the LAN.
     # web_port 0 lets the operating system pick a free port.
