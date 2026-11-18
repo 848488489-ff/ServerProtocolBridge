@@ -1,0 +1,302 @@
+{
+  "version": 1,
+  "updated": "2026-11-08",
+  "note": {
+    "en": "Compact component list from the app About window. It includes Python, CPython, pywebview, pythonnet, OpenSSL and every Python standard library module used by the app (for example random, json, ssl and asyncio). Only components that are actually bundled into the program are listed; system runtimes that the program merely calls are not. Full license texts are in THIRD_PARTY_NOTICES.txt inside the source package.",
+    "zh": "程序“关于”窗口中的组件清单，包含 Python、CPython、pywebview、pythonnet、OpenSSL 以及程序用到的所有 Python 标准库模块（例如 random、json、ssl、asyncio）。这里只列实际打包进程序的组件，程序仅在运行时调用的系统组件不列入。完整许可证文本位于源码包内的 THIRD_PARTY_NOTICES.txt。"
+  },
+  "components": [
+    {
+      "name": "Python",
+      "license": "PSF-2.0",
+      "url": "https://www.python.org/"
+    },
+    {
+      "name": "CPython interpreter",
+      "license": "PSF-2.0",
+      "url": "https://github.com/python/cpython"
+    },
+    {
+      "name": "pywebview",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/r0x0r/pywebview"
+    },
+    {
+      "name": "pythonnet (.NET bridge)",
+      "license": "MIT",
+      "url": "https://github.com/pythonnet/pythonnet"
+    },
+    {
+      "name": "clr_loader",
+      "license": "MIT",
+      "url": "https://github.com/pythonnet/clr-loader"
+    },
+    {
+      "name": "OpenSSL (bundled)",
+      "license": "Apache-2.0",
+      "url": "https://www.openssl.org/"
+    },
+    {
+      "name": "websockets",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/python-websockets/websockets"
+    },
+    {
+      "name": "cryptography",
+      "license": "Apache-2.0 OR BSD-3-Clause",
+      "url": "https://github.com/pyca/cryptography"
+    },
+    {
+      "name": "cffi",
+      "license": "MIT-0",
+      "url": "https://github.com/python-cffi/cffi"
+    },
+    {
+      "name": "pycparser",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/eliben/pycparser"
+    },
+    {
+      "name": "mcauth3",
+      "license": "MIT",
+      "url": "https://github.com/GongSunFangYun/mcauth3"
+    },
+    {
+      "name": "requests",
+      "license": "Apache-2.0",
+      "url": "https://github.com/psf/requests"
+    },
+    {
+      "name": "urllib3",
+      "license": "MIT",
+      "url": "https://github.com/urllib3/urllib3"
+    },
+    {
+      "name": "charset-normalizer",
+      "license": "MIT",
+      "url": "https://github.com/jawah/charset_normalizer"
+    },
+    {
+      "name": "certifi",
+      "license": "MPL-2.0",
+      "url": "https://github.com/certifi/python-certifi"
+    },
+    {
+      "name": "idna",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/kjd/idna"
+    },
+    {
+      "name": "Flask",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/pallets/flask"
+    },
+    {
+      "name": "Werkzeug",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/pallets/werkzeug"
+    },
+    {
+      "name": "Jinja2",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/pallets/jinja"
+    },
+    {
+      "name": "click",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/pallets/click"
+    },
+    {
+      "name": "itsdangerous",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/pallets/itsdangerous"
+    },
+    {
+      "name": "blinker",
+      "license": "MIT",
+      "url": "https://github.com/pallets-eco/blinker"
+    },
+    {
+      "name": "MarkupSafe",
+      "license": "BSD-3-Clause",
+      "url": "https://github.com/pallets/markupsafe"
+    },
+    {
+      "name": "PyInstaller",
+      "license": "GPL-2.0-or-later WITH bootloader-exception",
+      "url": "https://pyinstaller.org/"
+    }
+  ],
+  "stdlib_modules": [
+    {
+      "name": "argparse",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/argparse.html"
+    },
+    {
+      "name": "asyncio",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/asyncio.html"
+    },
+    {
+      "name": "base64",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/base64.html"
+    },
+    {
+      "name": "concurrent",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/concurrent.html"
+    },
+    {
+      "name": "dataclasses",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/dataclasses.html"
+    },
+    {
+      "name": "datetime",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/datetime.html"
+    },
+    {
+      "name": "hashlib",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/hashlib.html"
+    },
+    {
+      "name": "html",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/html.html"
+    },
+    {
+      "name": "ipaddress",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/ipaddress.html"
+    },
+    {
+      "name": "json",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/json.html"
+    },
+    {
+      "name": "math",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/math.html"
+    },
+    {
+      "name": "os",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/os.html"
+    },
+    {
+      "name": "pathlib",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/pathlib.html"
+    },
+    {
+      "name": "platform",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/platform.html"
+    },
+    {
+      "name": "queue",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/queue.html"
+    },
+    {
+      "name": "random",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/random.html"
+    },
+    {
+      "name": "re",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/re.html"
+    },
+    {
+      "name": "secrets",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/secrets.html"
+    },
+    {
+      "name": "shutil",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/shutil.html"
+    },
+    {
+      "name": "socket",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/socket.html"
+    },
+    {
+      "name": "ssl",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/ssl.html"
+    },
+    {
+      "name": "struct",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/struct.html"
+    },
+    {
+      "name": "subprocess",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/subprocess.html"
+    },
+    {
+      "name": "sys",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/sys.html"
+    },
+    {
+      "name": "threading",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/threading.html"
+    },
+    {
+      "name": "time",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/time.html"
+    },
+    {
+      "name": "traceback",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/traceback.html"
+    },
+    {
+      "name": "typing",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/typing.html"
+    },
+    {
+      "name": "urllib",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/urllib.html"
+    },
+    {
+      "name": "uuid",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/uuid.html"
+    },
+    {
+      "name": "warnings",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/warnings.html"
+    },
+    {
+      "name": "webbrowser",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/webbrowser.html"
+    },
+    {
+      "name": "winreg",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/winreg.html"
+    },
+    {
+      "name": "zlib",
+      "license": "PSF-2.0",
+      "url": "https://docs.python.org/3/library/zlib.html"
+    }
+  ]
+}

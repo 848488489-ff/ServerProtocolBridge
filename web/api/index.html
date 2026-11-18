@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="page.title">Field reference — Server Protocol Bridge</title>
+  <meta name="description" content="Reference for the seven static JSON files served under /api/." data-i18n-content="meta.description">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#071b2c">
+  <link rel="icon" href="../icon.svg" type="image/svg+xml">
+  <link rel="icon" href="../favicon.ico" sizes="any">
+  <link rel="stylesheet" href="../assets/site.css?v=20261104">
+</head>
+
+<body id="top">
+  <a class="skip" href="#content" data-i18n="skip">Skip to content</a>
+
+  <header class="masthead">
+    <div class="shell">
+      <div class="masthead-meta">
+        <a class="wordmark" href="../index.html">
+          <img class="wordmark-mark" src="../icon.svg" alt="" width="24" height="24">
+          <span data-i18n="brand">Server Protocol Bridge</span>
+        </a>
+
+        <p class="edition">
+          <span data-i18n="edition.api">API reference</span>
+          <span class="sep" aria-hidden="true">/</span>
+          <span>v2.7.0</span>
+        </p>
+
+        <div class="language" role="group" aria-label="Language" data-i18n-aria-label="lang.label">
+          <button type="button" data-lang="en" aria-pressed="true">English</button>
+          <span aria-hidden="true">/</span>
+          <button type="button" data-lang="zh" aria-pressed="false">中文</button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell reference" id="content">
+    <header class="reference-head">
+      <p class="kicker" data-i18n="api.kicker">Static JSON</p>
+      <h1 data-i18n="api.title">Field reference</h1>
+      <p data-i18n="api.lead">Seven read-only JSON files serve the release page, the FAQ and the desktop updater. There is no key, no account and no server-side code; the host returns the files as they are.</p>
+      <p class="section-note" data-i18n="api.note">Base URL /api/ · UTF-8 · CORS * · Cache-Control no-store · no auth.</p>
+    </header>
+
+    <section class="reference-section" id="index">
+      <h2 data-i18n="index.title">Endpoints</h2>
+      <div>
+        <table class="endpoint-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="table.path">Path</th>
+              <th scope="col" data-i18n="table.returns">Returns</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="version.json"><code>/api/version.json</code></a></td>
+              <td data-i18n="index.version">Release manifest: version, date, size, download and source links.</td>
+            </tr>
+            <tr>
+              <td><a href="faq.json"><code>/api/faq.json</code></a></td>
+              <td data-i18n="index.faq">Bilingual FAQ items rendered by the release page.</td>
+            </tr>
+            <tr>
+              <td><a href="features.json"><code>/api/features.json</code></a></td>
+              <td data-i18n="index.features">Feature catalogue; the current release page does not load it.</td>
+            </tr>
+            <tr>
+              <td><a href="stats.json"><code>/api/stats.json</code></a></td>
+              <td data-i18n="index.stats">Static platform, runtime, port, protocol and client facts.</td>
+            </tr>
+            <tr>
+              <td><a href="licenses.json"><code>/api/licenses.json</code></a></td>
+              <td data-i18n="index.licenses">Third-party components and their licences.</td>
+            </tr>
+            <tr>
+              <td><a href="site.json"><code>/api/site.json</code></a></td>
+              <td data-i18n="index.site">Site metadata and links to every endpoint.</td>
+            </tr>
+            <tr>
+              <td><a href="endpoints.json"><code>/api/endpoints.json</code></a></td>
+              <td data-i18n="index.endpoints">Machine-readable index of these seven files.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="reference-section" id="runtime">
+      <h2 data-i18n="runtime.title">Runtime REST API (/api/v1/)</h2>
+      <div>
+        <p data-i18n="runtime.lead">The running program exposes an automation JSON API under /api/v1/ on the Web UI listener. Every operation maps to an MCP tool, so scripts and curl can control the program exactly the way an MCP client does.</p>
+        <p class="section-note" data-i18n="runtime.auth">Authentication matches the MCP endpoint: loopback (127.0.0.1) is free; a non-loopback caller must present the MCP key as Authorization: Bearer &lt;key&gt;, X-MCP-Key: &lt;key&gt; or X-API-Key: &lt;key&gt;. With no key set the API is open only when the Web UI password is off.</p>
+
+        <table class="endpoint-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="table.method">Method</th>
+              <th scope="col" data-i18n="table.path">Path</th>
+              <th scope="col" data-i18n="table.notes">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>GET</code></td><td><code>/api/v1/</code></td><td data-i18n="rt.index">Discovery: name, version and the full tool catalogue.</td></tr>
+            <tr><td><code>GET</code></td><td><code>/api/v1/docs</code></td><td data-i18n="rt.docs">In-program bilingual documentation page (English by default, switchable).</td></tr>
+            <tr><td><code>GET</code></td><td><code>/api/v1/status</code></td><td data-i18n="rt.status">Current service state, version, listeners and traffic counters.</td></tr>
+            <tr><td><code>GET</code></td><td><code>/api/v1/config</code></td><td data-i18n="rt.config_get">Read the live configuration (passwords and tokens are omitted).</td></tr>
+            <tr><td><code>POST</code></td><td><code>/api/v1/config</code></td><td data-i18n="rt.config_post">Write configuration fields; the body is the config object or {"config": {...}}.</td></tr>
+            <tr><td><code>POST</code></td><td><code>/api/v1/service/start</code></td><td data-i18n="rt.service_start">Start the proxy with the current configuration.</td></tr>
+            <tr><td><code>POST</code></td><td><code>/api/v1/service/stop</code></td><td data-i18n="rt.service_stop">Stop the proxy; the Web UI and MCP endpoint stay up.</td></tr>
+            <tr><td><code>POST</code></td><td><code>/api/v1/service/restart</code></td><td data-i18n="rt.service_restart">Stop then start again with the current configuration.</td></tr>
+            <tr><td><code>GET</code></td><td><code>/api/v1/logs</code></td><td data-i18n="rt.logs">Read the in-memory log; query since/level/limit.</td></tr>
+            <tr><td><code>POST</code></td><td><code>/api/v1/logs/clear</code></td><td data-i18n="rt.clear">Clear the in-memory log.</td></tr>
+            <tr><td><code>GET</code></td><td><code>/api/v1/tools</code></td><td data-i18n="rt.tools">List every MCP tool (name, description, inputSchema).</td></tr>
+            <tr><td><code>POST</code></td><td><code>/api/v1/tools/&lt;name&gt;</code></td><td data-i18n="rt.tool_call">Call any MCP tool by name; the body is the arguments object or {"arguments": {...}}.</td></tr>
+          </tbody>
+        </table>
+
+        <h3 data-i18n="rt.examples">Examples</h3>
+        <pre><code># status
+curl -s http://127.0.0.1:8765/api/v1/status
+
+# set the forwarding target and start
+curl -s -X POST http://127.0.0.1:8765/api/v1/config \
+  -H 'Content-Type: application/json' \
+  -d '{"target": "mc.example.com:25565"}'
+curl -s -X POST http://127.0.0.1:8765/api/v1/service/start
+
+# remote automation needs the MCP key
+curl -s http://host:8765/api/v1/status \
+  -H 'Authorization: Bearer YOUR_MCP_KEY'</code></pre>
+      </div>
+    </section>
+
+    <section class="reference-section" id="conventions">
+      <h2 data-i18n="conventions.title">Conventions</h2>
+      <div>
+        <p data-i18n="conventions.lead">The same rules apply to every file under /api/.</p>
+        <ul class="reference-list">
+          <li data-i18n="conv.1">Every endpoint is a GET request. There are no writes or authenticated routes.</li>
+          <li data-i18n="conv.2">Responses are UTF-8 JSON. Fields may be added; clients should ignore unknown fields.</li>
+          <li data-i18n="conv.3">No key, account or cookie is required. The static host returns the file directly.</li>
+          <li data-i18n="conv.4">JSON responses send Access-Control-Allow-Origin: * and Cache-Control: no-store.</li>
+          <li data-i18n="conv.5">Replacing a JSON file publishes the change; there is no service to restart.</li>
+          <li data-i18n="conv.6">version.json is the single source of truth for release metadata. The page shows an error state, not a bundled fallback, when it cannot be read.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="reference-section" id="version">
+      <h2><code>version.json</code></h2>
+      <div>
+        <p data-i18n="version.desc">Read by the release page and the desktop updater. Only version is required; unknown fields are ignored, so the schema can grow without breaking older clients. The values below are illustrative; the source fields are filled in after the archive is built.</p>
+        <pre><code>{
+  "version": "2.7.0",
+  "download_url": "/downloads/Server%20Protocol%20Bridge.exe",
+  "page_url": "https://banbengengxinjiancha.pages.dev/",
+  "min_version": "1.1.0",
+  "force_update": false,
+  "release_date": "2026-11-07",
+  "changelog": "One line per changelog entry.",
+  "changelog_en": "One line per changelog entry.",
+  "file_size": 20257998,
+  "source_url": "/downloads/ServerProtocolBridge-2.7.0-source.zip",
+  "source_name": "ServerProtocolBridge-2.7.0-source.zip",
+  "source_version": "2.5.0",
+  "source_size": 477640,
+  "source_updated": "2026-11-06T11:25:09Z"
+}</code></pre>
+
+        <table class="endpoint-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="table.field">Field</th>
+              <th scope="col" data-i18n="table.type">Type</th>
+              <th scope="col" data-i18n="table.notes">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>version</code></td><td>string</td><td data-i18n="field.version">Newest published version, compared with the running build.</td></tr>
+            <tr><td><code>download_url</code></td><td>string</td><td data-i18n="field.download_url">Direct link to the Windows build. Empty hides the download button.</td></tr>
+            <tr><td><code>page_url</code></td><td>string</td><td data-i18n="field.page_url">Release page opened by the desktop updater when download_url is a static build path.</td></tr>
+            <tr><td><code>min_version</code></td><td>string</td><td data-i18n="field.min_version">Oldest build still supported; older clients are asked to update.</td></tr>
+            <tr><td><code>force_update</code></td><td>boolean</td><td data-i18n="field.force_update">Marks the release as mandatory for older clients.</td></tr>
+            <tr><td><code>release_date</code></td><td>string</td><td data-i18n="field.release_date">Release date, preferably YYYY-MM-DD.</td></tr>
+            <tr><td><code>changelog</code></td><td>string</td><td data-i18n="field.changelog">Default release notes. One line per entry.</td></tr>
+            <tr><td><code>changelog_en</code></td><td>string</td><td data-i18n="field.changelog_en">English release notes used when the interface is English.</td></tr>
+            <tr><td><code>file_size</code></td><td>number</td><td data-i18n="field.file_size">Windows build size in bytes.</td></tr>
+            <tr><td><code>source_url</code></td><td>string</td><td data-i18n="field.source_url">Direct link to the source ZIP. Empty hides the source button.</td></tr>
+            <tr><td><code>source_size</code></td><td>number</td><td data-i18n="field.source_size">Source ZIP size in bytes.</td></tr>
+            <tr><td><code>source_name</code></td><td>string</td><td data-i18n="field.source_name">Source ZIP filename shown in the button tooltip.</td></tr>
+            <tr><td><code>source_version</code></td><td>string</td><td data-i18n="field.source_version">Version inside the source package.</td></tr>
+            <tr><td><code>source_updated</code></td><td>string</td><td data-i18n="field.source_updated">UTC timestamp of the last source export.</td></tr>
+          </tbody>
+        </table>
+
+        <p class="section-note" data-i18n="version.note">The updater accepts http:// and https:// links and resolves same-site relative paths against the manifest URL. A missing optional field never blocks a running session.</p>
+      </div>
+    </section>
+
+    <section class="reference-section" id="faq">
+      <h2><code>faq.json</code></h2>
+      <div>
+        <p data-i18n="faq.desc">The release page fetches this file once and renders every item in both languages. Switching the language does not make another request.</p>
+        <table class="endpoint-table">
+          <thead>
+            <tr>
+              <th scope="col" data-i18n="table.field">Field</th>
+              <th scope="col" data-i18n="table.type">Type</th>
+              <th scope="col" data-i18n="table.notes">Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><code>version</code></td><td>number</td><td data-i18n="field.faq_version">Schema version for this document.</td></tr>
+            <tr><td><code>updated</code></td><td>string</td><td data-i18n="field.faq_updated">Last content update date.</td></tr>
+            <tr><td><code>items</code></td><td>array</td><td data-i18n="field.faq_items">Ordered FAQ entries.</td></tr>
+            <tr><td><code>items[].id</code></td><td>string</td><td data-i18n="field.faq_id">Stable identifier.</td></tr>
+            <tr><td><code>items[].question</code></td><td>object</td><td data-i18n="field.faq_question">Object with en and zh strings.</td></tr>
+            <tr><td><code>items[].answer</code></td><td>object</td><td data-i18n="field.faq_answer">Object with en and zh strings, rendered as text.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="reference-section" id="other">
+      <h2 data-i18n="other.title">Other files</h2>
+      <div>
+        <p data-i18n="other.lead">These files are descriptive. The current release page does not need them to render, but they remain public for tools and older versions.</p>
+        <ul class="reference-list">
+          <li><code>features.json</code> <span data-i18n="other.features">— version and a bilingual item list (id, title, body).</span></li>
+          <li><code>stats.json</code> <span data-i18n="other.stats">— platform, runtime, listener, Web UI/MCP endpoints, protocol, client and language facts.</span></li>
+          <li><code>licenses.json</code> <span data-i18n="other.licenses">— runtime components, standard-library modules and licence names.</span></li>
+          <li><code>site.json</code> <span data-i18n="other.site">— project name, version, tagline, base URL and a link map.</span></li>
+          <li><code>endpoints.json</code> <span data-i18n="other.endpoints">— base path, count and the seven endpoint records.</span></li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer class="colophon">
+    <div class="shell colophon-bottom">
+      <span data-i18n="footer.note">Static files. No cookies and no analytics on this page.</span>
+      <span><a href="../index.html" data-i18n="footer.back">Back to the release page</a> · <a href="version.json">version.json</a></span>
+    </div>
+  </footer>
+
+  <script src="../i18n.js?v=20261104"></script>
+  <script src="app.js?v=20261104"></script>
+</body>
+</html>
