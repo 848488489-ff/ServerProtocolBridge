@@ -183,6 +183,13 @@ class BridgePump:
             translator.fail(tr('proxy.error.login_stage_closed'))
         await self._flush_to_server()
         await self._drain_outbox()
+        if translator is not None and translator.login_done:
+            # The target closed after play began.  The frames we just forwarded
+            # (possibly a disconnect carrying the kick reason) need a moment to
+            # reach and be rendered by the browser client before the WebSocket
+            # is dropped, otherwise the player only sees "data stream ended"
+            # instead of the reason the server actually sent.
+            await asyncio.sleep(CLOSE_GRACE)
     # ---------- send/receive queues ----------
     async def _flush_to_server(self) -> None:
         # Note: the list must be drained in place. The translation layer holds
