@@ -1,0 +1,32 @@
+{
+  "version": "2.7.0",
+  "platforms": [
+    "Windows 10/11 64-bit"
+  ],
+  "runtime": "Python 3.15.2",
+  "listen_host": "127.0.0.1",
+  "default_port": 8443,
+  "web_ui_port": 8765,
+  "mcp_endpoint": "/mcp",
+  "mcp_protocol": "2025-06-18",
+  "protocols": [
+    "wss://",
+    "ws:// (fallback)"
+  ],
+  "clients": [
+    "WebSocket clients (wss:// or ws://)",
+    "Classic Java clients"
+  ],
+  "servers": [
+    "Vanilla",
+    "Forge",
+    "NeoForge",
+    "Fabric"
+  ],
+  "languages": [
+    "en",
+    "zh"
+  ],
+  "source_available": true,
+  "updated": "2026-11-09"
+}

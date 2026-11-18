@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Server Protocol Bridge">
+  <title>Server Protocol Bridge</title>
+  <rect width="64" height="64" rx="8" fill="#1d6ff2"/>
+  <path d="M13 22h27" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>
+  <path d="M40 15l9 7-9 7" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M51 42H24" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round"/>
+  <path d="M24 35l-9 7 9 7" fill="none" stroke="#ffffff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

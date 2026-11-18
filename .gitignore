@@ -16,3 +16,18 @@ superdebug/build/
 
 # Cloudflare Pages deploy credentials (never committed)
 cloudflare_credentials.json
+
+# TLS material for the local wss:// listener: the private key must never be
+# committed (cert.pem alone is public, key.pem is the server identity)
+certs/
+
+# Build outputs and packaging artifacts
+dist/
+.wrangler/
+本地配置备份/
+ServerProtocolBridge-*.zip
+
+# Machine-local configuration (contains the operator's target server) and the
+# release binaries bundled into the update site (published separately)
+config.json
+web/downloads/
