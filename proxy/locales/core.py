@@ -10,6 +10,8 @@ EN = {
     'core.app_name': 'Server Protocol Bridge',
     'core.tagline': 'Turns a plain Minecraft server into a local wss:// or ws:// '
                     'endpoint for WebSocket clients.',
+    'core.startup_notice_immature': 'This build is not mature yet; it is not '
+                                    'recommended on servers with strict anti-cheat.',
     'core.config.address_empty': 'Address must not be empty',
     'core.config.route_format': 'A route must look like "path=target", '
                                 'for example: /lobby=play.example.net',
@@ -83,6 +85,7 @@ ZH = {
     'core.app_name': '服务器协议转换',
     'core.tagline': '把普通 Minecraft 服务器转换为本地 wss:// 或 ws:// 端点, '
                     '供 WebSocket 客户端连接。',
+    'core.startup_notice_immature': '这个还不够成熟，不推荐在装有严格反作弊的服务器上使用。',
     'core.config.address_empty': '地址不能为空',
     'core.config.route_format': '路径映射格式应为 "路径=目标", 例如: /lobby=play.example.net',
     'core.config.route_missing_target': '路径映射 "%(path)s" 缺少目标地址',
