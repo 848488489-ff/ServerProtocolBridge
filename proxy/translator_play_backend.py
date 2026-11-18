@@ -25,16 +25,17 @@ class PlayBackendMixin:
                 self.log.warn('%s %s' % (self.tag, tr(
                     'translator.log.backend_disconnect', reason=reason)))
             self.close_reason = reason or self.close_reason
-            # Forward the server's body verbatim: a JSON component is already
-            # what the client's disconnect screen renders, and a legacy
-            # ``§``-coded string is left untouched rather than being re-rolled
-            # onto the 16-colour palette.
-            if raw:
-                body = raw
-                packet = vanilla.Packet(
-                    packet.packet_id,
-                    vanilla.write_string(body),
-                    vanilla.write_varint(packet.packet_id) + vanilla.write_string(body))
+            # Forward the server's body verbatim and never re-encode it: the
+            # client's disconnect screen renders the JSON component or the
+            # legacy ``§`` codes exactly as the server sent them, and
+            # re-rolling the body onto another encoding would drop colour or
+            # invent palette entries.
+            self._note_packet(packet.packet_id, 'play', to_client=True)
+            if self.phase == 'play':
+                frames.append(packet.payload)
+            else:
+                self.pending_to_client.append(packet.payload)
+            return
         self._note_packet(packet.packet_id, 'play', to_client=True)
         # The client wants "one bare packet per frame", so packet id + content is
         # sent as one frame directly
