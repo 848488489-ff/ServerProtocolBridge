@@ -36,7 +36,8 @@ class ApiTests(unittest.TestCase):
         from proxy.runtime import get_manager
 
         self.manager = get_manager()
-        # 说明页的默认语言跟随界面语言，测试里固定成英文以保证断言稳定。
+        # The docs page follows the interface language; pin it to English so
+        # the assertions stay stable.
         self._original_language = i18n.get_language()
         i18n.set_language('en')
         # Point config at the scratch directory, like McpTests.
@@ -98,7 +99,7 @@ class ApiTests(unittest.TestCase):
         self.assertGreaterEqual(len(body['tools']), 30)
 
     def test_docs_page_follows_the_interface_language(self):
-        # 英文界面：默认英文，按钮标签也按英文界面显示。
+        # English interface: English by default, switch labels in English too.
         response = self._get('/docs')
         self.assertEqual(response.status_code, 200)
         self.assertIn('text/html', response.content_type)
@@ -109,11 +110,12 @@ class ApiTests(unittest.TestCase):
         self.assertIn('>Auto<', html)
         self.assertIn('>Chinese (simplified)<', html)
         self.assertIn('>English<', html)
-        # 中文界面：默认中文，按钮标签随之变化。
+        # Chinese interface: Chinese by default, switch labels follow.
         i18n.set_language('zh')
         html = self._get('/docs').get_data(as_text=True)
         self.assertIn('<html lang="zh" data-lang="zh">', html)
-        # 静态块保持原样，由页面脚本按 data-lang 切换显示。
+        # Both static blocks stay in the markup; the page script toggles them
+        # by data-lang.
         self.assertIn('<div class="lang-zh" hidden>', html)
         self.assertIn('<div class="lang-en">', html)
         self.assertIn("var defaultLang = 'zh';", html)

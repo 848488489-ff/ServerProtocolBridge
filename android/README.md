@@ -1,63 +1,71 @@
-# Server Protocol Bridge — Android 原生 APK
+# Server Protocol Bridge — native Android APK
 
-在 Android 上，程序以 **Chaquopy**（Android Studio Gradle 插件）嵌入 Python 运行。
-pywebview 在 Android 不可用，所以控制面板是**内置 WebView** 加载程序自带的
-Flask Web UI（`http://127.0.0.1:8765`），代理服务由面板里的「启动服务」控制，
-与桌面/浏览器界面完全一致。
+On Android the program embeds a Python runtime through **Chaquopy** (an Android
+Studio Gradle plugin). pywebview is not available on Android, so the control
+panel is a **built-in WebView** that loads the program's own Web UI
+(`http://127.0.0.1:8765`). The relay is started and stopped from the panel, and
+the UI is identical to the desktop / browser build.
 
-## 前置要求
+## Prerequisites
 
-- **Android Studio**（含 Android SDK），SDK Platform 35 + Build-Tools
-- **JDK 17**（Android Studio 自带 JBR 即可）
-- 可访问外网（首次构建需下载 Gradle 8.9、AGP 8.7.3、Chaquopy 17.2.0、
-  Python 3.13 及 pip 依赖）
+- **Android Studio** with the Android SDK: SDK Platform 35 and Build-Tools.
+- **JDK 17** (the JBR bundled with Android Studio is fine).
+- Internet access for the first build (Gradle 8.9, AGP 8.7.3, Chaquopy 17.2.0,
+  Python 3.13 and the pip dependencies are downloaded then).
 
-## 构建 APK
+## Building the APK
 
-1. 用 Android Studio **打开本目录**（`android/`），等待 Gradle 同步完成
-   （首次会下载 Gradle 8.9 与依赖）。
-2. 菜单 **Build → Build Bundle(s) / APK(s) → Build APK(s)**。
-3. APK 输出：`android/app/build/outputs/apk/release/app-release.apk`
-   （release 用 debug 签名，可直接安装）。
+1. **Open this directory** (`android/`) in Android Studio and wait for the
+   Gradle sync to finish (the first run downloads Gradle 8.9 and the
+   dependencies).
+2. Menu **Build → Build Bundle(s) / APK(s) → Build APK(s)**.
+3. The APK is written to `android/app/build/outputs/apk/release/app-release.apk`
+   (the release build is debug-signed, so it installs directly).
 
-命令行构建（需要先有 Gradle wrapper，可在 Android Studio 里
-`File → Sync` 生成，或用本机 Gradle 执行 `gradle wrapper`）：
+Command-line build (needs a Gradle wrapper first; generate it with
+`File → Sync` in Android Studio, or run `gradle wrapper` with a local Gradle):
 
 ```
 gradlew assembleRelease
 ```
 
-APK 包含两个 ABI：`arm64-v8a`（真机）与 `x86_64`（模拟器）。
+The APK contains two ABIs: `arm64-v8a` (devices) and `x86_64` (emulators).
 
-## 安装与运行
+## Installing and running
 
 ```
 adb install app-release.apk
 ```
 
-打开「Server Protocol Bridge」应用：内置 WebView 显示控制面板，与桌面版
-相同。程序数据（config.json、证书、账户）写在应用私有目录：
+Open the **Server Protocol Bridge** app: the built-in WebView shows the control
+panel, the same one the desktop build uses. Program data (`config.json`,
+certificates, accounts) lives in the app's private directory:
 
 ```
 /data/data/com.serverprotocolbridge/files/ServerProtocolBridge/
 ```
 
-可在 Android Studio 的 **Device Explorer**（View → Tool Windows → Device
-Explorer）中查看与编辑。
+You can inspect and edit it from Android Studio's **Device Explorer**
+(View → Tool Windows → Device Explorer).
 
-## 说明
+## Notes
 
-- **证书信任**：代理的 wss:// 使用自签 CA。桌面端安装 CA 证书后客户端才
-  信任连接；Android 上同样需要把 `certs/cert.pem` 安装到系统/用户受信 CA
-  （设置 → 安全 → 加密与凭据 → 安装证书），否则网页版客户端连接
-  `wss://127.0.0.1:8443` 会报证书错误。此限制与桌面版一致，非 APK 特有。
-- **网络权限**：`INTERNET` + `ACCESS_NETWORK_STATE` 已在 Manifest 声明；
-  明文 `http://127.0.0.1` 仅在 network_security_config 中放行（localhost），
-  其余流量一律走安全默认（禁明文）。
-- **账户登录**：面板里的微软/Java 账户登录调用 `window.open`，会在**系统
-  浏览器**中打开授权页，登录后回到面板。
-- **数据目录**：`proxy/utils.py` 的 `data_dir()` 在 Android 上解析到
-  `$HOME/ServerProtocolBridge`（`HOME` = 应用内部存储，Chaquopy 保证可写、
-  卸载前持久）。
-- **证书生成**：Android 无 openssl 二进制，`proxy/certs.py` 自动回退到纯
-  Python（cryptography）生成器。
+- **Certificate trust**: the relay's wss:// endpoint uses a self-signed CA. On
+  desktop the client only trusts the connection after the CA is installed; on
+  Android `certs/cert.pem` must likewise be installed as a system/user trusted
+  CA (Settings → Security → Encryption & credentials → Install a certificate),
+  otherwise a browser client connecting to `wss://127.0.0.1:8443` reports a
+  certificate error. This is the same limitation as on desktop, not specific to
+  the APK.
+- **Network permissions**: `INTERNET` and `ACCESS_NETWORK_STATE` are declared in
+  the manifest; cleartext `http://127.0.0.1` is allowed only in
+  `network_security_config` (localhost). All other traffic uses the secure
+  default (cleartext disabled).
+- **Account sign-in**: Microsoft / Java account sign-in from the panel calls
+  `window.open`, which opens the authorization page in the **system browser**
+  and returns to the panel afterwards.
+- **Data directory**: `data_dir()` in `proxy/utils.py` resolves to
+  `$HOME/ServerProtocolBridge` on Android (`HOME` is the app's internal storage,
+  which Chaquopy guarantees is writable and persists until uninstall).
+- **Certificate generation**: Android has no openssl binary, so
+  `proxy/certs.py` falls back to the pure-Python (cryptography) generator.

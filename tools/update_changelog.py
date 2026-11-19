@@ -3,8 +3,9 @@
 
 import json
 import os
+from pathlib import Path
 
-filepath = r'D:\桌面\版本更新检查\api\version.json'
+filepath = Path(__file__).resolve().parents[1] / 'web' / 'api' / 'version.json'
 
 with open(filepath, 'r', encoding='utf-8') as f:
     data = json.load(f)

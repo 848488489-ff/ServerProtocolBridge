@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Build a clean source package for Server Protocol Bridge.
 
-Copies the application source into ``源码/procedure`` and the download page
-source into ``源码/web``, writes a manifest, then creates a versioned ZIP next
+Copies the application source into ``source_export/procedure`` and the
+download page source into ``source_export/web``, writes a manifest, then creates a versioned ZIP next
 to this project.  Finally it records the ZIP size in the website's
 ``api/version.json`` so the "Get source" button can show trustworthy metadata.
 
@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 APP_ROOT = Path(__file__).resolve().parents[1]
-DEST_ROOT = APP_ROOT / "源码"
+DEST_ROOT = APP_ROOT / "source_export"
 DEFAULT_WEB_ROOT = APP_ROOT / "web"
 
 APP_FILES = (
@@ -44,11 +44,9 @@ APP_FILES = (
     "start.bat",
     "start.sh",
 )
-# ``superdebug`` is the Minecraft debug plugin: its source, build script and
-# the built SuperDebug-1.1.0.jar ship in the source package (the JAR is a
-# release artifact, not a binary of this program, so ARCHIVE_SKIP_SUFFIXES
-# deliberately does not contain .jar).
-APP_DIRS = ("proxy", "tests", "tools", "android", "superdebug")
+# The source package ships the application source (proxy, tests, tools,
+# android) plus the website source and the release metadata.
+APP_DIRS = ("proxy", "tests", "tools", "android")
 APP_SKIP_DIRS = {
     "__pycache__",
     ".pytest_cache",
@@ -58,7 +56,7 @@ APP_SKIP_DIRS = {
     "build",
     "dist",
     "certs",
-    "源码",
+    "source_export",
     ".gradle",
     ".idea",
     "captures",
@@ -264,10 +262,6 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
     page = str(data.get("page_url") or "").strip()
     exe_url = _join_url(page, str(data.get("download_url") or ""))
     linux_url = _join_url(page, str(data.get("linux_url") or ""))
-    linux_line = (
-        "\n      Linux 程序 (x86_64, glibc 2.36+)\n       {0}\n".format(linux_url)
-        if linux_url else ""
-    )
     linux_line_en = (
         "\n   Linux program (x86_64, glibc 2.36+)\n     {0}\n".format(linux_url)
         if linux_url else ""
@@ -279,101 +273,11 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
     zip_name = "ServerProtocolBridge-{v}-source.zip".format(v=version)
     zip_url = _join_url(page, "/downloads/" + zip_name)
 
-    return f"""Server Protocol Bridge {version} - 源码包 / source package
-生成时间 / Generated: {generated_at}
+    return f"""Server Protocol Bridge {version} - source package
+Generated: {generated_at}
 
 ================================================================
-一、中文说明
-================================================================
-
-1. 怎么获取发布的程序
-
-   本源码包不包含任何可执行文件, 也不包含网站的 downloads 目录。
-   发布文件(Windows 程序、源码压缩包)托管在发布站点上, 按下面的地址下载:
-
-     发布页面
-       {page}
-
-     Windows 程序
-       {exe_url}
-{linux_line}
-     源码压缩包 {zip_name}
-       {zip_url}
-
-   发布站点的 api/version.json 是权威清单:
-     version        版本号
-     file_size      程序的字节数
-     source_size    源码压缩包的字节数
-
-
-2. 目录结构
-
-   procedure/    Python 应用源码。
-   web/          静态发布/下载页面的源码。
-   LICENSE       许可证全文(Unlicense, 公有领域)。
-   README.txt    本说明。
-   SOURCE-MANIFEST.json  每个文件的 SHA-256。
-
-
-3. 运行 procedure
-
-   准备 Python 3.10 或更高版本, 然后:
-       py -3 -m pip install -r requirements.txt
-       py -3 main.py
-
-   Linux / macOS 用 python3 代替 py, 或直接运行:
-       sh start.sh
-
-   PyInstaller 不支持交叉编译, 每个平台只生成自己的二进制:
-
-   Linux / macOS 打包(可选):
-       sh tools/build.sh
-
-   Windows 打包(可选):
-       py -3 -m pip install -r requirements-build.txt
-       py -3 tools/build.py
-
-   Windows + WSL2 想构建 Linux 版本时, 在仓库根目录运行:
-       powershell -ExecutionPolicy Bypass -File tools\build_wsl.ps1
-   (首次运行会在 WSL 内自动创建虚拟环境并安装依赖; 结果为
-   dist/Server Protocol Bridge, 是 Linux ELF 可执行文件)
-
-   Android 原生 APK(需要 Android Studio):
-      android/ 目录是 Android Studio Gradle 项目, 用 Chaquopy 嵌入
-      Python, 控制面板由内置 WebView 显示。打开 android/ 后构建
-      APK; 详见 android/README.md。
-
-   第三方组件及其完整许可证文本见 THIRD_PARTY_NOTICES.txt,
-   可用下面的命令重新生成:
-       py -3 tools/collect_licenses.py
-
-
-4. 运行 web
-
-   web/index.html 是静态发布页面, 可以直接用浏览器打开, 也可以用任意
-   静态文件服务器托管整个目录。发布数据来自 api/version.json, 常见问题
-   来自 api/faq.json, 接口文档是 api/index.html。
-
-   包内 api/version.json 故意省略了 source_size 与
-   source_updated: 压缩包无法包含自己的最终哈希。这两个字段以线上站点
-   的 api/version.json 为准。
-
-
-5. 本包故意不包含的内容
-
-   - build/、dist/、*.exe 等发布产物
-   - web 的 downloads/ 目录(发布站点才有的部署内容, 放进自己的源码包
-     会无限套娃)
-   - certs/(本地 TLS 私钥)
-   - config.json、日志、缓存、__pycache__
-   - 独立的 admin.html 测试页面
-
-   要重新导出源码包, 在仓库根目录运行:
-       py -3 tools/export_source.py
-
-
-================================================================
-二、English
+English
 ================================================================
 
 1. Where to get the released program
@@ -560,7 +464,7 @@ def main() -> int:
         size_mb = zip_path.stat().st_size / (1024 * 1024)
         log(f"      size:   {size_mb:.2f} MB ({zip_path.stat().st_size} bytes)")
         log("[4/4] updated api/version.json with source_size")
-        log("      upload the ZIP to your netdisk, then put the direct link in api/version.json -> source_url")
+        log("      copy the ZIP into web/downloads/ before deploying the site")
     else:
         log("[3/4] skipped ZIP (--no-zip)")
         log("[4/4] api/version.json was not updated")

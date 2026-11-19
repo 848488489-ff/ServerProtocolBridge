@@ -93,7 +93,8 @@ def index():
 
 @api.get('/docs')
 def docs():
-    """程序内双语说明页：默认跟随界面语言，语言按钮标签也按界面语言显示。"""
+    """In-program bilingual docs page: follows the interface language by default,
+    and the switch labels follow it as well."""
     html = (API_DOCS_HTML
             .replace('__VERSION__', VERSION)
             .replace('__DEFAULT_LANG__', get_language())

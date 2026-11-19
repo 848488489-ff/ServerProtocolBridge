@@ -1,4 +1,4 @@
-﻿# deploy.ps1 - Deploy the website directory to Cloudflare Pages (Direct Upload via wrangler).
+# deploy.ps1 - Deploy the website directory to Cloudflare Pages (Direct Upload via wrangler).
 # ============================================================
 # Credentials are read from environment variables ONLY (never hard-coded):
 #   CLOUDFLARE_API_TOKEN       API token / KEY

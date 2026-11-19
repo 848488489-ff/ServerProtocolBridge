@@ -1,4 +1,4 @@
-﻿# Deploys the website directory to Cloudflare Pages via wrangler.
+# Deploys the website directory to Cloudflare Pages via wrangler.
 #
 # Credentials are read from cloudflare_credentials.json in the repo root
 # (NOT committed; see .gitignore) or from environment variables:
@@ -8,9 +8,9 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$web = Join-Path $root '..\版本更新检查'   # website source directory
+$web = Join-Path $root 'web'   # website source directory
 if (-not (Test-Path $web)) {
-    $web = 'D:\桌面\版本更新检查'
+    $web = Join-Path $root 'web'
 }
 
 # Load credentials.

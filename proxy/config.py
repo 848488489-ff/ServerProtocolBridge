@@ -23,10 +23,12 @@ _SCHEMES = ('minecraft://', 'mc://', 'tcp://', 'wss://', 'ws://', 'https://', 'h
 
 
 def _problem(key: str, **values) -> str:
-    """配置校验信息固定输出英文。
+    """Configuration problems are always reported in English.
 
-    这些问题主要给日志、自动化脚本和排查用，不面向普通用户；固定英文可以
-    避免切换界面语言时诊断文本跟着变化，也不会因为缺少某条翻译而回退成键名。
+    They are meant for logs, automation scripts and troubleshooting rather
+    than for end users.  Fixed English keeps the diagnostics stable when the
+    interface language changes, and avoids falling back to a raw key when a
+    translation is missing.
     """
     return tr_in('en', key, **values)
 
@@ -412,7 +414,8 @@ class Config:
     def validate(self) -> list[str]:
         """Return a list of configuration problems (empty means all good).
 
-        这些信息固定英文，便于日志检索和自动化处理，不随界面语言变化。
+        The messages are always English so logs stay searchable and
+        automation stays stable when the interface language changes.
         """
         problems: list[str] = []
         if not (self.listen_host or '').strip():
@@ -522,7 +525,7 @@ class Config:
     def validate_web(self) -> list[str]:
         """Problems that only concern the Web UI listener (never the proxy).
 
-        与 validate() 一样固定英文。
+        Like validate(), the messages are always English.
         """
         problems: list[str] = []
         if not (self.web_host or '').strip():

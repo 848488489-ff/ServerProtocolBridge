@@ -953,7 +953,7 @@ function renderConfig(data) {
 
 /* The spoof brand is only meaningful for the "custom" client-identity preset:
    every other preset supplies its own default brand.  Hiding the field keeps
-   the preset list the single control, with "自定义" revealing the brand box. */
+   the preset list the single control; the custom preset reveals the brand box. */
 function updateSpoofBrandVisibility() {
   const select = $('#spoof_client');
   const custom = (select && select.value) === 'custom';
