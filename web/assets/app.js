@@ -48,12 +48,6 @@
       'action.android': 'Download APK',
       'action.androidSoon': 'APK pending',
       'release.apkUnavailable': 'The APK is not available yet.',
-      'action.superdebug': 'Download SuperDebug JAR',
-      'action.superdebugSoon': 'SuperDebug JAR pending',
-      'release.superdebugUnavailable': 'The SuperDebug JAR link has not been published yet.',
-      'download.superdebug': 'SuperDebug (Minecraft debug plugin)',
-      'download.superdebugMeta': 'Paper plugin · SuperDebug',
-      'download.superdebugBody': 'Drop-in Paper plugin for diagnosing TCP/WSS proxy connections: ping, Netty channel, traffic, packet sniff and frame timing, including GrimAC Post risk pairs.',
       'download.note': 'The builds are unsigned.',
       'hero.note': 'Free and unsigned. No installer, no service, no telemetry.',
       'docket.title': 'Current build',
@@ -205,12 +199,6 @@
       'action.android': '下载 APK',
       'action.androidSoon': 'APK 待更新',
       'release.apkUnavailable': 'APK 暂不可用。',
-      'action.superdebug': '下载 SuperDebug JAR',
-      'action.superdebugSoon': 'SuperDebug JAR 待更新',
-      'release.superdebugUnavailable': 'SuperDebug JAR 链接尚未发布。',
-      'download.superdebug': 'SuperDebug（Minecraft 调试插件）',
-      'download.superdebugMeta': 'Paper 插件 · SuperDebug',
-      'download.superdebugBody': '即插即用的 Paper 插件，用于诊断 TCP/WSS 代理连接：ping、Netty 通道、流量、数据包嗅探与帧时序，含 GrimAC Post 风险对。',
       'download.note': '构建未签名。',
       'hero.note': '免费、未签名。无安装器、无系统服务、无遥测。',
       'docket.title': '当前构建',
@@ -397,12 +385,7 @@
       linux_size: Number(trim(get('linux_size'))) || 0,
       linux_name: trim(get('linux_name')),
       linux_version: trim(get('linux_version')),
-      linux_updated: trim(get('linux_updated')),
-      superdebug_url: trim(get('superdebug_url')),
-      superdebug_size: Number(trim(get('superdebug_size'))) || 0,
-      superdebug_name: trim(get('superdebug_name')),
-      superdebug_version: trim(get('superdebug_version')),
-      superdebug_updated: trim(get('superdebug_updated'))
+      linux_updated: trim(get('linux_updated'))
     };
   }
 
@@ -667,49 +650,6 @@
     });
   }
 
-  function setSuperdebugMeta(data) {
-    var size = data && data.superdebug_size ? formatSize(data.superdebug_size) : '—';
-    var date = data ? formatDate(data.superdebug_updated) : '—';
-    var version = data && data.superdebug_version
-      ? data.superdebug_version
-      : (data && data.version ? data.version : '—');
-    all('[data-superdebug-meta-size]').forEach(function (node) {
-      node.textContent = size;
-      node.title = data && data.superdebug_size ? data.superdebug_size + ' bytes' : '';
-    });
-    all('[data-superdebug-meta-version]').forEach(function (node) { node.textContent = version; });
-    all('[data-superdebug-meta-date]').forEach(function (node) { node.textContent = date; });
-  }
-
-  function setSuperdebugHref(data) {
-    all('[data-superdebug-button]').forEach(function (button) {
-      var url = usableUrl(data && data.superdebug_url) || fallbackUrl(button);
-      var label = button.querySelector('[data-superdebug-label]');
-      if (url) {
-        button.href = url;
-        button.setAttribute('target', '_blank');
-        button.setAttribute('rel', 'noopener noreferrer');
-        button.removeAttribute('aria-disabled');
-        button.removeAttribute('tabindex');
-        button.classList.remove('is-disabled');
-        if (label) label.textContent = t('action.superdebug');
-        var meta = [];
-        if (data && data.superdebug_name) meta.push(data.superdebug_name);
-        if (data && data.superdebug_size) meta.push(formatSize(data.superdebug_size));
-        button.title = meta.join(' · ') || t('action.superdebug');
-      } else {
-        button.href = '#';
-        button.removeAttribute('target');
-        button.removeAttribute('rel');
-        button.setAttribute('aria-disabled', 'true');
-        button.setAttribute('tabindex', '-1');
-        button.classList.add('is-disabled');
-        if (label) label.textContent = t('action.superdebugSoon');
-        button.title = t('release.superdebugUnavailable');
-      }
-    });
-  }
-
   function renderRelease() {
     var status = byId('release-status');
     var policy = byId('update-policy');
@@ -740,8 +680,6 @@
       setApkHref(null);
       setLinuxMeta(null);
       setLinuxHref(null);
-      setSuperdebugMeta(null);
-      setSuperdebugHref(null);
       return;
     }
 
@@ -775,8 +713,6 @@
     setApkHref(data);
     setLinuxMeta(data);
     setLinuxHref(data);
-    setSuperdebugMeta(data);
-    setSuperdebugHref(data);
     setDownloadHref(data.download_url);
     setSourceHref(data);
 

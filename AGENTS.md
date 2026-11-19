@@ -63,6 +63,53 @@ python tools/build.py
 - Keep modules small and focused; large files are split by responsibility
   (e.g. `translator_login_*.py`, `proxy_bridge_*.py`).
 
+## Text-file editing (mandatory)
+
+**Never rewrite text files with PowerShell.** `Set-Content`, `Out-File`, `-replace`
+piped into a file, and `>` redirection decode and re-encode using the console
+code page (GBK/CP936 on this machine). Any UTF-8 file containing `—`, `·`, `→`,
+`…`, `©` or CJK text is silently corrupted into U+FFFD replacement characters.
+This has already destroyed the website once; do not repeat it.
+
+Rules:
+
+- Edit text files with Python only, always with an explicit encoding:
+  `io.open(path, encoding="utf-8").read()` and
+  `io.open(path, "w", encoding="utf-8", newline="\n").write(text)`.
+- Write plain UTF-8 **without a BOM**. Never use `utf-8-sig` for output; read
+  with `utf-8-sig` only when a file is known to carry a BOM.
+- Normalise line endings to `\n` (`newline="\n"` on write).
+- Prefer the editor/apply-patch tools for small changes; reserve Python scripts
+  for bulk rewrites, and print a diff summary afterwards.
+- After any bulk edit, audit the result before committing:
+  - the file decodes as strict UTF-8,
+  - it contains no U+FFFD (`\ufffd`),
+  - it has no BOM (`EF BB BF`),
+  - non-ASCII punctuation is the intended character, not a mojibake lead (a
+    character in the CJK block that appears where ASCII or typographic
+    punctuation belongs).
+- When a shell command must inspect non-ASCII text, read it through Python and
+  print ASCII-safe output. The Windows console mangles Chinese output; console
+  mojibake is **not** evidence that the file is broken, and clean console
+  output is not evidence that it is fine.
+
+## English-only repository
+
+The repository is English-only. The single exception is in-app UI copy that
+ships to end users.
+
+- **Allowed Chinese:** the `zh` entries in `proxy/locales/*.py`, the `zh`
+  strings in `web/assets/app.js` / `web/i18n.js`, Chinese content inside
+  `web/api/*.json` that is shown on the website, and `README.zh-CN.md`.
+- **Everything else is English:** file and directory names, script output and
+  log messages, docstrings, code comments, commit messages, documentation,
+  release notes in build tooling, and the generated `README.txt` inside the
+  source package.
+- No Chinese directory names anywhere: the staging directory is
+  `source_export/`, never a localized name.
+- Any new string that is not user-visible must be written in English, even when
+  the surrounding feature is Chinese-facing.
+
 ## Architecture notes
 
 - `proxy/vanilla.py` — vanilla Minecraft framing (Decoder/Encoder, VarInt,
@@ -85,6 +132,11 @@ python tools/build.py
   used by this repository: `fix:`, `feat:`, `chore:`, `docs:`, `build:`,
   `ci:`, `test:` followed by a lowercase summary.
 - Do not commit machine-local artifacts: `config.json`, `certs/` (private
-  keys), `dist/`, `web/downloads/` (release binaries), `.wrangler/`,
-  `cloudflare_credentials.json`, or `local-config-backup/`.
+  keys), `dist/`, `.wrangler/`, `cloudflare_credentials.json`,
+  `local-config-backup/`, or the `source_export/` staging directory.
+- **Do commit the release binaries** under `web/downloads/` (EXE, APK, Linux
+  ELF and the source ZIP) — the website serves them directly. The ZIP is caught
+  by the `*.zip` ignore rule, so add it explicitly with `git add -f`.
+- Before committing, run the UTF-8 audit described in "Text-file editing": no
+  BOM, no U+FFFD, no mojibake leads, and no Chinese in paths or tooling output.
 - Keep each commit focused: one logical change per commit.

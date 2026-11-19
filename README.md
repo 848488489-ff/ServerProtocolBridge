@@ -1,75 +1,80 @@
 # Server Protocol Bridge
 
-**[English](README.md) | [中文](README.zh-CN.md)**
+**[English](README.md) | [Chinese](README.zh-CN.md)**
 
-> **这个版本还不够成熟，不推荐在装有严格反作弊的服务器上使用。**
+> **This build is not mature yet; it is not recommended on servers with strict
+> anti-cheat.**
 
-`Server Protocol Bridge` 把普通 Minecraft **Java 版** TCP 服务器转换为本地
-`wss://` / `ws://` 端点，让基于浏览器的 **Eaglercraft** 客户端（它不会说原生
-TCP 协议）能连接进去。客户端全程不涉及 JVM。
+`Server Protocol Bridge` turns a plain vanilla Minecraft **Java Edition** TCP
+server into a local `wss://` / `ws://` endpoint, so a browser-based
+**Eaglercraft** client (which cannot speak the native TCP protocol) can join it.
+The JVM is not involved on the client side at all.
 
-## 功能
+## What it does
 
-- 在本地监听 `wss://`（TLS，自签 CA）/ `ws://` 端点。
-- 对浏览器客户端说 **Eaglercraft 握手方言 v1–v5**（按连接协商，含 v5
-  能力位与扩展表）。
-- 在 **Eaglercraft 线格式** 与 **原生 Minecraft 协议**（VarInt 帧、压缩阈值、
-  登录/游戏阶段）之间翻译。
-- **代答服务器的加密请求**：用服务器公钥 RSA 加密随机共享密钥，选择已认证
-  账户时向 Mojang 会话服务注册 join，随后双向切换 AES-128-CFB8。
-- 本地应答浏览器客户端的 **服务器列表 MOTD** 查询。
-- 通过 **SRV 记录** 解析目标、维护 **状态缓存**、转发资源包（可配置）。
-- 跨平台：Windows EXE、Android APK（Chaquopy）、Linux（AppImage/deb/rpm），
-  另有 Web UI 与原生窗口外壳。
+- Listens on a local `wss://` (TLS, self-signed CA) / `ws://` endpoint.
+- Speaks the **Eaglercraft handshake dialects v1–v5** to the browser client
+  (negotiated per connection, including v5 capability bits and extensions).
+- Translates between the **Eaglercraft wire format** and the **vanilla Minecraft
+  protocol** (VarInt framing, compression threshold, login/play phases).
+- **Answers the server's encryption request on the client's behalf**: a random
+  shared secret is RSA-encrypted with the server's public key, the session is
+  registered with the Mojang join service when an authenticated account is
+  selected, and both directions switch to AES-128-CFB8.
+- Answers the browser client's **server-list MOTD** queries locally.
+- Resolves the target through **SRV records**, keeps a **status cache** and
+  forwards resource packs (configurable).
+- Cross-platform: Windows EXE, Android APK (Chaquopy), Linux
+  (AppImage/deb/rpm), plus a Web UI and a native window shell.
 
-## 快速开始
+## Quick start
 
 ```bash
 pip install -r requirements.txt
-python main.py            # 打开 Web UI / 原生窗口
+python main.py            # opens the Web UI / native window
 python main.py --no-gui --target play.example.net --port 8443
 ```
 
-或直接运行 `dist/` 里的打包产物（先用 `tools/build.py` 构建）。
+Or run a packaged build from `dist/` (build it first with `tools/build.py`).
 
-## 配置
+## Configuration
 
-配置在 `config.json`（首次运行自动生成默认值，且被 git 忽略——它是机器本地
-配置）。常用键：
+Configuration lives in `config.json` (created with defaults on first run and
+git-ignored — it is machine-local). Common keys:
 
-| 键 | 含义 |
+| Key | Meaning |
 |---|---|
-| `listen_host` / `wss_port` / `ws_port` | 本地端点地址与端口 |
-| `target` | 要转发的原生 TCP 服务器 |
-| `eagler_translate` | 启用 Eaglercraft ↔ 原生翻译 |
-| `login_ack` | 应答 1.20.2+ 的登录确认包 |
+| `listen_host` / `wss_port` / `ws_port` | Local endpoint address and ports |
+| `target` | Vanilla TCP server to forward to |
+| `eagler_translate` | Enable Eaglercraft ↔ vanilla translation |
+| `login_ack` | Acknowledge the 1.20.2+ login packet |
 | `resource_pack_mode` | `forward` / `prompt` / `ignore` |
-| `language` | `zh`（中文，默认）、`en`、`auto`（跟随系统） |
-| `startup_notice` | 启动时显示"还不够成熟"提示 |
+| `language` | `zh` (Chinese, default), `en`, `auto` (follow the OS) |
+| `startup_notice` | Show the "not mature yet" notice on startup |
 
-## 构建
+## Building
 
-- **Windows**：`tools/build.py`（PyInstaller）→ `dist/Server Protocol Bridge.exe`
-- **Android**：`android/` Gradle 工程（Chaquopy）→ `app-release.apk`
-- **Linux**：WSL2 内 `tools/build_wsl.sh`
+- **Windows**: `tools/build.py` (PyInstaller) → `dist/Server Protocol Bridge.exe`
+- **Android**: `android/` Gradle project (Chaquopy) → `app-release.apk`
+- **Linux**: `tools/build_wsl.sh` inside WSL2
 
-## 测试
+## Tests
 
 ```bash
 python -m pytest tests/ -q
 ```
 
-## 目录结构
+## Layout
 
 ```
-proxy/       桥接核心：协议翻译、WebSocket/TCP 泵、Web UI、多语言
-tools/       构建、导出源码、许可证与发布辅助
-tests/       Pytest 套件（协议、翻译、加密、API、Web UI）
-web/         项目更新/下载网站（Cloudflare Pages）
-android/     Chaquopy Android 包装（Gradle）
+proxy/       bridge core: protocol translation, WebSocket/TCP pumps, Web UI, i18n
+tools/       build, source export, licence and release helpers
+tests/       pytest suite (protocol, translation, crypto, API, Web UI)
+web/         release/download website (Cloudflare Pages)
+android/     Chaquopy Android wrapper (Gradle)
 ```
 
-## 许可证
+## Licence
 
-见 [LICENSE](LICENSE)。第三方声明见
-[THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)。
+See [LICENSE](LICENSE). Third-party notices are in
+[THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).

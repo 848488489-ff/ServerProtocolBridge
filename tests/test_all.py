@@ -615,12 +615,12 @@ class ConfigTests(unittest.TestCase):
             config_module.parse_address('   ')
 
     def test_routes_text_roundtrip(self):
-        text = '/hypixel=mc.hypixel.net:25565\n/本地=127.0.0.1:25565\n'
+        text = '/hypixel=mc.hypixel.net:25565\n/café=127.0.0.1:25565\n'
         routes = config_module.parse_routes_text(text)
-        self.assertEqual(routes, {'/hypixel': 'mc.hypixel.net:25565', '/本地': '127.0.0.1:25565'})
+        self.assertEqual(routes, {'/hypixel': 'mc.hypixel.net:25565', '/café': '127.0.0.1:25565'})
         self.assertEqual(config_module.parse_routes_text(config_module.format_routes_text(routes)), routes)
         with self.assertRaises(ValueError):
-            config_module.parse_routes_text('缺少等号')
+            config_module.parse_routes_text('missing equals sign')
 
     def test_save_load_roundtrip(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -659,7 +659,7 @@ class ConfigTests(unittest.TestCase):
                             for item in config.validate()))
 
     def test_unknown_keys_ignored(self):
-        config = Config.from_dict({'target': 'a:1', '不存在的键': 5, 'wss_port': '1234'})
+        config = Config.from_dict({'target': 'a:1', 'unknown_key': 5, 'wss_port': '1234'})
         self.assertEqual(config.target, 'a:1')
         self.assertEqual(config.wss_port, 1234)
 
@@ -982,9 +982,11 @@ class McpTests(unittest.TestCase):
         # A password/key may only be set on a non-loopback bind, which is what
         # the authentication cases below exercise.
         self.manager.config.web_host = '0.0.0.0'
-        # 路由工具测试不依赖操作者的实际配置：suffix_route 开启时 set_route 会
-        # 拒绝写入，而操作者的 config.json 可能恰好开着它，导致工具测试在部分
-        # 机器上失败。把会干扰的字段归零，保证结果与机器配置无关。
+        # Route tool tests must not depend on the operator's real config:
+        # with suffix_route enabled set_route refuses to write, and the local
+        # config.json may happen to enable it, which made the tool tests fail on
+        # some machines.  Zero the interfering fields so the result is machine
+        # independent.
         self.manager.config.suffix_route = False
         self.manager.config.routes = {}
         from proxy.web import create_app
@@ -1599,7 +1601,7 @@ class ProxyEndToEndTests(unittest.TestCase):
         config.target = '127.0.0.1:25565'
         config.suffix_route = True
         config.routes = {'/x': '127.0.0.1:25566'}
-        # 配置校验信息固定英文。
+        # Configuration problems are always English.
         self.assertIn(tr_in('en', 'core.config.suffix_route_conflict'),
                       config.validate())
         data = config.to_dict()

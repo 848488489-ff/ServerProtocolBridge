@@ -1,4 +1,4 @@
-﻿# Python bytecode
+# Python bytecode
 __pycache__/
 *.py[cod]
 
@@ -24,7 +24,7 @@ dist/
 local-config-backup/
 ServerProtocolBridge-*.zip
 source/
-源码/
+source_export/
 
 # Machine-local configuration (contains the operator's target server)
 config.json

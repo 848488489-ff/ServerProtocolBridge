@@ -41,7 +41,7 @@ def _label_for(code: str, keys: dict, fallback: str) -> str:
 def _code_for(label: str, keys: dict, fallback: str) -> str:
     text = (label or '').strip()
     for code, key in keys.items():
-        # 'auto' 不是翻译表，只遍历真实语言。
+        # 'auto' is not a table; only the real languages are scanned.
         for language in ('en', 'zh'):
             if tr_in(language, key) == text:
                 return code

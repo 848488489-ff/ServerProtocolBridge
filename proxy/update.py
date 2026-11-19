@@ -37,7 +37,7 @@ from .i18n import get_language, tr
 from .version import VERSION
 
 # Public endpoint that announces the newest release: a plain static file on
-# Cloudflare Pages (see the "云端版本检查" section of the README for the
+# Cloudflare Pages (see the update section of the README for the
 # expected document).  *.pages.dev is reachable from mainland China, unlike
 # *.workers.dev, which is DNS-poisoned there.
 #

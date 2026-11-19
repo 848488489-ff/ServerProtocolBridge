@@ -53,7 +53,14 @@ API = f"https://api.cloudflare.com/client/v4/accounts/{ACCOUNT}/pages/projects/{
 
 def request(method: str, url: str, payload: dict | None = None, raw: bytes | None = None,
             content_type: str = "application/json", timeout: int = TIMEOUT) -> dict:
-    headers = {"Authorization": f"Bearer {TOKEN}"}
+    headers = {
+        "Authorization": f"Bearer {TOKEN}",
+        # Cloudflare blocks requests with no/odd user agents (error 1010);
+        # send a real browser UA so the asset upload endpoints accept us.
+        "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                       "AppleWebKit/537.36 (KHTML, like Gecko) "
+                       "Chrome/124.0 Safari/537.36"),
+    }
     data = None
     if raw is not None:
         data = raw
@@ -76,6 +83,32 @@ def request(method: str, url: str, payload: dict | None = None, raw: bytes | Non
         return json.loads(body.decode("utf-8"))
     except Exception:
         return {"success": False, "raw": body[:300].decode("utf-8", "replace")}
+
+
+def multipart_form(fields: dict[str, str]) -> tuple[bytes, str]:
+    """Encode ``fields`` as a ``multipart/form-data`` body and return
+    ``(body, content_type)``.  The Cloudflare Pages API accepts the
+    deployment parameters as form fields (NOT as a JSON body), so the
+    ``manifest`` must be sent this way.
+    """
+    boundary = "----opencode" + hashlib.sha256(os.urandom(16)).hexdigest()[:16]
+    chunks: list[bytes] = []
+    for name, value in fields.items():
+        chunks.append(f"--{boundary}\r\n".encode("utf-8"))
+        chunks.append(
+            f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode("utf-8"))
+        chunks.append(value.encode("utf-8"))
+        chunks.append(b"\r\n")
+    chunks.append(f"--{boundary}--\r\n".encode("utf-8"))
+    return b"".join(chunks), f"multipart/form-data; boundary={boundary}"
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Disable automatic redirects so a 302 to a presigned upload URL is
+    returned to the caller (which then re-PUTs the bytes there)."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
 
 
 def api_ok(resp: dict, what: str) -> dict:
@@ -118,30 +151,70 @@ def main() -> int:
     print(f"[deploy] Files: {len(files)}   total size: {total_bytes / 1024 / 1024:.2f} MB")
     print(f"[deploy] Project: {PROJECT}  @ branch {BRANCH}")
 
-    # 1) Create the deployment (Direct Upload carries the hash manifest: a map
-    #    of path -> sha256, as required by the Cloudflare Pages API).
-    manifest = {"/" + rel: sha256_of(p) for rel, p in files}
+    # 1) Create the deployment.  The Cloudflare Pages API takes the Direct
+    #    Upload parameters as *form fields* (multipart/form-data), not as a
+    #    JSON body.  ``manifest`` is a JSON-encoded object of path -> sha256
+    #    (paths WITHOUT a leading slash, as the API example shows).
+    manifest = {rel: sha256_of(p) for rel, p in files}
+    manifest_json = json.dumps(manifest, separators=(",", ":"))
+    body, content_type = multipart_form({
+        "branch": BRANCH,
+        "commit_dirty": "false",
+        "manifest": manifest_json,
+        "pages_build_output_dir": ".",
+    })
     created = api_ok(
-        request("POST", f"{API}/deployments",
-                {"branch": BRANCH, "manifest": manifest}),
+        request("POST", f"{API}/deployments", raw=body, content_type=content_type),
         "Create deployment",
     )
     deployment_id = created["id"]
-    upload_url = created["url"]
+    upload_url = created.get("upload_url") or created.get("url")
+    if not upload_url:
+        print("[deploy] Deployment response has no upload_url/url",
+              file=sys.stderr)
+        return 1
     print(f"[deploy] Deployment {deployment_id} created; uploading {len(files)} files...")
 
-    # 2) Upload each file to {upload_url}/{sha256} in parallel.
+    # 2) Upload each file.  The first PUT to {upload_url}/{sha256} answers with
+    #    a 302 to a presigned storage URL; we then PUT the same bytes there
+    #    (no Authorization needed -- the presigned URL carries its own signature)
+    #    and the request must stay a PUT (urllib would otherwise turn the 302
+    #    into a GET).
     done = 0
+
+    def put_no_redirect(url: str, data: bytes, headers: dict) -> tuple[int, dict]:
+        req = urllib.request.Request(url, data=data, method="PUT", headers=headers)
+        opener = urllib.request.build_opener(_NoRedirect())
+        try:
+            with opener.open(req, timeout=TIMEOUT) as resp:
+                return resp.status, dict(resp.headers)
+        except urllib.error.HTTPError as exc:
+            # 302/307/308 surface here when redirect handling is disabled.
+            return exc.code, dict(exc.headers)
 
     def upload_one(item: tuple[str, Path]) -> str:
         rel, path = item
         digest = sha256_of(path)
         with path.open("rb") as handle:
             data = handle.read()
-        resp = request("PUT", f"{upload_url}/{digest}", raw=data,
-                       content_type="application/octet-stream")
-        if not resp.get("success"):
-            raise RuntimeError(f"Upload failed {rel}: {resp}")
+        headers = {
+            "Authorization": f"Bearer {TOKEN}",
+            "Content-Type": "application/octet-stream",
+            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                           "AppleWebKit/537.36 (KHTML, like Gecko) "
+                           "Chrome/124.0 Safari/537.36"),
+        }
+        code, resp_headers = put_no_redirect(f"{upload_url}/{digest}", data, headers)
+        if code in (301, 302, 303, 307, 308):
+            target = resp_headers.get("Location") or resp_headers.get("location")
+            if not target:
+                raise RuntimeError(f"Redirect without Location for {rel}")
+            # Presigned URL: strip the now-invalid Authorization header.
+            presigned_headers = {k: v for k, v in headers.items()
+                                 if k.lower() != "authorization"}
+            code, _ = put_no_redirect(target, data, presigned_headers)
+        if code not in (200, 201, 204):
+            raise RuntimeError(f"Upload failed {rel}: HTTP {code}")
         return rel
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
