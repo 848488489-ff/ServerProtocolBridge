@@ -7,4 +7,4 @@
 # Bump this constant (and the matching numbers in android/app/build.gradle and
 # web/api/version.json) for every release.
 
-VERSION = '2.4.5'
+VERSION = '2.4.6'

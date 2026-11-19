@@ -6,6 +6,20 @@ panel is a **built-in WebView** that loads the program's own Web UI
 (`http://127.0.0.1:8765`). The relay is started and stopped from the panel, and
 the UI is identical to the desktop / browser build.
 
+The app layer is written in **Kotlin**: there is no Java source file and no
+Java library in the project (the only added dependency is `kotlin-stdlib`;
+Chaquopy embeds the Python runtime and is not a Java dependency).
+
+## Language
+
+The interface language defaults to **auto** (follow the system) and can be
+switched in the Web UI, exactly as on desktop. The shell's user-visible strings
+follow it: the persistent-notification title and content, the notification
+channel description and the permission toast are read from the Python i18n
+table in the active language. The notification is rebuilt whenever the app
+returns to the foreground, so a language switch takes effect on the next visit
+to the app.
+
 ## Prerequisites
 
 - **Android Studio** with the Android SDK: SDK Platform 35 and Build-Tools.

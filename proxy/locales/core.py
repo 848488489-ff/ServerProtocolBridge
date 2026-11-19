@@ -8,6 +8,10 @@ from . import core_cli
 
 EN = {
     'core.app_name': 'Server Protocol Bridge',
+    'core.android.notif_content': 'Proxy service is running',
+    'core.android.notif_channel_desc': 'Keep Server Protocol Bridge running in the background',
+    'core.android.toast_not_permitted': 'Notification permission not granted: the persistent notification will not show and the background proxy may be stopped by the system. Allow notifications in system settings.',
+    'core.android.fgs_subtype': 'Keep the Server Protocol Bridge proxy running in the background',
     'core.tagline': 'Turns a plain Minecraft server into a local wss:// or ws:// '
                     'endpoint for WebSocket clients.',
     'core.startup_notice_immature': 'This build is not mature yet; it is not '
@@ -83,6 +87,10 @@ EN = {
 
 ZH = {
     'core.app_name': '服务器协议转换',
+    'core.android.notif_content': '代理服务正在运行',
+    'core.android.notif_channel_desc': '保持服务器协议转换在后台运行',
+    'core.android.toast_not_permitted': '通知权限未授予：常驻通知不会显示，后台代理可能被系统停止。请在系统设置里允许通知。',
+    'core.android.fgs_subtype': '保持服务器协议转换代理在后台运行',
     'core.tagline': '把普通 Minecraft 服务器转换为本地 wss:// 或 ws:// 端点, '
                     '供 WebSocket 客户端连接。',
     'core.startup_notice_immature': '这个还不够成熟，不推荐在装有严格反作弊的服务器上使用。',

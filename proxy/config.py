@@ -240,7 +240,7 @@ class Config:
     # Run-time options
     # Language for all user-visible text: 'zh' (Chinese, default), 'en'
     # (English) or 'auto' (detect the system language)
-    language: str = 'zh'
+    language: str = 'auto'
     # Show the "not yet mature" notice once the proxy starts listening.
     startup_notice: bool = True
     # Web UI: the browser interface the window starts automatically.  It binds

@@ -75,7 +75,7 @@ class LanguageTests(unittest.TestCase):
     def test_config_carries_the_language(self):
         config = Config()
         config.target = 'play.example.net'
-        self.assertEqual(config.language, 'zh')
+        self.assertEqual(config.language, 'auto')
         self.assertEqual(config.validate(), [])
         self.assertEqual(Config.from_dict({'language': 'zh'}).language, 'zh')
         config.language = 'ZH'                       # case is normalised

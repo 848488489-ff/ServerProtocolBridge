@@ -12,6 +12,30 @@ the returned URL into the WebView.
 
 from __future__ import annotations
 
+import json
+
+
+def ui_texts() -> str:
+    """Return the user-facing strings the native Android layer needs, in the
+    active interface language, as a JSON object.
+
+    The notification title, content, channel description and the permission
+    toast follow the language selected in the Web UI, so the shell does not
+    stay hard-coded English while the panel is Chinese (and vice versa).
+    Called from ``MainActivity`` and ``KeepAliveService`` on every (re)build
+    of the notification, so a language switch is picked up on the next visit
+    to the app.
+    """
+    from .i18n import tr
+
+    return json.dumps({
+        'app_name': tr('core.app_name'),
+        'notif_content': tr('core.android.notif_content'),
+        'notif_channel_desc': tr('core.android.notif_channel_desc'),
+        'toast_not_permitted': tr('core.android.toast_not_permitted'),
+        'fgs_subtype': tr('core.android.fgs_subtype'),
+    }, ensure_ascii=False)
+
 
 def start_web_ui() -> str:
     """Start the Flask Web UI and return its URL (for the WebView).

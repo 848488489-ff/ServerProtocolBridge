@@ -206,8 +206,15 @@ class BridgePump:
             return
         total = sum(len(chunk) for chunk in chunks)
         try:
-            for chunk in chunks:
-                writer.write(chunk)
+            # Coalesce the queued chunks into one write.  One TCP write per
+            # flush instead of one per chunk removes N-1 syscalls and the
+            # per-chunk asyncio framing cost on a busy connection; join is a
+            # single C pass and returns the sole chunk unchanged when there is
+            # exactly one, so the common case stays zero-copy.
+            if len(chunks) == 1:
+                writer.write(chunks[0])
+            else:
+                writer.write(b"".join(chunks))
             await writer.drain()
         except (OSError, RuntimeError) as exc:
             self.close_reason = self.close_reason or tr('proxy.reason.send_to_target_failed',

@@ -53,7 +53,10 @@ python tools/build.py
   annotations`), dataclasses for state, i18n via `proxy/i18n.py` (`tr()`).
 - Every user-visible string must go through `proxy/locales/*.py` (EN and ZH
   tables). Do not hard-code UI text. The interface language defaults to
-  Chinese (`config.language = 'zh'`).
+  `auto` (follow the OS; `config.language = 'auto'`). The Android shell's
+  notification text, channel description and permission toast are read from
+  the same i18n table (`proxy/android_entry.ui_texts()`) so they follow the
+  language picked in the Web UI.
 - Code comments, identifiers and protocol strings stay English; only
   user-visible text is translated.
 - The version number has a single source of truth: `proxy/version_info.py`
@@ -62,6 +65,32 @@ python tools/build.py
   together.
 - Keep modules small and focused; large files are split by responsibility
   (e.g. `translator_login_*.py`, `proxy_bridge_*.py`).
+
+## Packaging and performance
+
+- The release build uses **PyInstaller** (onefile, no UPX/MPRESS). Nuitka and
+  Cython were evaluated and are not used: neither compiles this relay into
+  meaningfully faster code, and PyInstaller is the established, working
+  pipeline. Do not switch packagers without a measured reason.
+- **No Java anywhere.** The Android app layer is Kotlin
+  (`android/app/src/main/kotlin/`); the only added dependency is
+  `kotlin-stdlib`. Chaquopy embeds the Python runtime and is not a Java
+  dependency. Never add a Java source file or a Java library.
+- **Real optimisations only.** Before changing a hot path, measure it with
+  `timeit` and keep the change only when it is faster on realistic input.
+  Measured so far:
+  - `proxy/vanilla.write_varint`: branch-table fast path, ~+30% over the
+    bytearray loop, and the common 1-byte value allocates nothing.
+  - `proxy_bridge_pump._flush_to_server`: coalesce queued chunks into one
+    `writer.write(b"".join(chunks))` (one syscall instead of N) — 1.9x–3.4x
+    faster in-process, and the single-chunk case stays zero-copy.
+  - `pack()` as a single bytearray was tried and reverted: it was not faster
+    on small bodies and only ~1.1x on large ones, so the simple form stays.
+- Do **not** add a C library for the sake of it. The CPU-heavy parts already
+  use C implementations: zlib (compression), cryptography (AES/RSA) and
+  hashlib (SHA-256). numpy was evaluated for the per-packet framing path and
+  is not worth it there (numpy object creation costs more than a small-packet
+  operation saves), so it is not a dependency.
 
 ## Text-file editing (mandatory)
 

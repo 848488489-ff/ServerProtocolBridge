@@ -22,6 +22,11 @@ TCP 协议）能连接进去。客户端全程不涉及 JVM。
 - 跨平台：Windows EXE、Android APK（Chaquopy）、Linux（AppImage/deb/rpm），
   另有 Web UI 与原生窗口外壳。
 
+> **全程不使用任何 Java。** Android 应用层用 **Kotlin** 编写（唯一新增依赖是
+> `kotlin-stdlib`）；Chaquopy 用于嵌入 Python 运行时，不是 Java 依赖。项目里
+> 没有任何 Java 源文件，也没有 Java 库。界面语言默认 **auto**（跟随系统），
+> Android 外壳的通知文本、渠道描述与权限提示会跟随 Web UI 里选择的语言。
+
 ## 快速开始
 
 ```bash
@@ -44,13 +49,13 @@ python main.py --no-gui --target play.example.net --port 8443
 | `eagler_translate` | 启用 Eaglercraft ↔ 原生翻译 |
 | `login_ack` | 应答 1.20.2+ 的登录确认包 |
 | `resource_pack_mode` | `forward` / `prompt` / `ignore` |
-| `language` | `zh`（中文，默认）、`en`、`auto`（跟随系统） |
+| `language` | `auto`（跟随系统，默认）、`en`、`zh` |
 | `startup_notice` | 启动时显示"还不够成熟"提示 |
 
 ## 构建
 
 - **Windows**：`tools/build.py`（PyInstaller）→ `dist/Server Protocol Bridge.exe`
-- **Android**：`android/` Gradle 工程（Chaquopy）→ `app-release.apk`
+- **Android**：`android/` Gradle 工程（Kotlin + Chaquopy）→ `app-release.apk`
 - **Linux**：WSL2 内 `tools/build_wsl.sh`
 
 ## 测试
@@ -66,7 +71,7 @@ proxy/       桥接核心：协议翻译、WebSocket/TCP 泵、Web UI、多语�
 tools/       构建、导出源码、许可证与发布辅助
 tests/       Pytest 套件（协议、翻译、加密、API、Web UI）
 web/         项目更新/下载网站（Cloudflare Pages）
-android/     Chaquopy Android 包装（Gradle）
+android/     Kotlin Android 包装（Gradle + Chaquopy）
 ```
 
 ## 许可证
