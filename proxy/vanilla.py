@@ -116,15 +116,23 @@ class NeedMoreData(ProtocolError):
 def write_varint(value: int) -> bytes:
     if value < 0:
         value &= 0xFFFFFFFF
-    out = bytearray()
-    while True:
-        byte = value & 0x7F
-        value >>= 7
-        if value:
-            out.append(byte | 0x80)
-        else:
-            out.append(byte)
-            return bytes(out)
+    # Branch-table fast path: the common small values (packet ids, lengths,
+    # port numbers) are encoded without a loop or a bytearray allocation.  The
+    # high bit of every byte but the last marks continuation, and at most five
+    # bytes are needed for the 32-bit space.
+    if value < 0x80:
+        return bytes((value,))
+    if value < 0x4000:
+        return bytes((value & 0x7F | 0x80, value >> 7))
+    if value < 0x200000:
+        return bytes((value & 0x7F | 0x80, (value >> 7) & 0x7F | 0x80,
+                      value >> 14))
+    if value < 0x10000000:
+        return bytes((value & 0x7F | 0x80, (value >> 7) & 0x7F | 0x80,
+                      (value >> 14) & 0x7F | 0x80, value >> 21))
+    return bytes((value & 0x7F | 0x80, (value >> 7) & 0x7F | 0x80,
+                  (value >> 14) & 0x7F | 0x80, (value >> 21) & 0x7F | 0x80,
+                  value >> 28))
 
 
 def read_varint(data: bytes, pos: int = 0) -> tuple[int, int]:

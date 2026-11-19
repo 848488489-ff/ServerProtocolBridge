@@ -27,6 +27,13 @@ The JVM is not involved on the client side at all.
 - Cross-platform: Windows EXE, Android APK (Chaquopy), Linux
   (AppImage/deb/rpm), plus a Web UI and a native window shell.
 
+> **No Java anywhere.** The Android app layer is written in **Kotlin** (the only
+> added dependency is `kotlin-stdlib`); Chaquopy embeds the Python runtime and
+> is not a Java dependency. There is no Java source file and no Java library in
+> the project. The UI language defaults to **auto** (follow the OS) and the
+> Android shell's notification text, channel description and permission toast
+> follow the language selected in the Web UI.
+
 ## Quick start
 
 ```bash
@@ -49,13 +56,13 @@ git-ignored — it is machine-local). Common keys:
 | `eagler_translate` | Enable Eaglercraft ↔ vanilla translation |
 | `login_ack` | Acknowledge the 1.20.2+ login packet |
 | `resource_pack_mode` | `forward` / `prompt` / `ignore` |
-| `language` | `zh` (Chinese, default), `en`, `auto` (follow the OS) |
+| `language` | `auto` (follow the OS, default), `en`, `zh` |
 | `startup_notice` | Show the "not mature yet" notice on startup |
 
 ## Building
 
 - **Windows**: `tools/build.py` (PyInstaller) → `dist/Server Protocol Bridge.exe`
-- **Android**: `android/` Gradle project (Chaquopy) → `app-release.apk`
+- **Android**: `android/` Gradle project (Kotlin + Chaquopy) → `app-release.apk`
 - **Linux**: `tools/build_wsl.sh` inside WSL2
 
 ## Tests
@@ -71,7 +78,7 @@ proxy/       bridge core: protocol translation, WebSocket/TCP pumps, Web UI, i18
 tools/       build, source export, licence and release helpers
 tests/       pytest suite (protocol, translation, crypto, API, Web UI)
 web/         release/download website (Cloudflare Pages)
-android/     Chaquopy Android wrapper (Gradle)
+android/     Kotlin Android wrapper (Gradle + Chaquopy)
 ```
 
 ## Licence

@@ -1,6 +1,7 @@
 plugins {
     id("com.android.application")
     id("com.chaquo.python")
+    id("org.jetbrains.kotlin.android")
 }
 
 android {
@@ -11,8 +12,8 @@ android {
         applicationId = "com.serverprotocolbridge"
         minSdk = 24
         targetSdk = 37
-        versionCode = 245
-        versionName = "2.4.5"
+        versionCode = 246
+        versionName = "2.4.6"
         ndk {
             // arm64-v8a only: the APK targets real devices.  x86_64 was dropped
             // to keep the APK under Cloudflare Pages' 25 MiB per-file limit
@@ -34,6 +35,19 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
+    }
+}
+
+dependencies {
+    // Kotlin standard library only: the Android layer is Kotlin and no Java
+    // library is pulled in (Chaquopy is the Python runtime bridge, not a Java
+    // dependency).
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
 }
 
 // Copy the proxy package into the Chaquopy source directory before the build
