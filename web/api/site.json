@@ -1,9 +1,7 @@
 {
   "name": "Server Protocol Bridge",
-  "name_zh": "服务器协议转换",
   "tagline": {
-    "en": "A local wss:// relay for Minecraft web clients.",
-    "zh": "面向 Minecraft 网页客户端的本地 wss:// 中继。"
+    "en": "A local wss:// relay for Minecraft web clients."
   },
   "url": "https://banbengengxinjiancha.pages.dev/",
   "api_base": "/api/",

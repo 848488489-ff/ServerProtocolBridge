@@ -8,10 +8,7 @@
 $ErrorActionPreference = 'Stop'
 
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$web = Join-Path $root '..\版本更新检查'   # website source directory
-if (-not (Test-Path $web)) {
-    $web = 'D:\桌面\版本更新检查'
-}
+$web = Join-Path $root 'web'   # website source directory (repository layout)
 
 # Load credentials.
 $credFile = Join-Path $root 'cloudflare_credentials.json'

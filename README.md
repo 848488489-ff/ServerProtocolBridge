@@ -1,7 +1,5 @@
 # Server Protocol Bridge
 
-**[English](README.md) | [中文](README.zh-CN.md)**
-
 > **This build is not mature yet; it is not recommended on servers with strict anti-cheat.**
 
 `Server Protocol Bridge` turns a plain vanilla Minecraft **Java Edition** TCP
@@ -71,7 +69,6 @@ tools/       Build, export-source, license and release helpers
 tests/       Pytest suite (protocol, translation, crypto, API, Web UI)
 web/         The project update/download website (Cloudflare Pages)
 android/     Chaquopy Android wrapper (Gradle)
-superdebug/  Dev-only Paper plugin for protocol debugging
 ```
 
 ## License

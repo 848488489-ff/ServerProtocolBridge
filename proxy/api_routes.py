@@ -93,12 +93,11 @@ def index():
 
 @api.get('/docs')
 def docs():
-    """程序内双语说明页：默认跟随界面语言，语言按钮标签也按界面语言显示。"""
+    """API documentation page (English, following the active UI language)."""
     html = (API_DOCS_HTML
             .replace('__VERSION__', VERSION)
             .replace('__DEFAULT_LANG__', get_language())
             .replace('__LABEL_AUTO__', tr('gui.language.auto'))
-            .replace('__LABEL_ZH__', tr('gui.language.zh'))
             .replace('__LABEL_EN__', tr('gui.language.en')))
     return Response(html, mimetype='text/html')
 

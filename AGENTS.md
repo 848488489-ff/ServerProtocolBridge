@@ -51,7 +51,8 @@ python tools/build.py
 
 - Follow the surrounding style: type hints (`from __future__ import
   annotations`), dataclasses for state, i18n via `proxy/i18n.py` (`tr()`).
-- Every user-visible string must go through `proxy/locales/*.py` (EN and ZH).
+- Every user-visible string must go through `proxy/locales/*.py` (the EN table;
+  the project is English-only, there is no second language table).
   Do not hard-code UI text.
 - Keep modules small and focused; large files are split by responsibility
   (e.g. `translator_login_*.py`, `proxy_bridge_*.py`).
@@ -79,5 +80,5 @@ python tools/build.py
   `ci:`, `test:` followed by a lowercase summary.
 - Do not commit machine-local artifacts: `config.json`, `certs/` (private
   keys), `dist/`, `web/downloads/` (release binaries), `.wrangler/`,
-  `cloudflare_credentials.json`, or `本地配置备份/`.
+  `cloudflare_credentials.json`, or `local-config-backup/`.
 - Keep each commit focused: one logical change per commit.
