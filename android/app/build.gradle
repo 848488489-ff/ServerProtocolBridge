@@ -1,7 +1,6 @@
 plugins {
     id("com.android.application")
     id("com.chaquo.python")
-    id("org.jetbrains.kotlin.android")
 }
 
 android {
@@ -37,18 +36,12 @@ android {
     }
 }
 
-kotlin {
-    compilerOptions {
-        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
-    }
-}
-
-dependencies {
-    // Kotlin standard library only: the Android layer is Kotlin and no Java
-    // library is pulled in (Chaquopy is the Python runtime bridge, not a Java
-    // dependency).
-    implementation("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
-}
+// Kotlin support is built into AGP 9.0 (built-in Kotlin): no kotlin-android
+// plugin and no explicit kotlin-stdlib dependency are needed.  jvmTarget
+// defaults to compileOptions.targetCompatibility (Java 17), and the Kotlin
+// standard library is added automatically.  There is no Java source file and
+// no Java library in the project; Chaquopy embeds the Python runtime and is
+// not a Java dependency.
 
 // Copy the proxy package into the Chaquopy source directory before the build
 // collects Python sources, so the APK always carries the current code instead
