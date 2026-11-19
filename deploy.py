@@ -62,8 +62,16 @@ def request(method: str, url: str, payload: dict | None = None, raw: bytes | Non
         data = json.dumps(payload).encode("utf-8")
         headers["Content-Type"] = content_type
     req = urllib.request.Request(url, data=data, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        body = resp.read()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read()
+    except urllib.error.HTTPError as exc:
+        # Surface the API error body (Cloudflare returns a JSON error envelope)
+        # instead of failing with a bare "HTTP 400" traceback.
+        detail = exc.read().decode("utf-8", "replace")
+        print(f"[deploy] HTTP {exc.code} from {url}", file=sys.stderr)
+        print(detail[:600], file=sys.stderr)
+        raise
     try:
         return json.loads(body.decode("utf-8"))
     except Exception:
@@ -110,11 +118,12 @@ def main() -> int:
     print(f"[deploy] Files: {len(files)}   total size: {total_bytes / 1024 / 1024:.2f} MB")
     print(f"[deploy] Project: {PROJECT}  @ branch {BRANCH}")
 
-    # 1) Create the deployment (Direct Upload carries the file hash manifest).
-    hashes = [{"path": "/" + rel, "sha256": sha256_of(p)} for rel, p in files]
+    # 1) Create the deployment (Direct Upload carries the hash manifest: a map
+    #    of path -> sha256, as required by the Cloudflare Pages API).
+    manifest = {"/" + rel: sha256_of(p) for rel, p in files}
     created = api_ok(
         request("POST", f"{API}/deployments",
-                {"branch": BRANCH, "file_hashes": hashes}),
+                {"branch": BRANCH, "manifest": manifest}),
         "Create deployment",
     )
     deployment_id = created["id"]
