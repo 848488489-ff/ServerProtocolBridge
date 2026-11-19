@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Deploy the website directory (D:\\桌面\\版本更新检查) to Cloudflare Pages
-using the Direct Upload API.
+"""Deploy the website directory (``web/``) to Cloudflare Pages using the
+Direct Upload API.
 
 Credentials are read from environment variables ONLY (never hard-coded):
     CLOUDFLARE_API_TOKEN      (API token / KEY)
@@ -29,7 +29,8 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-SITE = Path(r"D:\桌面\版本更新检查")
+# The website directory lives next to this script (repository layout).
+SITE = Path(__file__).resolve().parent / "web"
 BRANCH = "main"
 TIMEOUT = 600
 
@@ -37,7 +38,8 @@ TIMEOUT = 600
 def require_env(name: str) -> str:
     value = os.environ.get(name, "").strip()
     if not value:
-        print(f"[deploy] 缺少环境变量 {name} —— 请在环境变量里设置后再运行。", file=sys.stderr)
+        print(f"[deploy] Missing environment variable {name}. Set it and run again.",
+              file=sys.stderr)
         sys.exit(2)
     return value
 
@@ -71,7 +73,8 @@ def request(method: str, url: str, payload: dict | None = None, raw: bytes | Non
 def api_ok(resp: dict, what: str) -> dict:
     if not resp.get("success"):
         errors = resp.get("errors") or resp.get("raw") or resp
-        print(f"[deploy] {what} 失败: {json.dumps(errors, ensure_ascii=False)}", file=sys.stderr)
+        print(f"[deploy] {what} failed: {json.dumps(errors, ensure_ascii=False)}",
+              file=sys.stderr)
         sys.exit(1)
     return resp["result"]
 
@@ -94,33 +97,32 @@ def sha256_of(path: Path) -> str:
 
 def main() -> int:
     if not SITE.is_dir():
-        print(f"[deploy] 站点目录不存在: {SITE}", file=sys.stderr)
+        print(f"[deploy] Website directory not found: {SITE}", file=sys.stderr)
         return 1
 
     files = collect_files()
     if not files:
-        print("[deploy] 站点目录为空", file=sys.stderr)
+        print("[deploy] Website directory is empty", file=sys.stderr)
         return 1
 
     total_bytes = sum(p.stat().st_size for _, p in files)
-    print(f"[deploy] 站点: {SITE}")
-    print(f"[deploy] 文件数: {len(files)}  总大小: {total_bytes / 1024 / 1024:.2f} MB")
-    print(f"[deploy] 项目: {PROJECT}  @ branch {BRANCH}")
+    print(f"[deploy] Site: {SITE}")
+    print(f"[deploy] Files: {len(files)}   total size: {total_bytes / 1024 / 1024:.2f} MB")
+    print(f"[deploy] Project: {PROJECT}  @ branch {BRANCH}")
 
-    # 1) 创建 deployment（Direct Upload 携带文件哈希清单）
+    # 1) Create the deployment (Direct Upload carries the file hash manifest).
     hashes = [{"path": "/" + rel, "sha256": sha256_of(p)} for rel, p in files]
     created = api_ok(
         request("POST", f"{API}/deployments",
                 {"branch": BRANCH, "file_hashes": hashes}),
-        "创建 deployment",
+        "Create deployment",
     )
     deployment_id = created["id"]
     upload_url = created["url"]
-    print(f"[deploy] deployment {deployment_id} 已创建，开始上传 {len(files)} 个文件…")
+    print(f"[deploy] Deployment {deployment_id} created; uploading {len(files)} files...")
 
-    # 2) 并行上传每个文件到 {upload_url}/{sha256}
+    # 2) Upload each file to {upload_url}/{sha256} in parallel.
     done = 0
-    lock = None
 
     def upload_one(item: tuple[str, Path]) -> str:
         rel, path = item
@@ -130,7 +132,7 @@ def main() -> int:
         resp = request("PUT", f"{upload_url}/{digest}", raw=data,
                        content_type="application/octet-stream")
         if not resp.get("success"):
-            raise RuntimeError(f"上传失败 {rel}: {resp}")
+            raise RuntimeError(f"Upload failed {rel}: {resp}")
         return rel
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
@@ -141,28 +143,29 @@ def main() -> int:
                 future.result()
                 done += 1
                 if done % 25 == 0 or done == len(files):
-                    print(f"[deploy] 已上传 {done}/{len(files)}")
+                    print(f"[deploy] Uploaded {done}/{len(files)}")
             except Exception as exc:
-                print(f"[deploy] 文件上传出错 {rel}: {exc}", file=sys.stderr)
+                print(f"[deploy] File upload error {rel}: {exc}", file=sys.stderr)
                 return 1
 
-    # 3) 轮询 deployment 直到完成
-    print("[deploy] 文件全部上传，等待部署完成…")
+    # 3) Poll the deployment until it finishes.
+    print("[deploy] All files uploaded; waiting for the deployment to finish...")
     for _ in range(60):
         time.sleep(5)
         status = api_ok(
-            request("GET", f"{API}/deployments/{deployment_id}"), "查询状态")
+            request("GET", f"{API}/deployments/{deployment_id}"), "Query status")
         stage = (status.get("latest_stage") or {}).get("status", "?")
         if stage in ("success", "failed", "error"):
             if stage == "success":
                 url = status.get("url", "?")
-                print(f"[deploy] ✅ 部署成功: {url}")
+                print(f"[deploy] Deployment succeeded: {url}")
                 return 0
-            print(f"[deploy] ❌ 部署状态: {stage}", file=sys.stderr)
+            print(f"[deploy] Deployment status: {stage}", file=sys.stderr)
             return 1
-        print(f"[deploy]   部署中… stage={stage}")
+        print(f"[deploy]   Deploying... stage={stage}")
 
-    print("[deploy] 超时，部署未完成，请到 Cloudflare 控制台查看。", file=sys.stderr)
+    print("[deploy] Timeout; the deployment did not finish. Check the Cloudflare "
+          "dashboard.", file=sys.stderr)
     return 1
 
 

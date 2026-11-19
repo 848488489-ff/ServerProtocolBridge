@@ -1,9 +1,9 @@
-"""Tests for the language layer: defaults, switching, and table sanity.
+"""Tests for the language layer (English-only).
 
     python -m unittest tests.test_i18n -v
 
-The suite runs in the program's default language (English); the Chinese
-tables are exercised by switching explicitly.
+The project has no second language: every language code resolves to English,
+and the Chinese table has been removed entirely.
 """
 
 from __future__ import annotations
@@ -36,16 +36,15 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(i18n.tr('proxy.query.no_motd'),
                          'The server did not return any MOTD information')
 
-    def test_switch_to_chinese_and_back(self):
-        self.assertEqual(i18n.set_language('zh'), 'zh')
-        self.assertEqual(i18n.get_language(), 'zh')
-        self.assertEqual(i18n.tr('proxy.query.no_motd'), '服务器未返回MOTD信息')
-        self.assertEqual(i18n.tr('translator.prefix'), '[协议转换器] ')
-
-        i18n.set_language('en')
+    def test_every_code_resolves_to_english(self):
+        # There is no second language: even a legacy 'zh' resolves to English.
+        self.assertEqual(i18n.set_language('zh'), 'en')
+        self.assertEqual(i18n.get_language(), 'en')
         self.assertEqual(i18n.tr('proxy.query.no_motd'),
                          'The server did not return any MOTD information')
         self.assertEqual(i18n.tr('translator.prefix'), '[Protocol Adapter] ')
+        self.assertEqual(i18n.set_language('auto'), 'en')
+        self.assertEqual(i18n.get_language(), 'en')
 
     def test_unknown_language_falls_back_to_default(self):
         self.assertEqual(i18n.set_language('klingon'), 'en')
@@ -56,64 +55,64 @@ class LanguageTests(unittest.TestCase):
 
     def test_broken_template_does_not_crash(self):
         # Call sites must be able to format safely even if a value is missing.
-        i18n.set_language('zh')
         self.assertIn('%', i18n.tr('translator.log.protocols_selected'))
 
     def test_language_label_round_trip(self):
         for code in i18n.LANGUAGES:
             self.assertEqual(i18n.language_code(i18n.language_label(code)), code)
-        self.assertEqual(i18n.language_code('zh'), 'zh')
+        # An unknown label maps back to the default language (English).
+        self.assertEqual(i18n.language_code('Chinese (simplified)'), 'en')
 
-    def test_every_english_key_has_a_translation(self):
+    def test_no_missing_keys_reported(self):
         self.assertEqual(i18n.missing_keys('zh'), [])
 
-    def test_placeholder_names_match_between_languages(self):
+    def test_english_templates_use_named_placeholders(self):
+        # Every English template must use named placeholders; a bare %s / %d
+        # would be a formatting bug at a call site.
         for key, text in i18n.EN.items():
-            self.assertEqual(sorted(PLACEHOLDER.findall(text)),
-                             sorted(PLACEHOLDER.findall(i18n.ZH.get(key, ''))), key)
+            self.assertNotIn('%s', text, key)
+            self.assertNotIn('%d', text, key)
+            self.assertNotIn('%r', text, key)
 
     def test_config_carries_the_language(self):
         config = Config()
         config.target = 'play.example.net'
         self.assertEqual(config.language, 'en')
         self.assertEqual(config.validate(), [])
-        self.assertEqual(Config.from_dict({'language': 'zh'}).language, 'zh')
-        config.language = 'ZH'                       # case is normalised
+        # A legacy 'zh' value is coerced to English on load.
+        self.assertEqual(Config.from_dict({'language': 'zh'}).language, 'en')
+        config.language = 'auto'
         self.assertEqual(config.validate(), [])
         config.language = 'fr'
         self.assertTrue(any(i18n.tr('core.config.language_invalid') in item
                             for item in config.validate()))
 
     def test_config_problems_stay_english(self):
-        """配置校验信息固定英文，不随界面语言切换。"""
-        i18n.set_language('zh')
+        """Validation diagnostics are always English, whatever the UI language."""
+        i18n.set_language('en')
         config = Config()
         config.language = 'fr'
         problems = config.validate()
         self.assertIn(i18n.tr_in('en', 'core.config.language_invalid'), problems)
-        self.assertNotIn(i18n.tr_in('zh', 'core.config.language_invalid'), problems)
 
     def test_cli_language_argument(self):
         from proxy.cli import apply_arguments, build_parser
 
-        args = build_parser().parse_args(['--language', 'zh'])
+        args = build_parser().parse_args(['--language', 'auto'])
         config = apply_arguments(Config(), args)
-        self.assertEqual(config.language, 'zh')
+        self.assertEqual(config.language, 'auto')
 
     def test_code_retry_copy_does_not_claim_a_previous_attempt(self):
         # The retry may happen on the very first code (for example after an SSL
         # retry), so the text must describe Microsoft rejecting *this* code,
         # not a previous one.
-        for code in ('en', 'zh'):
-            i18n.set_language(code)
-            text = i18n.tr('gui.accounts.ms.renewing').lower()
-            self.assertNotIn('previous', text)
-            self.assertNotIn('上一个', text)
-            self.assertTrue(i18n.tr('gui.accounts.ms.retrying_ssl'))
+        text = i18n.tr('gui.accounts.ms.renewing').lower()
+        self.assertNotIn('previous', text)
+        self.assertTrue(i18n.tr('gui.accounts.ms.retrying_ssl'))
 
     def test_player_facing_messages_follow_the_language(self):
-        """Protocol-layer text (here: a proxy error sent as 0xFF) is localised too."""
-        i18n.set_language('zh')
+        """Protocol-layer text (here: a proxy error sent as 0xFF) is English."""
+        i18n.set_language('en')
         sent: list = []
         translator = EaglerTranslator(
             target_host='play.example.net', target_port=25565, log=NullLogger(), tag='#1',
@@ -124,7 +123,7 @@ class LanguageTests(unittest.TestCase):
         self.assertEqual(sent[-1][0], 0xFF)
         length = int.from_bytes(sent[-1][2:4], 'big')
         text = json.loads(sent[-1][4:4 + length].decode('utf-8'))['text']
-        self.assertTrue(text.startswith('[协议转换器] '), text)
+        self.assertTrue(text.startswith('[Protocol Adapter] '), text)
 
 
 if __name__ == '__main__':

@@ -11,9 +11,6 @@ android/.idea/
 android/captures/
 *.iml
 
-# SuperDebug Paper plugin: javac/classes output (the built JAR is committed)
-superdebug/build/
-
 # Cloudflare Pages deploy credentials (never committed)
 cloudflare_credentials.json
 
@@ -24,8 +21,9 @@ certs/
 # Build outputs and packaging artifacts
 dist/
 .wrangler/
-本地配置备份/
+local-config-backup/
 ServerProtocolBridge-*.zip
+source/
 
 # Machine-local configuration (contains the operator's target server) and the
 # release binaries bundled into the update site (published separately)

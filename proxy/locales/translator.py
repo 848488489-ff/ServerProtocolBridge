@@ -6,7 +6,8 @@ Owner: ``translator.py`` / ``eagler.py`` / ``vanilla.py`` (keys prefixed
 ``translator.prefix`` is the tag prepended to every message the proxy injects
 into the player's chat, so it must stay short.
 
-EN and ZH must always carry the same key set with the same named placeholders.
+EN carries the key set that the program uses; there is no separate language
+table (the project is English-only).
 """
 
 from __future__ import annotations
@@ -115,102 +116,3 @@ EN = {
     'vanilla.error.zlib_failed': 'zlib decompression failed: %(error)s',
 }
 
-ZH = {
-    'translator.prefix': '[协议转换器] ',
-
-    # --- 发给玩家 / 作为关闭原因上报的文案 ---
-    'translator.denied_login': '目标服务器拒绝登录: %(reason)s',
-    'translator.empty_content': '(无内容)',
-    'translator.kick_fallback': '被踢出',
-    'translator.error.account_join_failed': '账号会话加入失败: %(error)s',
-    'translator.error.aes_missing': '目标服务器要求加密握手, 但本机没有可用的 AES 库, 代不了 —— '
-                                    '请安装 cryptography (pip install cryptography), 或换离线模式服务器',
-    'translator.error.backend_parse_failed': '解析目标服务器数据失败: %(error)s',
-    'translator.error.client_parse_failed': '解析客户端数据失败: %(error)s',
-    'translator.error.duplicate_login_request': '重复的登录请求包',
-    'translator.error.encryption_handshake_failed': '代做加密握手失败: %(error)s',
-    'translator.error.encryption_request_empty': '加密请求内容为空',
-    'translator.error.encryption_request_parse_failed': '加密请求解析失败: %(error)s',
-    'translator.error.finish_login_malformed': '完成登录包格式不对',
-    'translator.error.handshake_v1_too_old': '客户端提供的是 v1 握手协议, 太旧了',
-    'translator.error.login_request_parse_failed': '登录请求解析失败: %(error)s',
-    'translator.error.login_success_parse_failed': '无法解析目标服务器的登录成功包',
-    'translator.error.unexpected_handshake_packet': '意料之外的握手包 0x%(packet_id)02x',
-    'translator.error.unrecognized_client_version': '客户端首个数据包不是认识的 WebSocket 客户端握手',
-
-    # --- 日志文案(调用处会在前面拼上连接标识) ---
-    'translator.direction.downstream': '下行',
-    'translator.direction.upstream': '上行',
-    'translator.log.account_joined': '已向会话服务注册账号加入 (session join): %(label)s',
-    'translator.log.account_selected': '使用所选账号: %(label)s (UUID %(uuid)s)',
-
-    'translator.log.backend_disconnect': '目标服务器断开连接: %(reason)s',
-    'translator.log.backend_login_ok': '目标服务器登录成功: %(username)s (UUID %(uuid)s), 已通知客户端允许登录',
-    'translator.log.brand_spoofed': '已向目标服务器声明客户端品牌 %(brand)r (客户端标识伪装)',
-    'translator.log.client_finished_login': '客户端完成登录',
-    'translator.log.client_handshake': '浏览器端客户端握手: %(detail)s',
-    'translator.log.compression_enabled': '目标服务器启用压缩(阈值 %(threshold)d), 由本代理解压/压缩, 不下发给客户端',
-    'translator.log.drop_client_brand': '丢弃客户端自带的 MC|Brand (已伪装成 %(brand)r)',
-    'translator.log.drop_injected_frame': '丢弃客户端注入消息帧 %(size)d 字节',
-    'translator.log.drop_plugin_message': '丢弃客户端扩展插件消息: 通道 %(channel)s',
-    'translator.log.rewrite_brand': '把客户端品牌改写为 %(brand)r',
-    'translator.log.drop_resource_pack': '丢弃服务器发来的资源包提示',
-    'translator.log.empty_username_fallback': '登录请求里没带名字, 改用客户端握手包里的名字 %(name)r',
-    'translator.log.encryption_done': '已代做加密握手 (服务器 ID %(server_id)r, 共享密钥 %(secret)s..., 用 %(backend)s), 之后全程 AES-128-CFB8',
-    'translator.log.first_packet': '%(direction)s首见包 %(name)s (id 0x%(packet_id)02x)',
-    'translator.log.flush_pending': '把握手期间缓存的 %(count)d 个游戏包(共 %(size)d 字节)发给客户端',
-    'translator.log.forge_channels': '登录后声明了 Forge 通道列表 (REGISTER %(channels)s) (伪装 Forge)',
-    'translator.log.forge_marker': '已在上行握手地址附加 FML 标记 (伪装 Forge)',
-    'translator.log.ignore_profile_data': '忽略客户端资料数据(皮肤等) %(size)d 字节',
-    'translator.log.cookie_discarded': '丢弃客户端登录 cookie %(size)d 字节',
-    'translator.log.login_request': '客户端请求登录: %(detail)s',
-    'translator.log.protocols_selected': '已选择握手协议 v%(handshake)d / 游戏协议 %(mc)d, 等待客户端登录请求',
-    'translator.log.translation_done': '协议翻译完成, 进入游戏数据直通',
-    'translator.log.unexpected_login_packet': '登录阶段收到意外包 %(packet)s',
-    'translator.log.username_sanitized': '客户端用户名 %(raw)r 不符合服务器要求, 已改用 %(clean)r',
-    'translator.log.vanilla_login_sent': '已向目标服务器发送原版登录 (用户名 %(username)s, 协议 %(protocol)d)',
-    'translator.log.resource_pack_prompt': '收到服务器资源包提示; 模式=%(mode)s',
-    'translator.log.client_status_sent': '已向服务器发送客户端状态 %(status)d',
-    'translator.log.unknown_resource_pack_mode': '未知资源包模式 %(mode)s; 回退到转发',
-
-    # --- eagler.py: 握手解析 / 描述文本 ---
-    'eagler.describe.auth_disabled': '否',
-    'eagler.describe.auth_enabled': '是',
-    'eagler.describe.client_version': '品牌 %(brand)s %(version)s | 支持握手协议 %(handshake)s | 支持游戏协议 %(mc)s | 开启验证 %(auth)s',
-    'eagler.describe.login_request': '用户名 %(username)s | 客户端填写的服务器地址 %(server)r | 密码 %(password)s | 客户端能力位 0x%(caps)x',
-    'eagler.describe.password_set': '有',
-    'eagler.describe.password_unset': '无',
-    'eagler.name.warning': '昵称 "%(name)s" 不符合常见服务器规则 (建议 3~16 位英文、数字或下划线), 可能导致无法进入部分服务器。仍要添加吗?',
-    'eagler.error.auth_username_out_of_range': 'authUsername 越界',
-    'eagler.error.bad_extension_count': '扩展能力数量异常: %(count)d',
-    'eagler.error.bad_handshake_count': '握手协议数量异常: %(count)d',
-    'eagler.error.bad_mc_count': '游戏协议数量异常: %(count)d',
-    'eagler.error.cookie_length_not_zero': 'cookie 长度不为 0',
-    'eagler.error.cookie_out_of_range': 'cookie 越界',
-    'eagler.error.extension_uuid_out_of_range': '扩展能力 UUID 越界',
-    'eagler.error.login_trailing_bytes': '登录请求末尾有 %(count)d 个多余字节',
-    'eagler.error.missing_auth_username': '缺少 authUsername 字段',
-    'eagler.error.missing_client_auth': '缺少 clientAuth 字段',
-    'eagler.error.missing_cookie_flag': '缺少 cookie 开关',
-    'eagler.error.missing_cookie_length': '缺少 cookie 长度',
-    'eagler.error.missing_extension_count': '缺少扩展能力数量',
-    'eagler.error.missing_password_field': '缺少密码字段',
-    'eagler.error.not_login_request': '不是登录请求包',
-    'eagler.error.password_out_of_range': '密码字段越界',
-    'eagler.error.string_length_out_of_range': '字符串长度越界',
-    'eagler.error.string_out_of_range': '字符串越界',
-    'eagler.error.trailing_bytes': '首个包末尾有 %(count)d 个多余字节',
-    'eagler.error.u16_out_of_range': 'u16 越界',
-    'eagler.error.uuid_not_16_bytes': 'UUID 必须是 16 字节',
-    'eagler.error.v1_packet_incomplete': 'v1 包不完整',
-    'eagler.error.varint_out_of_range': 'VarInt 越界',
-    'eagler.error.varint_too_long': 'VarInt 超过 5 字节',
-
-    # --- vanilla.py: 封帧 / 压缩 ---
-    'vanilla.error.bad_packet_length': '包长度异常: %(length)d',
-    'vanilla.error.decompressed_length_mismatch': '解压后长度 %(actual)d 与声明 %(declared)d 不符',
-    'vanilla.error.missing_packet_id': '包内容里没有包 id',
-    'vanilla.error.missing_uncompressed_length': '压缩包缺少未压缩长度字段',
-    'vanilla.error.varint_too_long': 'VarInt 超过 5 字节',
-    'vanilla.error.zlib_failed': 'zlib 解压失败: %(error)s',
-}

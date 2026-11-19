@@ -220,7 +220,7 @@ class ServiceManager:
         logger.info(tr('gui.log.listening',
                        url=info.get('wss_url') or tr('gui.endpoint.disabled')))
         if getattr(self.config, 'startup_notice', True):
-            logger.warning(tr('core.startup_notice_immature'))
+            logger.warn(tr('core.startup_notice_immature'))
         for listener in info.get('listeners', []):
             if listener.startswith('ws://'):
                 logger.info(tr('gui.log.fallback_listener', url=listener))

@@ -2,7 +2,7 @@
   'use strict';
 
   var KEY = 'spb-site-language';
-  var AVAILABLE = ['en', 'zh'];
+  var AVAILABLE = ['en'];
 
   function remember(language) {
     try { localStorage.setItem(KEY, language); } catch (error) {   }
@@ -60,7 +60,7 @@
     if (typeof dictionary['page.title'] === 'string') {
       global.document.title = dictionary['page.title'];
     }
-    global.document.documentElement.lang = language === 'zh' ? 'zh-CN' : 'en';
+    global.document.documentElement.lang = 'en';
   }
 
   global.SiteI18n = {

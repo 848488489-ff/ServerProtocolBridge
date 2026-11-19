@@ -1,11 +1,8 @@
 """In-program documentation page for the REST JSON API (/api/v1).
 
 Served at ``/api/v1/docs`` by :mod:`proxy.api_routes`.  It is a self-contained
-bilingual page.  The default follows the program's interface language, and a
-language switch (Auto / Chinese (simplified) / English, with the labels
-translated into the active interface language) toggles between the two blocks
-and remembers the choice in localStorage.  The page describes only the
-endpoint surface -- it needs no live data, so it is served without the API key.
+English page (the project is English-only; the page is served without the API
+key because it describes only the endpoint surface).
 """
 
 API_DOCS_HTML = r"""<!doctype html>
@@ -60,7 +57,6 @@ API_DOCS_HTML = r"""<!doctype html>
     </div>
     <div class="lang-switch" role="group" aria-label="Language">
       <button type="button" data-lang="auto" aria-pressed="true">__LABEL_AUTO__</button>
-      <button type="button" data-lang="zh" aria-pressed="false">__LABEL_ZH__</button>
       <button type="button" data-lang="en" aria-pressed="false">__LABEL_EN__</button>
     </div>
   </div>
@@ -137,73 +133,6 @@ curl -s -X POST http://127.0.0.1:8765/api/v1/tools/get_config \
   -H 'Content-Type: application/json' -d '{}'</code></pre>
   </div>
 
-  <!-- Chinese -->
-  <div class="lang-zh" hidden>
-    <h1>REST API（<code>/api/v1/</code>）</h1>
-    <p class="lead">在 Web UI 监听器上提供的面向自动化的 REST JSON API。每个
-    操作都映射到一个 MCP 工具，脚本和 <code>curl</code> 可以像 MCP 客户端一样
-    精确地控制程序——一套实现，两种传输。</p>
-
-    <h2>鉴权</h2>
-    <div class="note">回环（<code>127.0.0.1</code>）免密。非回环调用方需以
-    <code>Authorization: Bearer &lt;key&gt;</code>、<code>X-MCP-Key: &lt;key&gt;</code>
-    或 <code>X-API-Key: &lt;key&gt;</code> 提供 MCP 密钥。未设置密钥时，仅当
-    Web UI 密码关闭才开放——与 <code>/mcp</code> 规则完全一致。</div>
-
-    <h2>端点</h2>
-    <table>
-      <thead><tr><th>方法</th><th>路径</th><th>说明</th></tr></thead>
-      <tbody>
-        <tr><td><code>GET</code></td><td><code>/api/v1/</code></td>
-            <td>发现：名称、版本与完整工具目录。</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/v1/docs</code></td>
-            <td>本页（HTML，双语）。</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/v1/status</code></td>
-            <td>服务状态、版本、监听器与流量计数。</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/v1/config</code></td>
-            <td>读取运行配置（不含密码与令牌）。</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/v1/config</code></td>
-            <td>写入配置字段；请求体为配置对象或
-                <code>{"config": {...}}</code>。</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/v1/service/start</code></td>
-            <td>用当前配置启动代理。</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/v1/service/stop</code></td>
-            <td>停止代理；Web UI 与 MCP 端点保持运行。</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/v1/service/restart</code></td>
-            <td>停止后用当前配置重新启动。</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/v1/logs</code></td>
-            <td>读取内存日志；查询参数 <code>since</code>/<code>level</code>/<code>limit</code>。</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/v1/logs/clear</code></td>
-            <td>清空内存日志。</td></tr>
-        <tr><td><code>GET</code></td><td><code>/api/v1/tools</code></td>
-            <td>列出全部 MCP 工具（名称、描述、inputSchema）。</td></tr>
-        <tr><td><code>POST</code></td><td><code>/api/v1/tools/&lt;name&gt;</code></td>
-            <td>按名称调用任意 MCP 工具；请求体为参数对象或
-                <code>{"arguments": {...}}</code>。</td></tr>
-      </tbody>
-    </table>
-
-    <h2>示例</h2>
-    <pre><code># 状态（回环）
-curl -s http://127.0.0.1:8765/api/v1/status
-
-# 设置转发目标并启动
-curl -s -X POST http://127.0.0.1:8765/api/v1/config \
-  -H 'Content-Type: application/json' \
-  -d '{"target": "mc.example.com:25565"}'
-curl -s -X POST http://127.0.0.1:8765/api/v1/service/start
-
-# 从序号 42 起读错误日志
-curl -s "http://127.0.0.1:8765/api/v1/logs?since=42&amp;level=error"
-
-# 远端自动化需要 MCP 密钥
-curl -s http://host:8765/api/v1/status \
-  -H 'Authorization: Bearer YOUR_MCP_KEY'
-
-# 调用任意 MCP 工具
-curl -s -X POST http://127.0.0.1:8765/api/v1/tools/get_config \
-  -H 'Content-Type: application/json' -d '{}'</code></pre>
-  </div>
 </main>
 
 <footer>
@@ -221,7 +150,7 @@ curl -s -X POST http://127.0.0.1:8765/api/v1/tools/get_config \
   function apply(mode) {
     var lang = mode === 'auto' ? defaultLang : mode;
     root.setAttribute('data-lang', lang);
-    root.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    root.lang = 'en';
     Array.prototype.forEach.call(document.querySelectorAll('.lang-en, .lang-zh'),
       function (block) { block.hidden = !block.classList.contains('lang-' + lang); });
     Array.prototype.forEach.call(document.querySelectorAll('.lang-switch button'),
@@ -232,7 +161,7 @@ curl -s -X POST http://127.0.0.1:8765/api/v1/tools/get_config \
   }
   var stored = null;
   try { stored = localStorage.getItem('spb-api-docs-lang'); } catch (e) {}
-  var mode = (stored === 'auto' || stored === 'zh' || stored === 'en') ? stored : 'auto';
+  var mode = (stored === 'auto' || stored === 'en') ? stored : 'auto';
   apply(mode);
   Array.prototype.forEach.call(document.querySelectorAll('.lang-switch button'),
     function (btn) {
