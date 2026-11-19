@@ -2,7 +2,8 @@
   "version": 1,
   "updated": "2026-11-08",
   "note": {
-    "en": "Compact component list from the app About window. It includes Python, CPython, pywebview, pythonnet, OpenSSL and every Python standard library module used by the app (for example random, json, ssl and asyncio). Only components that are actually bundled into the program are listed; system runtimes that the program merely calls are not. Full license texts are in THIRD_PARTY_NOTICES.txt inside the source package."
+    "en": "Compact component list from the app About window. It includes Python, CPython, pywebview, pythonnet, OpenSSL and every Python standard library module used by the app (for example random, json, ssl and asyncio). Only components that are actually bundled into the program are listed; system runtimes that the program merely calls are not. Full license texts are in THIRD_PARTY_NOTICES.txt inside the source package.",
+    "zh": "程序“关于”窗口中的组件清单，包含 Python、CPython、pywebview、pythonnet、OpenSSL 以及程序用到的所有 Python 标准库模块（例如 random、json、ssl、asyncio）。这里只列实际打包进程序的组件，程序仅在运行时调用的系统组件不列入。完整许可证文本位于源码包内的 THIRD_PARTY_NOTICES.txt。"
   },
   "components": [
     {

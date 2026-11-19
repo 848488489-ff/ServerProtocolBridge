@@ -4,82 +4,100 @@
     {
       "id": "local",
       "title": {
-        "en": "Local by default"
+        "en": "Local by default",
+        "zh": "默认只在本机"
       },
       "body": {
-        "en": "By default the relay listens on 127.0.0.1 only. No public port is opened unless you change the bind address, and the target server still sees an ordinary Minecraft client."
+        "en": "By default the relay listens on 127.0.0.1 only. No public port is opened unless you change the bind address, and the target server still sees an ordinary Minecraft client.",
+        "zh": "默认情况下中继只监听 127.0.0.1，不向公网开放端口（除非你修改绑定地址）；目标服务器看到的仍然是一个普通的 Minecraft 客户端。"
       }
     },
     {
       "id": "web-clients",
       "title": {
-        "en": "Speaks web-client protocol"
+        "en": "Speaks web-client protocol",
+        "zh": "听得懂网页客户端"
       },
       "body": {
-        "en": "Handshakes from clients that support wss:// or ws:// are recognised and answered; vanilla Java clients pass through unchanged."
+        "en": "Handshakes from clients that support wss:// or ws:// are recognised and answered; vanilla Java clients pass through unchanged.",
+        "zh": "识别并应答支持 wss:// 或 ws:// 的客户端握手；原版 Java 客户端直接透传。"
       }
     },
     {
       "id": "certificates",
       "title": {
-        "en": "Certificates handled"
+        "en": "Certificates handled",
+        "zh": "证书自己管"
       },
       "body": {
-        "en": "A self-signed certificate is created on first run and can be installed into the Windows trust store with one click."
+        "en": "A self-signed certificate is created on first run and can be installed into the Windows trust store with one click.",
+        "zh": "首次运行生成自签名证书，可一键安装到 Windows 信任存储。"
       }
     },
     {
       "id": "accounts",
       "title": {
-        "en": "Accounts included"
+        "en": "Accounts included",
+        "zh": "账号也能登"
       },
       "body": {
-        "en": "Offline accounts need no sign-in. Microsoft sign-in uses the device-code flow with a built-in public client ID. A compatible third-party account service can be added with the API root from its provider."
+        "en": "Offline accounts need no sign-in. Microsoft sign-in uses the device-code flow with a built-in public client ID. A compatible third-party account service can be added with the API root from its provider.",
+        "zh": "离线账号无需登录。微软登录走设备代码流程，使用内置公开客户端 ID；也可以填入兼容的第三方账号服务提供的 API 根地址。"
       }
     },
     {
       "id": "protocol",
       "title": {
-        "en": "Protocol translation"
+        "en": "Protocol translation",
+        "zh": "协议翻译"
       },
       "body": {
-        "en": "The relay parses the Minecraft protocol, rewrites what a browser cannot send, and keeps the session compatible with Forge, NeoForge and Fabric."
+        "en": "The relay parses the Minecraft protocol, rewrites what a browser cannot send, and keeps the session compatible with Forge, NeoForge and Fabric.",
+        "zh": "中继解析 Minecraft 协议，补上浏览器发不出的部分，并兼容 Forge、NeoForge 和 Fabric。"
       }
     },
     {
       "id": "web-ui",
       "title": {
-        "en": "Web UI included"
+        "en": "Web UI included",
+        "zh": "自带 Web UI"
       },
       "body": {
-        "en": "A loopback-only browser control panel for settings, logs, accounts and certificates. The desktop window is the same UI in a native webview."
+        "en": "A loopback-only browser control panel for settings, logs, accounts and certificates. The desktop window is the same UI in a native webview.",
+        "zh": "仅回环的浏览器控制面板，用于设置、日志、账号和证书；桌面窗口就是同一套界面的原生 WebView。"
       }
     },
     {
       "id": "mcp",
       "title": {
-        "en": "MCP control"
+        "en": "MCP control",
+        "zh": "MCP 控制"
       },
       "body": {
-        "en": "The /mcp endpoint speaks JSON-RPC 2.0 over Streamable HTTP and exposes 39 tools, resources and prompts for AI clients -- status, config (including appearance and path routes), service control, logs, accounts, certificates, updates, auth, and UI preferences."
+        "en": "The /mcp endpoint speaks JSON-RPC 2.0 over Streamable HTTP and exposes 39 tools, resources and prompts for AI clients -- status, config (including appearance and path routes), service control, logs, accounts, certificates, updates, auth, and UI preferences.",
+        "zh": "/mcp 端点通过 Streamable HTTP 提供 JSON-RPC 2.0，为 AI 客户端暴露 39 个工具、resources 和 prompts——状态、配置（含外观和路径路由）、服务控制、日志、账号、证书、更新、密码与界面偏好。"
       }
     },
     {
       "id": "live-status",
       "title": {
-        "en": "Live server list"
+        "en": "Live server list",
+        "zh": "实时服务器列表"
       },
       "body": {
-        "en": "Every status query goes to the target server; there is no cached MOTD."
+        "en": "Every status query goes to the target server; there is no cached MOTD.",
+        "zh": "每次状态查询都直达目标服务器；不缓存 MOTD。"
       }
     },
     {
       "id": "suffix-route",
       "title": {
-        "en": "Suffix routing"
+        "en": "Suffix routing",
+        "zh": "路径后缀直连"
       },
       "body": {
-        "en": "Optionally treat the request path as the target server: /mc244.com -> mc244.com, /hypixel.net -> hypixel.net, /127.0.0.1:25565 -> 127.0.0.1:25565. Mutually exclusive with the path-route table."
+        "en": "Optionally treat the request path as the target server: /mc244.com -> mc244.com, /hypixel.net -> hypixel.net, /127.0.0.1:25565 -> 127.0.0.1:25565. Mutually exclusive with the path-route table.",
+        "zh": "可把连接路径本身当作目标服务器：/mc244.com -> mc244.com，/hypixel.net -> hypixel.net，/127.0.0.1:25565 -> 127.0.0.1:25565。与路径映射互斥，不能同时开启。"
       }
     }
   ],

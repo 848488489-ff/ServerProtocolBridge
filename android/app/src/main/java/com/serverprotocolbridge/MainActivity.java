@@ -109,9 +109,8 @@ public class MainActivity extends Activity {
                     && grantResults[0] == PackageManager.PERMISSION_GRANTED;
             if (!granted) {
                 Toast.makeText(this,
-                        "Notification permission not granted: the persistent notification "
-                                + "will not show and the background proxy may be stopped by the system. "
-                                + "Allow notifications in system settings.",
+                        "通知权限未授予：常驻通知不会显示，后台代理可能被系统停止。"
+                                + "请在系统设置里允许通知。",
                         Toast.LENGTH_LONG).show();
             }
         }

@@ -24,8 +24,7 @@ dist/
 local-config-backup/
 ServerProtocolBridge-*.zip
 source/
+源码/
 
-# Machine-local configuration (contains the operator's target server) and the
-# release binaries bundled into the update site (published separately)
+# Machine-local configuration (contains the operator's target server)
 config.json
-web/downloads/

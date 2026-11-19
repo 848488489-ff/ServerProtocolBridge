@@ -48,6 +48,12 @@
       'action.android': 'Download APK',
       'action.androidSoon': 'APK pending',
       'release.apkUnavailable': 'The APK is not available yet.',
+      'action.superdebug': 'Download SuperDebug JAR',
+      'action.superdebugSoon': 'SuperDebug JAR pending',
+      'release.superdebugUnavailable': 'The SuperDebug JAR link has not been published yet.',
+      'download.superdebug': 'SuperDebug (Minecraft debug plugin)',
+      'download.superdebugMeta': 'Paper plugin · SuperDebug',
+      'download.superdebugBody': 'Drop-in Paper plugin for diagnosing TCP/WSS proxy connections: ping, Netty channel, traffic, packet sniff and frame timing, including GrimAC Post risk pairs.',
       'download.note': 'The builds are unsigned.',
       'hero.note': 'Free and unsigned. No installer, no service, no telemetry.',
       'docket.title': 'Current build',
@@ -152,6 +158,163 @@
       'footer.top': 'Back to top',
       'footer.rights': '© 2026 Server Protocol Bridge',
       'footer.note': 'Release data comes from api/version.json. This page sets no cookies and runs no analytics.'
+    },
+    zh: {
+      'page.title': '服务器协议转换 — 下载',
+      'meta.description': '面向支持 wss:// 或 ws:// 的 Minecraft 客户端的本地中继。Windows 构建、Web UI、MCP 控制、校验值、更新日志与静态 API。',
+      'skip': '跳到正文',
+      'brand': '服务器协议转换',
+      'edition.os': 'Windows / Linux 构建',
+      'lang.label': '语言',
+      'nav.label': '章节',
+      'nav.download': '下载',
+      'nav.menu': '菜单',
+      'nav.how': '功能',
+      'nav.release': '发布',
+      'nav.start': '运行',
+      'nav.notes': '说明',
+      'nav.api': 'API',
+      'hero.breadcrumbHome': '首页',
+      'hero.breadcrumbDownloads': '下载',
+      'hero.heading': '服务器协议转换',
+      'hero.kicker': 'Windows 与 Linux · 仅监听 127.0.0.1 · 单个可执行文件 · Web UI + MCP',
+      'hero.title': '在支持 wss:// 或 ws:// 的 Minecraft 客户端与 Java 服务器之间做一次本地转接。',
+      'hero.desc': '服务器协议转换在 127.0.0.1 上监听，终止 wss:// 或 ws://，只翻译 WebSocket 客户端发不出的少量数据包，其余原样转发。Java 服务器看到的仍是普通客户端。',
+      'action.download': '下载 Windows 版',
+      'action.downloadPending': '下载链接待更新',
+      'action.notes': '阅读更新日志',
+      'action.source': '获取源码',
+      'action.sourceSoon': '源码包待更新',
+      'download.title': '下载',
+      'download.lead': '选择 Windows 或 Linux 单文件版本、Android APK，或下载源码包。',
+      'download.windows': 'Windows 版',
+      'download.windowsMeta': 'Windows 10/11 · x64 · 单文件 EXE',
+      'download.windowsBody': '单个可执行文件，无安装器、无系统服务。程序未签名。',
+      'download.linux': 'Linux 版',
+      'download.linuxMeta': 'Linux x86_64 · 单文件 ELF',
+      'download.linuxBody': '在 Debian 12 上构建的单文件 ELF（需要 glibc 2.36+）。装了 python3-gi 与 gir1.2-webkit2-4.1 时打开原生 WebKitGTK 窗口，否则用浏览器打开 Web UI；下载后先 chmod +x。',
+      'action.linux': '下载 Linux 版',
+      'action.linuxSoon': 'Linux 版本待更新',
+      'release.linuxUnavailable': 'Linux 版本暂不可用。',
+      'download.source': '源码包',
+      'download.sourceMeta': 'Python 源码 · Unlicense',
+      'download.sourceBody': '压缩包包含程序与网站源码、LICENSE 和 THIRD_PARTY_NOTICES.txt。macOS 可源码运行。',
+      'download.android': 'Android 版',
+      'download.androidMeta': 'Android 7.0+ · arm64-v8a',
+      'download.androidBody': '原生 APK，内置 WebView 控制面板。内嵌 Python 3.13，含 arm64-v8a 架构。',
+      'action.android': '下载 APK',
+      'action.androidSoon': 'APK 待更新',
+      'release.apkUnavailable': 'APK 暂不可用。',
+      'action.superdebug': '下载 SuperDebug JAR',
+      'action.superdebugSoon': 'SuperDebug JAR 待更新',
+      'release.superdebugUnavailable': 'SuperDebug JAR 链接尚未发布。',
+      'download.superdebug': 'SuperDebug（Minecraft 调试插件）',
+      'download.superdebugMeta': 'Paper 插件 · SuperDebug',
+      'download.superdebugBody': '即插即用的 Paper 插件，用于诊断 TCP/WSS 代理连接：ping、Netty 通道、流量、数据包嗅探与帧时序，含 GrimAC Post 风险对。',
+      'download.note': '构建未签名。',
+      'hero.note': '免费、未签名。无安装器、无系统服务、无遥测。',
+      'docket.title': '当前构建',
+      'docket.version': '版本',
+      'docket.released': '发布日期',
+      'docket.platform': '平台',
+      'docket.platformValue': 'Windows 10/11 · Linux x86_64',
+      'docket.size': '大小',
+      'docket.min': '最低版本',
+      'docket.link': '直链',
+      'docket.updated': '更新时间',
+      'release.optional': '可选更新',
+      'release.required': '必须更新',
+      'release.reading': '正在读取清单',
+      'release.unavailable': '清单不可用',
+      'release.loaded': '已从 api/version.json 读取',
+      'release.status': '正在读取 api/version.json …',
+      'release.error': '无法读取 api/version.json。',
+      'release.none': '本版没有附带更新日志。',
+      'release.pending': '尚未发布',
+      'release.pendingTitle': '下载链接尚未发布。',
+      'release.sourceUnavailable': '源码包链接尚未发布。',
+      'release.title': '本版内容',
+      'release.lead': '2.x 系列加入了浏览器控制面板与 MCP 端点：同一个中继既可以手动配置，也可以交给 AI 客户端操作。中继核心仍然精简：游戏数据原样转发。',
+      'release.c1.title': '浏览器里就能控制',
+      'release.c1.body': 'Web UI 默认监听 http://127.0.0.1:8765。启动/停止中继、修改转发设置、查看日志、管理账号、安装证书都在一个页面完成。密码是可选项，且只在绑定非回环地址时允许设置。',
+      'release.c2.title': '给 AI 客户端的 MCP',
+      'release.c2.body': '同一个监听器在 /mcp 上提供 JSON-RPC 2.0 / Streamable HTTP。它暴露 39 个工具，覆盖状态、配置、日志、账号、证书和更新，并提供 resources 与 prompts。回环客户端无需密钥，远程客户端使用 MCP 密钥。',
+      'release.c3.title': '登录与证书',
+      'release.c3.body': '离线账号无需登录。微软登录走设备代码流程，使用内置公开客户端 ID；每次进入服务器前自动刷新凭据。首次运行生成自签名证书，可安装到 Windows 信任存储。',
+      'release.c4.title': '更小的网关',
+      'release.c4.body': 'FastAPI、uvicorn 和 ASGI 层已移除。HTTP 状态页与游戏流量直接跑在 websockets 上，TLS、二进制帧、子协议和关闭握手都由它处理。压缩关闭，客户端数据原样转发。',
+      'release.notesTitle': '完整更新日志',
+      'release.notesSource': '页面加载时从 api/version.json 读取。',
+      'how.title': '它做什么',
+      'how.lead': '这个中继刻意做得很小。它只处理浏览器做不到的传输与握手，然后把连接交出去。',
+      'how.note': '它不是 VPN，也不会改变你的 IP。本地服务器仍然是本地，公网服务器仍然是公网。',
+      'how.listener': '监听',
+      'how.listenerNote': '默认地址；明文回退为 ws://127.0.0.1:8080。',
+      'how.transport': '传输',
+      'how.transportBody': '单进程。TLS、二进制帧、子协议和关闭握手由 websockets 处理；压缩关闭。',
+      'how.browser': 'WebSocket 客户端',
+      'how.browserBody': '支持 wss:// 或 ws:// 的客户端握手在本地应答；原版 Java 客户端直接透传。',
+      'how.login': 'Java 登录',
+      'how.loginBody': '与原版客户端一致的 SRV 解析；1.20.2+ 目标在浏览器客户端未发送登录确认时补发一次。',
+      'how.accounts': '账号',
+      'how.accountsBody': '默认离线。微软登录走设备代码流程；也可以填入兼容的第三方账号服务提供的 API 根地址。',
+      'how.certificate': '证书',
+      'how.certificateBody': '首次运行生成自签名证书，可安装到 Windows 信任存储。',
+      'how.webui': 'Web UI',
+      'how.webuiBody': '仅回环的控制面板，默认地址 http://127.0.0.1:8765，用于启动/停止、设置、日志、账号和证书。桌面窗口就是同一套界面的原生 WebView。',
+      'how.mcp': 'MCP',
+      'how.mcpBody': '同一个监听器在 /mcp 提供 JSON-RPC 2.0 / Streamable HTTP，为 AI 客户端提供 39 个工具、resources 和 prompts。',
+      'how.serverList': '服务器列表',
+      'how.serverListBody': '每次列表查询都实时请求目标服务器。没有状态缓存，MOTD、玩家数和版本始终是最新值；目标服务器较慢时，这一次查询会等待。',
+      'how.excluded': '不包含',
+      'how.excludedBody': '不做反作弊绕过、不改写移动、不做包节奏控制、不提供云端中继。',
+      'start.title': '运行',
+      'start.lead': 'Windows 版是单个 EXE。首次运行会生成证书并启动本地监听；不会安装成系统服务。',
+      'start.step1.title': '下载并运行',
+      'start.step1.body': '启动 EXE。构建没有签名，SmartScreen 会提示；选择“更多信息 → 仍要运行”。',
+      'start.step2.title': '设置目标',
+      'start.step2.body': '在程序里填入 Java 服务器地址。地址不带端口时按 SRV 记录解析。',
+      'start.step3.title': '连接网页客户端',
+      'start.step3.body': '在任何接受 wss:// 地址的客户端中使用 wss://127.0.0.1:8443。明文回退为 ws://127.0.0.1:8080。',
+      'start.step4.title': '加入服务器',
+      'start.step4.body': '启动中继并连接。程序会把握手过程和踢出原因显示为可读文本。',
+      'start.sourceTitle': '从源码运行',
+      'start.sourceLead': '源码包是一个 Python 项目，也能在 Linux 和 macOS 上运行。解压后安装依赖：',
+      'start.note': 'Linux 版是单文件 ELF（glibc 2.36+）；macOS 请从源码运行。',
+      'start.controlTitle': '控制与自动化',
+      'start.controlLead': '桌面窗口就是原生 WebView 中的 Web UI。可以在浏览器打开同一地址，或让 MCP 客户端连接 /mcp：',
+      'start.controlNote': '两者默认都只在本机回环。Web UI 密码只能在绑定非回环地址时设置；远程 MCP 需要 MCP 密钥。',
+      'start.requirements': '系统要求：Windows 10/11 x64 和 Microsoft Visual C++ 运行库。原生窗口使用系统 Edge WebView2 运行时；Web UI 可在任意现代浏览器中打开。',
+      'notes.title': '说明与限制',
+      'notes.lead': '一句话：这是本地传输中继，不是外挂、不是 VPN，也不是托管服务。',
+      'notes.antiCheatTitle': '反作弊',
+      'notes.antiCheatBody': '中继不改写移动包、不代答事务探测、不发送空闲位置包。服务器端反作弊如果对网络抖动敏感，任何中继都可能被标记；这一版不会尝试绕过。',
+      'faq.loading': '正在加载常见问题 …',
+      'faq.error': '无法加载常见问题。页面其他部分不受影响。',
+      'faq.empty': '本版没有发布常见问题。',
+      'api.title': '静态 JSON',
+      'api.lead': '发布页和程序更新器读取同一份清单。/api/ 下都是开启 CORS 的静态文件。',
+      'api.note': '七个端点。无密钥、无账号、无服务端代码。',
+      'api.docs': '打开字段说明',
+      'api.path': '路径',
+      'api.returns': '返回',
+      'api.version': '发布清单：版本、日期、大小、下载与源码链接。',
+      'api.faq': '上面的双语问答内容。',
+      'api.features': '双语功能清单，旧版页面也会使用。',
+      'api.stats': '平台、运行时、端口、Web UI/MCP 端点与支持的客户端。',
+      'api.licenses': '第三方组件与许可证。',
+      'api.site': '站点元数据与所有端点链接。',
+      'api.endpoints': '这七个端点的机器可读索引。',
+      'footer.statement': '面向 Minecraft 网页客户端的本地中继。原生 Python WebView 窗口，加上仅回环的 Web UI 与 MCP 端点；中间没有云服务。',
+      'footer.licenseLine': 'Unlicense。第三方声明随源码包发布。',
+      'footer.links': '链接',
+      'footer.download': '下载',
+      'footer.api': 'API 文档',
+      'footer.license': '许可证',
+      'footer.version': 'version.json',
+      'footer.top': '回到顶部',
+      'footer.rights': '© 2026 服务器协议转换',
+      'footer.note': '发布数据来自 api/version.json。本页不设置 Cookie，也不运行统计。'
     }
   };
 
@@ -175,7 +338,7 @@
   }
 
   function t(key) {
-    var table = dictionaries.en;
+    var table = dictionaries[state.lang] || dictionaries.en;
     return Object.prototype.hasOwnProperty.call(table, key)
       ? table[key]
       : (dictionaries.en[key] || key);
@@ -217,6 +380,7 @@
       min_version: trim(get('min_version')),
       force_update: bool(get('force_update')),
       release_date: trim(get('release_date')),
+      changelog: trim(get('changelog')),
       changelog_en: trim(get('changelog_en')),
       file_size: Number(trim(get('file_size'))) || 0,
       source_url: trim(get('source_url')),
@@ -233,7 +397,12 @@
       linux_size: Number(trim(get('linux_size'))) || 0,
       linux_name: trim(get('linux_name')),
       linux_version: trim(get('linux_version')),
-      linux_updated: trim(get('linux_updated'))
+      linux_updated: trim(get('linux_updated')),
+      superdebug_url: trim(get('superdebug_url')),
+      superdebug_size: Number(trim(get('superdebug_size'))) || 0,
+      superdebug_name: trim(get('superdebug_name')),
+      superdebug_version: trim(get('superdebug_version')),
+      superdebug_updated: trim(get('superdebug_updated'))
     };
   }
 
@@ -275,9 +444,9 @@
     var date = new Date(/^\d{4}-\d{2}-\d{2}$/.test(text) ? text + 'T00:00:00Z' : text);
     if (isNaN(date.getTime())) return text;
     try {
-      return new Intl.DateTimeFormat('en-GB', {
+      return new Intl.DateTimeFormat(state.lang === 'zh' ? 'zh-CN' : 'en-GB', {
         year: 'numeric',
-        month: 'short',
+        month: state.lang === 'zh' ? 'long' : 'short',
         day: 'numeric',
         timeZone: 'UTC'
       }).format(date);
@@ -498,6 +667,49 @@
     });
   }
 
+  function setSuperdebugMeta(data) {
+    var size = data && data.superdebug_size ? formatSize(data.superdebug_size) : '—';
+    var date = data ? formatDate(data.superdebug_updated) : '—';
+    var version = data && data.superdebug_version
+      ? data.superdebug_version
+      : (data && data.version ? data.version : '—');
+    all('[data-superdebug-meta-size]').forEach(function (node) {
+      node.textContent = size;
+      node.title = data && data.superdebug_size ? data.superdebug_size + ' bytes' : '';
+    });
+    all('[data-superdebug-meta-version]').forEach(function (node) { node.textContent = version; });
+    all('[data-superdebug-meta-date]').forEach(function (node) { node.textContent = date; });
+  }
+
+  function setSuperdebugHref(data) {
+    all('[data-superdebug-button]').forEach(function (button) {
+      var url = usableUrl(data && data.superdebug_url) || fallbackUrl(button);
+      var label = button.querySelector('[data-superdebug-label]');
+      if (url) {
+        button.href = url;
+        button.setAttribute('target', '_blank');
+        button.setAttribute('rel', 'noopener noreferrer');
+        button.removeAttribute('aria-disabled');
+        button.removeAttribute('tabindex');
+        button.classList.remove('is-disabled');
+        if (label) label.textContent = t('action.superdebug');
+        var meta = [];
+        if (data && data.superdebug_name) meta.push(data.superdebug_name);
+        if (data && data.superdebug_size) meta.push(formatSize(data.superdebug_size));
+        button.title = meta.join(' · ') || t('action.superdebug');
+      } else {
+        button.href = '#';
+        button.removeAttribute('target');
+        button.removeAttribute('rel');
+        button.setAttribute('aria-disabled', 'true');
+        button.setAttribute('tabindex', '-1');
+        button.classList.add('is-disabled');
+        if (label) label.textContent = t('action.superdebugSoon');
+        button.title = t('release.superdebugUnavailable');
+      }
+    });
+  }
+
   function renderRelease() {
     var status = byId('release-status');
     var policy = byId('update-policy');
@@ -528,6 +740,8 @@
       setApkHref(null);
       setLinuxMeta(null);
       setLinuxHref(null);
+      setSuperdebugMeta(null);
+      setSuperdebugHref(null);
       return;
     }
 
@@ -551,7 +765,9 @@
       policy.classList.remove('is-pending');
     }
 
-    var notes = data.changelog_en || data.changelog;
+    var notes = state.lang === 'zh'
+      ? (data.changelog || data.changelog_en)
+      : (data.changelog_en || data.changelog);
     renderChangelog(notes);
     setDownloadMeta(data);
     setSourceMeta(data);
@@ -559,6 +775,8 @@
     setApkHref(data);
     setLinuxMeta(data);
     setLinuxHref(data);
+    setSuperdebugMeta(data);
+    setSuperdebugHref(data);
     setDownloadHref(data.download_url);
     setSourceHref(data);
 
@@ -603,8 +821,8 @@
     items.forEach(function (item) {
       var question = item && item.question;
       var answer = item && item.answer;
-      var q = question && (question.en || question.zh);
-      var a = answer && (answer.en || answer.zh);
+      var q = question && (question[state.lang] || question.en || question.zh);
+      var a = answer && (answer[state.lang] || answer.en || answer.zh);
       if (!q || !a) return;
       var article = document.createElement('article');
       article.className = 'faq-item';
@@ -626,7 +844,7 @@
       window.SiteI18n.remember(lang);
       window.SiteI18n.apply(lang, dictionaries[lang], document);
     } else {
-      document.documentElement.lang = 'en';
+      document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
       document.title = t('page.title');
     }
 

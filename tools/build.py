@@ -36,9 +36,9 @@ BUILD = ROOT / 'build'
 
 # Default name of the produced EXE: it is the name a user sees and double-clicks.
 DEFAULT_NAME = 'Server Protocol Bridge'
-# What the smoke test looks for in the --version output (the program name,
-# which is always English now that the project is English-only).
-SMOKE_NAMES = ('Server Protocol Bridge',)
+# What the smoke test looks for in the --version output (the program name in
+# whichever UI language the EXE ends up running with).
+SMOKE_NAMES = ('Server Protocol Bridge', '服务器协议转换')
 
 # Modules that are never needed at runtime.  Do not exclude distutils: the
 # PyInstaller hook aliases it to setuptools._distutils, and excluding the target

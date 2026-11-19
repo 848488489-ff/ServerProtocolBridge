@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 from .i18n import tr
+from .version_info import VERSION
 
 # Internal identity of the program: used as the EXE name, the status page,
 # the WebSocket Server header and other machine-facing places, so it is always
 # English and never translated.
 APP_NAME = 'Server Protocol Bridge'
-VERSION = '2.8.4'
 
 # Service identifier that shows up in the status page / handshake
 SERVICE_NAME = 'server-protocol-bridge'

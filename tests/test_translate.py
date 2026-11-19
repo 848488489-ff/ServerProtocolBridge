@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from proxy import crypto, eagler, vanilla, wsproto, x509  # noqa: E402
 from proxy import accounts  # noqa: E402
 from proxy.config import Config  # noqa: E402
+from proxy import i18n  # noqa: E402
 from proxy.i18n import tr  # noqa: E402
 from proxy.logger import NullLogger  # noqa: E402
 import proxy.proxy as proxy_core  # noqa: E402
@@ -333,6 +334,15 @@ class VanillaCodecTests(unittest.TestCase):
 
 
 class EaglerProtocolTests(unittest.TestCase):
+    def setUp(self):
+        # name_warning returns a localised string; pin English so the
+        # "3-16" shape assertions stay stable.
+        self._lang = i18n.get_language()
+        i18n.set_language('en')
+
+    def tearDown(self):
+        i18n.set_language(self._lang)
+
     def test_parse_real_client_packet(self):
         version = eagler.parse_client_version(REAL_FIRST_PACKET)
         self.assertIsNotNone(version)
@@ -405,7 +415,7 @@ class EaglerProtocolTests(unittest.TestCase):
 
     def test_usable_name(self):
         """Only empty or control-character-only input is refused."""
-        for name in ('Tester', 'a', 'Name', 'Name_1'):
+        for name in ('Tester', 'a', '名字', '名前_1'):
             self.assertEqual(eagler.usable_name(name), name)
         self.assertEqual(eagler.usable_name('  Tester  '), 'Tester')
         for bad in ('', '   ', None, '\x00', '\n\t', '\x7f'):
@@ -415,7 +425,7 @@ class EaglerProtocolTests(unittest.TestCase):
         # ASCII, short, long and non-ASCII names all pass through untouched: the
         # proxy cannot decide what the target server will accept, so it only
         # supplies a fallback when the client sent no name at all.
-        for name in ('Tester', 'a', 'a' * 200, 'Nameabc', 'Name123'):
+        for name in ('Tester', 'a', 'a' * 200, '名字abc', '名字123'):
             self.assertEqual(eagler.sanitize_username(name), name)
         for bad in ('', '   ', None, '\x00\t'):
             self.assertEqual(eagler.sanitize_username(bad), 'Player')
@@ -426,7 +436,7 @@ class EaglerProtocolTests(unittest.TestCase):
         other shape is flagged but still allowed through."""
         for name in ('Tester', 'abc', 'a' * 16, 'Steve_123'):
             self.assertEqual(eagler.name_warning(name), '')
-        for name in ('ab', 'a' * 17, 'Na', 'bad-name', 'has space'):
+        for name in ('ab', 'a' * 17, '名字', 'bad-name', 'has space'):
             self.assertIn('3-16', eagler.name_warning(name))
 
 # ---------------------------------------------------------------- State machine
@@ -703,10 +713,10 @@ class TranslatorUnitTests(unittest.TestCase):
         translator, sent, _closed, _backend = self.make()
         translator.feed_client(build_client_version(brand='Gaius', version='26.3'))
         translator.feed_client(build_request_login())
-        translator.feed_server(build_disconnect('Server full'))
+        translator.feed_server(build_disconnect('服务器已满'))
         self.assertEqual(sent[-1][0], eagler.PROTOCOL_SERVER_DENY_LOGIN)
         length = int.from_bytes(sent[-1][1:3], 'big')
-        self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), 'Server full')
+        self.assertEqual(sent[-1][3:3 + length].decode('utf-8'), '服务器已满')
 
     def test_json_kick_reason_is_flattened_to_plain_text(self):
         """A JSON chat component is flattened before it reaches the client: the
@@ -1149,7 +1159,7 @@ class TranslatorUnitTests(unittest.TestCase):
 
     def test_username_is_kept_untouched(self):
         """Short and non-ASCII names are forwarded as sent; the target decides."""
-        for name in ('a', 'Name', 'Name_1'):
+        for name in ('a', '名字', '名前_1'):
             translator, _sent, _closed, _backend = self.make()
             self.assertEqual(translator.feed_client(REAL_FIRST_PACKET), b'')
             translator.feed_client(build_request_login(username=name))

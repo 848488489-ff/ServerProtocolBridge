@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from proxy import certs, config as config_module, der, portowner, resolver, webauth, wsproto, x509  # noqa: E402
 from proxy.config import Config  # noqa: E402
+from proxy import i18n  # noqa: E402
 from proxy.i18n import tr, tr_in  # noqa: E402
 from proxy.logger import Logger  # noqa: E402
 from proxy.proxy import ProxyServer  # noqa: E402
@@ -594,6 +595,15 @@ class ListenerFailureTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
+    def setUp(self):
+        # Validation diagnostics are always English (_problem uses tr_in('en'));
+        # pin the language so the tr() assertions in these tests stay stable.
+        self._lang = i18n.get_language()
+        i18n.set_language('en')
+
+    def tearDown(self):
+        i18n.set_language(self._lang)
+
     def test_parse_address(self):
         self.assertEqual(config_module.parse_address('mc.hypixel.net'), ('mc.hypixel.net', None))
         self.assertEqual(config_module.parse_address('mc.hypixel.net:25565'), ('mc.hypixel.net', 25565))
@@ -605,12 +615,12 @@ class ConfigTests(unittest.TestCase):
             config_module.parse_address('   ')
 
     def test_routes_text_roundtrip(self):
-        text = '/hypixel=mc.hypixel.net:25565\n/local=127.0.0.1:25565\n'
+        text = '/hypixel=mc.hypixel.net:25565\n/本地=127.0.0.1:25565\n'
         routes = config_module.parse_routes_text(text)
-        self.assertEqual(routes, {'/hypixel': 'mc.hypixel.net:25565', '/local': '127.0.0.1:25565'})
+        self.assertEqual(routes, {'/hypixel': 'mc.hypixel.net:25565', '/本地': '127.0.0.1:25565'})
         self.assertEqual(config_module.parse_routes_text(config_module.format_routes_text(routes)), routes)
         with self.assertRaises(ValueError):
-            config_module.parse_routes_text('missing-equals')
+            config_module.parse_routes_text('缺少等号')
 
     def test_save_load_roundtrip(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -649,7 +659,7 @@ class ConfigTests(unittest.TestCase):
                             for item in config.validate()))
 
     def test_unknown_keys_ignored(self):
-        config = Config.from_dict({'target': 'a:1', 'unknown_key': 5, 'wss_port': '1234'})
+        config = Config.from_dict({'target': 'a:1', '不存在的键': 5, 'wss_port': '1234'})
         self.assertEqual(config.target, 'a:1')
         self.assertEqual(config.wss_port, 1234)
 
@@ -972,11 +982,9 @@ class McpTests(unittest.TestCase):
         # A password/key may only be set on a non-loopback bind, which is what
         # the authentication cases below exercise.
         self.manager.config.web_host = '0.0.0.0'
-        # The route-tool tests must not depend on the operator's real config:
-        # with suffix_route on, set_route refuses to write, and the operator's
-        # config.json might happen to have it on, which would make the tool
-        # tests fail on some machines.  Zero the interfering fields so the
-        # result is independent of the machine config.
+        # 路由工具测试不依赖操作者的实际配置：suffix_route 开启时 set_route 会
+        # 拒绝写入，而操作者的 config.json 可能恰好开着它，导致工具测试在部分
+        # 机器上失败。把会干扰的字段归零，保证结果与机器配置无关。
         self.manager.config.suffix_route = False
         self.manager.config.routes = {}
         from proxy.web import create_app
@@ -1153,11 +1161,11 @@ class McpTests(unittest.TestCase):
         changed = self._rpc({
             'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
             'params': {'name': 'set_ui_preferences',
-                       'arguments': {'theme': 'dark', 'language': 'en'}}})
+                       'arguments': {'theme': 'dark', 'language': 'zh'}}})
         payload = json.loads(changed.get_json()['result']['content'][0]['text'])
         self.assertTrue(payload['ok'])
         self.assertEqual(payload['theme'], 'dark')
-        self.assertEqual(payload['language'], 'en')
+        self.assertEqual(payload['language'], 'zh')
 
         bad_theme = self._rpc({
             'jsonrpc': '2.0', 'id': 2, 'method': 'tools/call',
@@ -1591,7 +1599,7 @@ class ProxyEndToEndTests(unittest.TestCase):
         config.target = '127.0.0.1:25565'
         config.suffix_route = True
         config.routes = {'/x': '127.0.0.1:25566'}
-        # Validation diagnostics are always English.
+        # 配置校验信息固定英文。
         self.assertIn(tr_in('en', 'core.config.suffix_route_conflict'),
                       config.validate())
         data = config.to_dict()
