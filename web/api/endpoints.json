@@ -9,7 +9,8 @@
       "category": "release",
       "type": "object",
       "description": {
-        "en": "Latest release, download link, source package metadata and update policy."
+        "en": "Latest release, download link, source package metadata and update policy.",
+        "zh": "最新版本、下载链接、源码包元数据与更新策略。"
       }
     },
     {
@@ -18,7 +19,8 @@
       "category": "content",
       "type": "object",
       "description": {
-        "en": "Bilingual FAQ items rendered by the release page."
+        "en": "Bilingual FAQ items rendered by the release page.",
+        "zh": "发布页渲染的双语常见问题条目。"
       }
     },
     {
@@ -27,7 +29,8 @@
       "category": "content",
       "type": "object",
       "description": {
-        "en": "Bilingual feature catalog used by the site."
+        "en": "Bilingual feature catalog used by the site.",
+        "zh": "站点使用的双语功能清单。"
       }
     },
     {
@@ -36,7 +39,8 @@
       "category": "meta",
       "type": "object",
       "description": {
-        "en": "Static project stats: platforms, ports, Web UI/MCP endpoints, protocols and languages."
+        "en": "Static project stats: platforms, ports, Web UI/MCP endpoints, protocols and languages.",
+        "zh": "静态项目统计：平台、端口、Web UI/MCP 端点、协议与语言。"
       }
     },
     {
@@ -45,7 +49,8 @@
       "category": "meta",
       "type": "object",
       "description": {
-        "en": "Third-party components, licenses and project links."
+        "en": "Third-party components, licenses and project links.",
+        "zh": "第三方组件、许可证与项目链接。"
       }
     },
     {
@@ -54,7 +59,8 @@
       "category": "meta",
       "type": "object",
       "description": {
-        "en": "Site metadata and links to every public endpoint."
+        "en": "Site metadata and links to every public endpoint.",
+        "zh": "站点元数据以及所有公开端点的链接。"
       }
     },
     {
@@ -63,7 +69,8 @@
       "category": "meta",
       "type": "object",
       "description": {
-        "en": "This machine-readable endpoint manifest."
+        "en": "This machine-readable endpoint manifest.",
+        "zh": "机器可读的端点清单。"
       }
     }
   ]

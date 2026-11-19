@@ -5,118 +5,144 @@
     {
       "id": "windows-warning",
       "question": {
-        "en": "Windows says the app is unrecognised."
+        "en": "Windows says the app is unrecognised.",
+        "zh": "Windows 提示不认识这个应用。"
       },
       "answer": {
-        "en": "The build is unsigned. Choose More info → Run anyway. If your browser flags the download, keep the file."
+        "en": "The build is unsigned. Choose More info → Run anyway. If your browser flags the download, keep the file.",
+        "zh": "构建没有代码签名。点“更多信息 → 仍要运行”即可。浏览器如果拦截下载，保留文件就好。"
       }
     },
     {
       "id": "certificate-trust",
       "question": {
-        "en": "The browser does not trust the certificate."
+        "en": "The browser does not trust the certificate.",
+        "zh": "浏览器不信任证书。"
       },
       "answer": {
-        "en": "Open Settings → Certificate and click Install into Trust Store, then fully close and reopen the browser. Reload the page afterwards."
+        "en": "Open Settings → Certificate and click Install into Trust Store, then fully close and reopen the browser. Reload the page afterwards.",
+        "zh": "打开 设置 → 证书，点击“安装到信任存储”，然后彻底关闭并重新打开浏览器，再刷新页面。"
       }
     },
     {
       "id": "microsoft-account",
       "question": {
-        "en": "Do I need a Microsoft account?"
+        "en": "Do I need a Microsoft account?",
+        "zh": "必须登录微软账号吗？"
       },
       "answer": {
-        "en": "No. Offline accounts work out of the box. Microsoft accounts are optional and use the device-code flow — the window shows a code you type at microsoft.com/link. The proxy refreshes the Microsoft token before every server join; if the refresh fails, the connection closes and the reason is shown in chat. Compatible third-party account services can be added separately with the API root they provide."
+        "en": "No. Offline accounts work out of the box. Microsoft accounts are optional and use the device-code flow — the window shows a code you type at microsoft.com/link. The proxy refreshes the Microsoft token before every server join; if the refresh fails, the connection closes and the reason is shown in chat. Compatible third-party account services can be added separately with the API root they provide.",
+        "zh": "不需要。离线账号可以直接使用；微软账号是可选的，走设备代码流程，窗口会显示一段代码，在 microsoft.com/link 输入即可。代理会在每次进入服务器前自动刷新微软登录凭据；刷新失败会断开连接，并在游戏聊天栏显示原因。兼容的第三方账号服务也可以单独添加，填入服务商提供的 API 根地址。"
       }
     },
     {
       "id": "server-list-live",
       "question": {
-        "en": "Why does the server list query the target every time?"
+        "en": "Why does the server list query the target every time?",
+        "zh": "为什么服务器列表每次都请求目标服务器？"
       },
       "answer": {
-        "en": "There is no status cache. Every list query goes to the target live so the MOTD, player count and version are current; a slow target makes that one query wait for its answer."
+        "en": "There is no status cache. Every list query goes to the target live so the MOTD, player count and version are current; a slow target makes that one query wait for its answer.",
+        "zh": "没有状态缓存。每次列表查询都会实时请求目标服务器，因此 MOTD、玩家数和版本始终是最新值；目标服务器较慢时，这一次查询会等待它返回。"
       }
     },
     {
       "id": "web-ui",
       "question": {
-        "en": "Is there a control panel?"
+        "en": "Is there a control panel?",
+        "zh": "有控制面板吗？"
       },
       "answer": {
-        "en": "Yes. The Web UI listens on http://127.0.0.1:8765 by default and opens in the desktop window or any browser. It covers start/stop, forwarding settings, logs, accounts, certificates and updates. A password can be set only when the UI is bound to a non-loopback address; loopback access never asks for one."
+        "en": "Yes. The Web UI listens on http://127.0.0.1:8765 by default and opens in the desktop window or any browser. It covers start/stop, forwarding settings, logs, accounts, certificates and updates. A password can be set only when the UI is bound to a non-loopback address; loopback access never asks for one.",
+        "zh": "有。Web UI 默认监听 http://127.0.0.1:8765，可在桌面窗口或任意浏览器打开，覆盖启动/停止、转发设置、日志、账号、证书和更新。只有绑定到非回环地址时才允许设置密码；回环访问始终免密。"
       }
     },
     {
       "id": "mcp",
       "question": {
-        "en": "Can an AI client control it?"
+        "en": "Can an AI client control it?",
+        "zh": "AI 客户端能控制吗？"
       },
       "answer": {
-        "en": "Yes. The same listener exposes /mcp over JSON-RPC 2.0 and Streamable HTTP, with 39 tools, resources and prompts for status, configuration (and the path-route table), logs, accounts, certificates, updates and appearance. Loopback clients need no key; remote MCP uses an MCP key and is refused when a Web UI password is set without one."
+        "en": "Yes. The same listener exposes /mcp over JSON-RPC 2.0 and Streamable HTTP, with 39 tools, resources and prompts for status, configuration (and the path-route table), logs, accounts, certificates, updates and appearance. Loopback clients need no key; remote MCP uses an MCP key and is refused when a Web UI password is set without one.",
+        "zh": "可以。同一个监听器在 /mcp 提供 JSON-RPC 2.0 / Streamable HTTP，包含 39 个工具、resources 和 prompts，覆盖状态、配置（含路径路由表）、日志、账号、证书、更新和外观。回环客户端无需密钥；远程 MCP 使用 MCP 密钥，若启用了 Web UI 密码却未设置 MCP 密钥则拒绝。"
       }
     },
     {
       "id": "clients-servers",
       "question": {
-        "en": "Which clients and servers work?"
+        "en": "Which clients and servers work?",
+        "zh": "支持哪些客户端和服务器？"
       },
       "answer": {
-        "en": "Any client that accepts a wss:// address, plus plaintext ws:// clients through the fallback port. Servers are ordinary Java servers, including Forge, NeoForge and Fabric."
+        "en": "Any client that accepts a wss:// address, plus plaintext ws:// clients through the fallback port. Servers are ordinary Java servers, including Forge, NeoForge and Fabric.",
+        "zh": "任何接受 wss:// 地址的客户端；明文 ws:// 客户端可走回退端口。服务器就是普通 Java 服务器，包括 Forge、NeoForge 和 Fabric。"
       }
     },
     {
       "id": "telemetry",
       "question": {
-        "en": "Does it phone home?"
+        "en": "Does it phone home?",
+        "zh": "它会偷偷联网吗？"
       },
       "answer": {
-        "en": "The program itself only contacts the update endpoint to read api/version.json. Microsoft or third-party sign-in talks to the provider you chose; account tokens stay in accounts.json on your machine, and the relay never uploads game traffic."
+        "en": "The program itself only contacts the update endpoint to read api/version.json. Microsoft or third-party sign-in talks to the provider you chose; account tokens stay in accounts.json on your machine, and the relay never uploads game traffic.",
+        "zh": "程序本身只在检查更新时读取 api/version.json。微软或第三方登录只会联系你选择的服务商；账号令牌保存在本机的 accounts.json，中继从不上传游戏流量。"
       }
     },
     {
       "id": "linux-macos",
       "question": {
-        "en": "How do I run it on Linux or macOS?"
+        "en": "How do I run it on Linux or macOS?",
+        "zh": "Linux/macOS 怎么使用？"
       },
       "answer": {
-        "en": "Download the source package from this site and run it with Python. PyInstaller cannot cross-compile, so no Linux or macOS binary is published. Install the dependencies from requirements.txt (any Python version those packages support), then run \"sh start.sh\" or \"python3 main.py\"."
+        "en": "Download the source package from this site and run it with Python. PyInstaller cannot cross-compile, so no Linux or macOS binary is published. Install the dependencies from requirements.txt (any Python version those packages support), then run \"sh start.sh\" or \"python3 main.py\".",
+        "zh": "从官网下载源码包，用 Python 运行即可。PyInstaller 不支持交叉编译，所以发布页没有 Linux/macOS 的现成二进制。先安装 requirements.txt 里的依赖（Python 版本以这些依赖包的支持范围为准），然后运行 “sh start.sh” 或 “python3 main.py”。"
       }
     },
     {
       "id": "public-api",
       "question": {
-        "en": "Is there a public API?"
+        "en": "Is there a public API?",
+        "zh": "有公开 API 吗？"
       },
       "answer": {
-        "en": "Yes. All seven files under /api/ are static JSON with CORS enabled: the release manifest, FAQ, features, stats, licenses, site metadata and endpoint index. See /api/ for the field reference."
+        "en": "Yes. All seven files under /api/ are static JSON with CORS enabled: the release manifest, FAQ, features, stats, licenses, site metadata and endpoint index. See /api/ for the field reference.",
+        "zh": "有。/api/ 下的七个文件都是开启 CORS 的静态 JSON：发布清单、常见问题、功能列表、统计、许可证、站点元数据和端点索引。字段说明见 /api/。"
       }
     },
     {
       "id": "third-party-licenses",
       "question": {
-        "en": "Where are the third-party licenses?"
+        "en": "Where are the third-party licenses?",
+        "zh": "第三方库的许可证在哪里？"
       },
       "answer": {
-        "en": "The source package includes THIRD_PARTY_NOTICES.txt with Python, CPython, pywebview, pythonnet, the WebView2 Runtime, OpenSSL, every Python standard-library module used by the app (including random, json, ssl and asyncio), every runtime dependency and the full license texts. The desktop app's About window lists each component, its license and a project link."
+        "en": "The source package includes THIRD_PARTY_NOTICES.txt with Python, CPython, pywebview, pythonnet, the WebView2 Runtime, OpenSSL, every Python standard-library module used by the app (including random, json, ssl and asyncio), every runtime dependency and the full license texts. The desktop app's About window lists each component, its license and a project link.",
+        "zh": "源码包内的 THIRD_PARTY_NOTICES.txt 列出了 Python、CPython、pywebview、pythonnet、WebView2 运行时、OpenSSL、程序用到的所有 Python 标准库模块（包括 random、json、ssl、asyncio）、所有运行时依赖及完整许可证；程序的『关于』窗口也会列出每个组件、许可证和项目链接。"
       }
     },
     {
       "id": "vc-runtime",
       "question": {
-        "en": "The EXE won't open, it crashes on launch with an error."
+        "en": "The EXE won't open, it crashes on launch with an error.",
+        "zh": "打不开，打开就报错。"
       },
       "answer": {
-        "en": "Install the Visual C++ Redistributable, or run the program from source. The EXE is built with PyInstaller and requires the VC++ runtime to be present on the system. Download it from: https://aka.ms/vs/17/release/vc_redist.x64.exe"
+        "en": "Install the Visual C++ Redistributable, or run the program from source. The EXE is built with PyInstaller and requires the VC++ runtime to be present on the system. Download it from: https://aka.ms/vs/17/release/vc_redist.x64.exe",
+        "zh": "安装 VC++ 运行时即可解决，或从源码运行。EXE 是用 PyInstaller 打包的，需要系统装有 VC++ 运行时。下载地址: https://aka.ms/vs/17/release/vc_redist.x64.exe"
       }
     },
     {
       "id": "rex-prefix-anomaly",
       "question": {
-        "en": "The console prints \"ANOMALY: meaningless REX prefix used\"."
+        "en": "The console prints \"ANOMALY: meaningless REX prefix used\".",
+        "zh": "控制台输出 \"ANOMALY: meaningless REX prefix used\"。"
       },
       "answer": {
-        "en": "Ignore it. The line comes from the graphics driver, not from this program, and it does not affect any feature. If it keeps appearing while the app is running and you use an Intel iGPU, make sure the latest Intel graphics driver is installed."
+        "en": "Ignore it. The line comes from the graphics driver, not from this program, and it does not affect any feature. If it keeps appearing while the app is running and you use an Intel iGPU, make sure the latest Intel graphics driver is installed.",
+        "zh": "请忽略，不影响软件功能。该提示由显卡驱动产生，并不是本程序的问题。如果在使用过程中反复输出，且您使用的是 Intel 核显（iGPU），请检查是否已安装最新的 Intel 显卡驱动。"
       }
     }
   ]

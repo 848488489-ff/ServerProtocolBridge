@@ -33,11 +33,11 @@ import urllib.error
 import urllib.request
 from urllib.parse import urljoin
 
-from .i18n import tr
+from .i18n import get_language, tr
 from .version import VERSION
 
 # Public endpoint that announces the newest release: a plain static file on
-# Cloudflare Pages (see the "release check" section of the README for the
+# Cloudflare Pages (see the "云端版本检查" section of the README for the
 # expected document).  *.pages.dev is reachable from mainland China, unlike
 # *.workers.dev, which is DNS-poisoned there.
 #
@@ -60,9 +60,11 @@ VERSION_KEYS = ('version', 'latest', 'latest_version', 'tag_name', 'name')
 PAGE_KEYS = ('download_page', 'page_url', 'download_url', 'page', 'url', 'html_url', 'download')
 SOURCE_KEYS = ('source_url', 'source_download', 'source_code', 'source_archive', 'source')
 NOTES_KEYS = ('notes', 'changelog', 'body', 'message', 'description')
-# A release note may be published once per language.  The check always picks
-# the English field, falling back to the plain field (kept for old endpoints).
+# A release note may be published once per language.  The check picks the one
+# that matches the interface and otherwise keeps the plain field (which is the
+# original, Chinese-only spelling).
 NOTES_EN_KEYS = ('changelog_en', 'notes_en', 'changelog_english', 'description_en')
+NOTES_ZH_KEYS = ('changelog_zh', 'notes_zh', 'changelog_chinese', 'description_zh')
 MIN_VERSION_KEYS = ('min_version', 'minimum_version', 'min_supported')
 FORCE_KEYS = ('force_update', 'force', 'required', 'mandatory')
 DATE_KEYS = ('release_date', 'date', 'published', 'published_at', 'released')
@@ -112,7 +114,7 @@ def _first_string(payload: dict, keys) -> str:
 
 def _localized_notes(payload: dict, fallback: str) -> str:
     """The changelog in the language of the interface, else the plain field."""
-    keys = NOTES_EN_KEYS
+    keys = NOTES_ZH_KEYS if get_language() == 'zh' else NOTES_EN_KEYS
     return _first_string(payload, keys) or fallback
 
 

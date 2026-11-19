@@ -51,9 +51,15 @@ python tools/build.py
 
 - Follow the surrounding style: type hints (`from __future__ import
   annotations`), dataclasses for state, i18n via `proxy/i18n.py` (`tr()`).
-- Every user-visible string must go through `proxy/locales/*.py` (the EN table;
-  the project is English-only, there is no second language table).
-  Do not hard-code UI text.
+- Every user-visible string must go through `proxy/locales/*.py` (EN and ZH
+  tables). Do not hard-code UI text. The interface language defaults to
+  Chinese (`config.language = 'zh'`).
+- Code comments, identifiers and protocol strings stay English; only
+  user-visible text is translated.
+- The version number has a single source of truth: `proxy/version_info.py`
+  (`VERSION`). `proxy/version.py` imports it, and the matching numbers in
+  `android/app/build.gradle` and `web/api/version.json` must be bumped
+  together.
 - Keep modules small and focused; large files are split by responsibility
   (e.g. `translator_login_*.py`, `proxy_bridge_*.py`).
 

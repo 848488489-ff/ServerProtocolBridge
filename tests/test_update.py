@@ -306,10 +306,8 @@ class ReleaseFieldsTests(_ServerTest):
         self.assertEqual(result['min_version'], '1.1.0')
         self.assertEqual(result['release_date'], '2026-10-18T09:00:00Z')
         self.assertEqual(result['notes'], 'New settings window\nFixed the checkbox mark')
-        # SHA-256 was removed from the release document (commit fb1cf85): the
-        # program no longer parses it, and even if a server still sends it, it
-        # must never reach the result.  Assert this explicitly rather than
-        # silently ignoring it.
+        # SHA-256 已从发布文档移除（commit fb1cf85）：程序不再解析，服务端即使
+        # 仍然下发也绝不进入结果，测试必须明确断言这一点而不是静默忽略。
         self.assertNotIn('sha256', result)
         self.assertEqual(result['file_size'], 28665610)
         self.assertTrue(result['newer'])
@@ -414,20 +412,26 @@ class LocalizedNotesTests(_ServerTest):
 
     def test_english_interface_prefers_english_notes(self):
         set_language('en')
-        result = self._check({'version': '1.2.0', 'changelog': 'Plain notes',
+        result = self._check({'version': '1.2.0', 'changelog': '中文日志',
                               'changelog_en': 'English notes'})
         self.assertEqual(result['notes'], 'English notes')
 
-    def test_missing_english_field_falls_back_to_the_plain_field(self):
-        set_language('en')
-        result = self._check({'version': '1.2.0', 'changelog': 'Plain notes'})
-        self.assertEqual(result['notes'], 'Plain notes')
+    def test_chinese_interface_prefers_chinese_notes(self):
+        set_language('zh')
+        result = self._check({'version': '1.2.0', 'changelog': '中文日志',
+                              'changelog_zh': '中文细分日志'})
+        self.assertEqual(result['notes'], '中文细分日志')
 
-    def test_blank_english_field_is_treated_as_missing(self):
+    def test_missing_translation_falls_back_to_the_plain_field(self):
         set_language('en')
-        result = self._check({'version': '1.2.0', 'changelog': 'Plain notes',
+        result = self._check({'version': '1.2.0', 'changelog': '中文日志'})
+        self.assertEqual(result['notes'], '中文日志')
+
+    def test_blank_translation_is_treated_as_missing(self):
+        set_language('en')
+        result = self._check({'version': '1.2.0', 'changelog': '中文日志',
                               'changelog_en': '   '})
-        self.assertEqual(result['notes'], 'Plain notes')
+        self.assertEqual(result['notes'], '中文日志')
 
 
 class ConfigTests(unittest.TestCase):
