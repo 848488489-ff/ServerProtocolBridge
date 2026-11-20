@@ -51,12 +51,13 @@ python tools/build.py
 
 - Follow the surrounding style: type hints (`from __future__ import
   annotations`), dataclasses for state, i18n via `proxy/i18n.py` (`tr()`).
-- Every user-visible string must go through `proxy/locales/*.py` (EN and ZH
-  tables). Do not hard-code UI text. The interface language defaults to
-  `auto` (follow the OS; `config.language = 'auto'`). The Android shell's
-  notification text, channel description and permission toast are read from
-  the same i18n table (`proxy/android_entry.ui_texts()`) so they follow the
-  language picked in the Web UI.
+- Every user-visible string must go through `proxy/locales/strings.py` (the
+  single EN and ZH table file; `proxy.locales` re-exports them, `proxy/i18n.py`
+  `tr()` does the lookup). Do not hard-code UI text. The interface language
+  defaults to `auto` (follow the OS; `config.language = 'auto'`). The Android
+  shell's notification text, channel description and permission toast are read
+  from the same i18n table (`proxy/android_entry.ui_texts()`) so they follow
+  the language picked in the Web UI.
 - Code comments, identifiers and protocol strings stay English; only
   user-visible text is translated.
 - The version number has a single source of truth: `proxy/version_info.py`

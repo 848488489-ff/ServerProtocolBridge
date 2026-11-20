@@ -1,21 +1,12 @@
-"""Translation tables, merged into one dictionary per language.
+"""Translation tables, single source of truth.
 
-Each locale module owns the keys of the modules it translates (see the module
-docstring of ``proxy.i18n``).  Keeping one file per area lets several
-people (or agents) work on the translations without touching each other.
+The single source of truth is ``proxy.locales.strings``; this package simply
+re-exports its ``EN`` and ``ZH`` tables so ``proxy.i18n`` keeps its import
+(``from .locales import EN, ZH``).
 """
 
 from __future__ import annotations
 
-from . import core, gui, proxy, tls, translator, update, web
+from .strings import EN, ZH
 
-LOCALE_MODULES = (core, gui, proxy, translator, tls, update, web)
-
-EN: dict = {}
-ZH: dict = {}
-
-for _module in LOCALE_MODULES:
-    EN.update(_module.EN)
-    ZH.update(_module.ZH)
-
-__all__ = ['EN', 'ZH', 'LOCALE_MODULES']
+__all__ = ['EN', 'ZH']

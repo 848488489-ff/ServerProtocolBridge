@@ -19,6 +19,7 @@ cloudflare_credentials.json
 certs/
 
 # Build outputs and packaging artifacts
+build/
 dist/
 .wrangler/
 local-config-backup/
