@@ -204,6 +204,21 @@ TOOLS = (
         'inputSchema': _schema(),
     },
     {
+        'name': 'import_certificate',
+        'description': (
+            'Import your own TLS certificate + private key (PEM text or file '
+            'paths) instead of the built-in self-signed one.  The pair is '
+            'validated (key matches, valid dates, serverAuth usage, a usable '
+            'name) before it replaces the current certificate files.  The '
+            'proxy must be stopped.'),
+        'inputSchema': _schema({
+            'cert_pem': {'type': 'string'},
+            'key_pem': {'type': 'string'},
+            'cert_path': {'type': 'string'},
+            'key_path': {'type': 'string'},
+        }),
+    },
+    {
         'name': 'check_update',
         'description': 'Ask the release endpoint whether a newer version exists.',
         'inputSchema': _schema(),
@@ -710,6 +725,24 @@ def _tool_install_certificate(_arguments: dict) -> dict:
     return _text_result({'ok': True, 'message': message})
 
 
+def _tool_import_certificate(arguments: dict) -> dict:
+    manager = get_manager()
+    if manager.running:
+        return _text_result(
+            {'error': 'stop the service before changing the certificate'}, True)
+    try:
+        info = certs.import_certificate(
+            manager.config.resolved_cert_dir,
+            cert_pem=arguments.get('cert_pem'),
+            key_pem=arguments.get('key_pem'),
+            cert_path=arguments.get('cert_path'),
+            key_path=arguments.get('key_path'),
+            logger=manager.logger)
+    except Exception as exc:
+        return _text_result({'error': str(exc)}, True)
+    return _text_result({'ok': True, 'info': info})
+
+
 def _tool_check_update(_arguments: dict) -> dict:
     try:
         outcome = update.check(update.DEFAULT_UPDATE_URL, VERSION)
@@ -1140,6 +1173,7 @@ _HANDLERS = {
     'get_certificate': _tool_get_certificate,
     'generate_certificate': _tool_generate_certificate,
     'install_certificate': _tool_install_certificate,
+    'import_certificate': _tool_import_certificate,
     'check_update': _tool_check_update,
     'web_info': _tool_web_info,
     'restart_web_ui': _tool_restart_web_ui,

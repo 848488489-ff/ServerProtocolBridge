@@ -476,6 +476,23 @@ def register(app, fail):
         if not ok:
             return fail(message or tr('web.cert_failed', error=''))
         return jsonify({'ok': True, 'message': message})
+    @app.route('/api/cert/import', methods=['POST'])
+    def api_cert_import():
+        manager = get_manager()
+        if manager.running:
+            return fail(tr('web.cert_running'))
+        body = request.get_json(silent=True) or {}
+        try:
+            info = certs.import_certificate(
+                manager.config.resolved_cert_dir,
+                cert_pem=body.get('cert_pem'),
+                key_pem=body.get('key_pem'),
+                cert_path=body.get('cert_path'),
+                key_path=body.get('key_path'),
+                logger=manager.logger)
+        except Exception as exc:
+            return fail(tr('web.cert_failed', error=exc))
+        return jsonify({'ok': True, 'info': info})
     # ------------------------------------------------------------------
     # Updates / about / Web UI control
     # ------------------------------------------------------------------

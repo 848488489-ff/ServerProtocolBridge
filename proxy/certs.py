@@ -234,6 +234,144 @@ def _decode_command_output(stdout: bytes, stderr: bytes) -> str:
             (stderr or b'').decode(encoding, errors='replace'))
 
 
+def _normalize_pem(text: str) -> str:
+    """Normalise a PEM blob: strip the BOM, unify line endings, keep one trailing newline."""
+    text = (text or '').replace('\ufeff', '')
+    text = text.replace('\r\n', '\n').replace('\r', '\n').strip()
+    return text + '\n' if text else ''
+
+
+def validate_certificate_pair(cert_pem: str, key_pem: str) -> tuple[bool, str]:
+    """Validate a TLS server certificate + private key pair before it is used.
+
+    The relay answers browsers over ``wss://``, so the imported identity must
+    actually work as a TLS server certificate.  Checks, in order:
+
+    * both blobs are PEM of the expected kind (certificate / private key),
+    * the private key matches the certificate's public key,
+    * the certificate is inside its validity window,
+    * the certificate may be used for server authentication (a ``serverAuth``
+      extended-key-usage, or no EKU at all),
+    * there is at least one usable name (a subjectAltName, else the CN).
+
+    Returns ``(ok, error)`` where ``error`` is a localised reason when ``ok``
+    is false.  Nothing is written to disk here; callers decide what to do with
+    a valid pair.
+    """
+    import datetime as _dt
+
+    from cryptography import x509 as cx509
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+
+    cert_pem = _normalize_pem(cert_pem)
+    key_pem = _normalize_pem(key_pem)
+    if '-----BEGIN CERTIFICATE-----' not in cert_pem:
+        return False, tr('certs.import_no_cert')
+    if '-----BEGIN' not in key_pem or 'PRIVATE KEY-----' not in key_pem:
+        return False, tr('certs.import_no_key')
+
+    try:
+        cert = cx509.load_pem_x509_certificate(cert_pem.encode('ascii'))
+    except Exception as exc:
+        return False, tr('certs.import_bad_cert', error=exc)
+    try:
+        key = serialization.load_pem_private_key(key_pem.encode('ascii'), password=None)
+    except Exception as exc:
+        return False, tr('certs.import_bad_key', error=exc)
+    if not hasattr(key, 'public_key'):
+        return False, tr('certs.import_bad_key', error=tr('certs.import_not_rsa'))
+
+    # The private key must belong to the certificate.
+    try:
+        cert_numbers = cert.public_key().public_numbers()
+        key_numbers = key.public_key().public_numbers()
+    except Exception as exc:
+        return False, tr('certs.import_bad_pair', error=exc)
+    if cert_numbers != key_numbers:
+        return False, tr('certs.import_mismatch')
+
+    # Validity window.
+    now = _dt.datetime.now(_dt.timezone.utc)
+    if now < cert.not_valid_before_utc:
+        return False, tr('certs.import_not_yet')
+    if now > cert.not_valid_after_utc:
+        return False, tr('certs.import_expired')
+
+    # Server-authentication usage (browsers require it for wss://).
+    try:
+        eku = cert.extensions.get_extension_for_class(cx509.ExtendedKeyUsage).value
+        server_auth = ExtendedKeyUsageOID.SERVER_AUTH in eku
+    except cx509.ExtensionNotFound:
+        server_auth = True  # no EKU: usable for any purpose
+    if not server_auth:
+        return False, tr('certs.import_not_server')
+
+    # A usable name, otherwise the browser cannot match it to the host.
+    names = []
+    try:
+        san = cert.extensions.get_extension_for_class(cx509.SubjectAlternativeName).value
+        names = [str(value) for value in san.get_values_for_type(cx509.DNSName)]
+        names += [str(value) for value in san.get_values_for_type(cx509.IPAddress)]
+    except cx509.ExtensionNotFound:
+        pass
+    common_name = ''
+    try:
+        common_name = cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0].value
+    except Exception:
+        pass
+    if not names and not common_name:
+        return False, tr('certs.import_no_name')
+
+    return True, ''
+
+
+def import_certificate(cert_dir, cert_pem: str | None = None, key_pem: str | None = None,
+                       cert_path: str | None = None, key_path: str | None = None,
+                       logger=None) -> dict:
+    """Import a user-supplied TLS certificate + private key into ``cert_dir``.
+
+    The pair may be given as PEM text or as file paths (or a mix).  The pair is
+    validated first; an invalid pair is refused and the existing certificate is
+    left untouched.  On success the files are written as ``cert.pem`` /
+    ``key.pem`` and picked up by the normal TLS loading path, so a user can use
+    a certificate issued by a real CA (e.g. Let's Encrypt) instead of the
+    built-in self-signed one.  Returns the same shape as ``inspect_certificate``
+    plus ``source='custom'`` / ``imported=True``.
+    """
+    cert_dir = Path(cert_dir)
+    if cert_pem is None and cert_path:
+        cert_pem = Path(cert_path).read_text(encoding='ascii', errors='ignore')
+    if key_pem is None and key_path:
+        key_pem = Path(key_path).read_text(encoding='ascii', errors='ignore')
+    if not _normalize_pem(cert_pem) or not _normalize_pem(key_pem):
+        raise ValueError(tr('certs.import_missing'))
+
+    ok, error = validate_certificate_pair(cert_pem, key_pem)
+    if not ok:
+        raise ValueError(error)
+
+    cert_dir.mkdir(parents=True, exist_ok=True)
+    cert_out, key_out = certificate_paths(cert_dir)
+    cert_out.write_text(_normalize_pem(cert_pem), encoding='ascii')
+    key_out.write_text(_normalize_pem(key_pem), encoding='ascii')
+    if os.name != 'nt':  # Windows has no POSIX permission bits
+        try:
+            os.chmod(key_out, 0o600)
+        except OSError:
+            pass
+
+    info = inspect_certificate(cert_out, key_out) or {}
+    info['source'] = 'custom'
+    info['imported'] = True
+    if logger is not None:
+        logger.info(tr('certs.imported', path=cert_out))
+        logger.info(tr('certs.thumbprint', thumbprint=info.get('thumbprint', '')))
+        if info.get('alt_names'):
+            logger.info(tr('certs.alt_names', names=', '.join(info['alt_names'])))
+    return info
+
+
 def install_to_trust_store(cert_path: Path, logger=None) -> tuple[bool, str]:
     """Import the certificate into the current user's "Trusted Root Certification Authorities" store (Windows)."""
     cert_path = Path(cert_path)
