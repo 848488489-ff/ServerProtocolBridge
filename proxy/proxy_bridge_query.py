@@ -240,6 +240,7 @@ class BridgeQuery:
         except Exception:
             pass
     async def _cleanup(self) -> None:
+        self._disarm_handshake_timeout()
         self._close_writer()
         translator = self.translator
         if translator is not None and translator.close_reason and not self.close_reason:
