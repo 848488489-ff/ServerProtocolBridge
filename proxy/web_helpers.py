@@ -255,6 +255,8 @@ def _cert_payload() -> dict:
     config = get_manager().config
     cert_path, key_path = certs.certificate_paths(config.resolved_cert_dir)
     info = certs.inspect_certificate(cert_path, key_path) if cert_path.exists() else None
+    if info is not None:
+        info['source'] = info.get('source') or 'auto'
     return {
         'exists': info is not None,
         'cert_path': str(cert_path),
