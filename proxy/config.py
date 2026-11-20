@@ -250,6 +250,17 @@ class Config:
     web_port: int = 8765
     connect_timeout: float = 10.0
     heartbeat_sec: int = 30       # WebSocket heartbeat interval in seconds; 0 = disabled
+    # A browser client must finish its handshake and login within this many
+    # seconds or the connection is dropped.  Protects a loopback-only listener
+    # on a public bind from idle/slow peers holding sockets open forever.
+    # 0 = disabled (an old browser client that never sends the login is kept
+    # until the WebSocket heartbeat or the peer gives up).
+    handshake_timeout: float = 30.0
+    # How many times the backend TCP connection is retried after a failed
+    # connect (transient DNS/refused flakiness), before the player is told the
+    # server is unreachable.  0 = connect once and fail immediately.
+    connect_retries: int = 2
+    connect_retry_delay: float = 1.0   # seconds between backend connect attempts
     max_payload_mb: int = 16      # Max size of a single frame
     # Upper bound on simultaneous client connections.  0 = unlimited.  A
     # listener exposed beyond loopback should set this so one peer cannot fill
@@ -484,6 +495,12 @@ class Config:
             problems.append(_problem('core.config.max_payload_positive'))
         if float(self.connect_timeout) <= 0:
             problems.append(_problem('core.config.connect_timeout_positive'))
+        if float(self.handshake_timeout) < 0:
+            problems.append(_problem('core.config.handshake_timeout_non_negative'))
+        if int(self.connect_retries) < 0:
+            problems.append(_problem('core.config.connect_retries_non_negative'))
+        if float(self.connect_retry_delay) < 0:
+            problems.append(_problem('core.config.connect_retry_delay_non_negative'))
         if int(self.heartbeat_sec) < 0:
             problems.append(_problem('core.config.heartbeat_non_negative'))
         if not 1 <= int(self.status_cache_ttl) <= 86400:

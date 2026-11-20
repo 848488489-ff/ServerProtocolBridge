@@ -79,6 +79,7 @@ class BridgeInit:
         self._close_after_flush = False
         self._ws_closed = False
         self._first_task: asyncio.Task | None = None
+        self._handshake_timer: asyncio.TimerHandle | None = None
 
         # Plain (untranslated) sessions: the login stage is followed just far
         # enough to know which goodbye packet would be legal if the service
@@ -198,16 +199,33 @@ class BridgeInit:
             return
         self.endpoint = (host, port)
 
-        try:
-            reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port, limit=RECV_SIZE),
-                timeout=max(1.0, float(config.connect_timeout)))
-        except Exception as exc:
-            await self._report_connect_failure(host, port, exc, first)
+        # Connect to the target server, retrying a configured number of times
+        # on a transient failure (DNS flakiness, a restarting backend) before
+        # telling the player it is unreachable.
+        retries = max(0, int(getattr(config, 'connect_retries', 0) or 0))
+        delay = max(0.0, float(getattr(config, 'connect_retry_delay', 0) or 0))
+        reader = writer = None
+        last_exc: BaseException | None = None
+        for attempt in range(retries + 1):
+            if attempt:
+                self.log.info(tr('proxy.log.connect_retry', id=self.id,
+                                 attempt=attempt, host=host, port=port))
+                await asyncio.sleep(delay)
+            try:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(host, port, limit=RECV_SIZE),
+                    timeout=max(1.0, float(config.connect_timeout)))
+                break
+            except Exception as exc:
+                last_exc = exc
+        if writer is None or reader is None:
+            await self._report_connect_failure(
+                host, port, last_exc or ConnectionError('connect failed'), first)
             return
         self.reader, self.writer = reader, writer
         _set_socket_options(writer)
         self.log.info(tr('proxy.log.connected', id=self.id, host=host, port=port))
+        self._arm_handshake_timeout()
 
         # if the first packet is already in hand, handle it right away; otherwise
         # leave it to the pumps to keep waiting
@@ -224,6 +242,46 @@ class BridgeInit:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+    # ---------- handshake/login deadline ----------
+    def _arm_handshake_timeout(self) -> None:
+        """Arm the handshake/login deadline.
+
+        A browser client that connects but never finishes the login (a stalled
+        or hostile peer) would otherwise hold its socket open until the
+        WebSocket heartbeat or the peer gives up.  When ``handshake_timeout``
+        is set, such a session is dropped after that many seconds.
+        """
+        timeout = float(getattr(self.config, 'handshake_timeout', 0) or 0)
+        if timeout <= 0 or self._handshake_timer is not None:
+            return
+        loop = self.loop or asyncio.get_running_loop()
+        self._handshake_timer = loop.call_later(
+            timeout, lambda: loop.create_task(self._handshake_timed_out()))
+
+    def _disarm_handshake_timeout(self) -> None:
+        """Cancel the handshake deadline once the login is finished."""
+        timer = self._handshake_timer
+        self._handshake_timer = None
+        if timer is not None:
+            try:
+                timer.cancel()
+            except Exception:
+                pass
+
+    async def _handshake_timed_out(self) -> None:
+        """The deadline fired while the session was still handshaking/logging
+        in: close it so a stalled peer cannot pin the connection forever."""
+        self._handshake_timer = None
+        translator = self.translator
+        if (translator is not None and translator.login_done) or self.query_mode:
+            return
+        if not self.close_reason:
+            self.close_reason = tr('proxy.reason.handshake_timeout')
+            self.close_code = 1001
+            self.close_text = 'handshake timeout'
+            self.log.warn('#%d %s' % (self.id, self.close_reason))
+        await self._close_ws()
+        self._close_writer()
     async def _receive_one(self) -> tuple[bytes, bool] | None:
         """Receive one message from the client, returning (payload, is_text);
         None when the peer disconnects."""

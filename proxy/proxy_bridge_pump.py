@@ -152,6 +152,7 @@ class BridgePump:
                     and translator.phase == 'play'
                     and translator.login_done):
                 self._translator_direct = True
+                self._disarm_handshake_timeout()
     # ---------- target server -> client ----------
     async def _pump_from_server(self) -> None:
         reader = self.reader
@@ -165,6 +166,8 @@ class BridgePump:
             translator = self.translator
             if translator is not None:
                 frames = await self._feed_translator_server(data)
+                if translator.login_done:
+                    self._disarm_handshake_timeout()
                 if translator.close_reason and not self.close_reason:
                     self.close_reason = translator.close_reason
                 await self._send_payloads(frames)
