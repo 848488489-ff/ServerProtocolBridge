@@ -120,6 +120,57 @@ def api_ok(resp: dict, what: str) -> dict:
     return resp["result"]
 
 
+def _is_access_login(target: str | None) -> bool:
+    """True when a redirect points at the Cloudflare Access login flow instead
+    of a presigned storage URL.
+
+    Access-wrapped Pages projects answer the Direct Upload PUT with a 302 to
+    ``/cdn-cgi/access/login/...`` rather than the storage endpoint, so the
+    API-only upload can never complete and ``deploy.py`` must fall back.
+    """
+    if not target:
+        return False
+    return "cloudflareaccess.com" in target and "/cdn-cgi/access/" in target
+
+
+class UploadBlockedError(RuntimeError):
+    """Raised when the Direct Upload API is redirected to the Access login."""
+
+
+def fallback_wrangler() -> int:
+    """Deploy through ``wrangler pages deploy``.
+
+    ``wrangler`` authenticates with the API token and talks to the Pages
+    storage directly, so Cloudflare Access does not block it; the Direct
+    Upload API in the same situation has no usable ``upload_url`` (or is
+    redirected to the Access login).  Called automatically when the API upload
+    cannot proceed.
+    """
+    import shutil
+    import subprocess
+
+    wrangler = shutil.which("wrangler")
+    if not wrangler:
+        print(
+            "[deploy] Direct Upload blocked (the project is likely behind "
+            "Cloudflare Access) and wrangler is not installed; run "
+            "tools/deploy_website.ps1 instead.",
+            file=sys.stderr,
+        )
+        return 1
+    print("[deploy] Direct Upload blocked by Cloudflare Access; falling back "
+          "to wrangler pages deploy...")
+    os.environ["CLOUDFLARE_ACCOUNT_ID"] = ACCOUNT
+    os.environ["CLOUDFLARE_API_TOKEN"] = TOKEN
+    command = [
+        wrangler, "pages", "deploy", str(SITE),
+        f"--project-name={PROJECT}", f"--branch={BRANCH}",
+        "--commit-dirty=true",
+    ]
+    proc = subprocess.run(command)
+    return 0 if proc.returncode == 0 else 1
+
+
 def collect_files() -> list[tuple[str, Path]]:
     files: list[tuple[str, Path]] = []
     for path in sorted(SITE.rglob("*")):
@@ -168,11 +219,14 @@ def main() -> int:
         "Create deployment",
     )
     deployment_id = created["id"]
-    upload_url = created.get("upload_url") or created.get("url")
+    upload_url = created.get("upload_url")
     if not upload_url:
-        print("[deploy] Deployment response has no upload_url/url",
-              file=sys.stderr)
-        return 1
+        # No dedicated upload endpoint.  Access-wrapped projects omit it, and
+        # falling back to the deployment ``url`` (pages.dev) only reaches the
+        # Access login; go straight to wrangler instead of failing obscurely.
+        print("[deploy] Deployment %s created but the API returned no "
+              "upload_url; using wrangler." % deployment_id)
+        return fallback_wrangler()
     print(f"[deploy] Deployment {deployment_id} created; uploading {len(files)} files...")
 
     # 2) Upload each file.  The first PUT to {upload_url}/{sha256} answers with
@@ -209,6 +263,8 @@ def main() -> int:
             target = resp_headers.get("Location") or resp_headers.get("location")
             if not target:
                 raise RuntimeError(f"Redirect without Location for {rel}")
+            if _is_access_login(target):
+                raise UploadBlockedError()
             # Presigned URL: strip the now-invalid Authorization header.
             presigned_headers = {k: v for k, v in headers.items()
                                  if k.lower() != "authorization"}
@@ -226,6 +282,11 @@ def main() -> int:
                 done += 1
                 if done % 25 == 0 or done == len(files):
                     print(f"[deploy] Uploaded {done}/{len(files)}")
+            except UploadBlockedError:
+                print("[deploy] Upload redirected to the Cloudflare Access "
+                      "login; falling back to wrangler.")
+                pool.shutdown(wait=False, cancel_futures=True)
+                return fallback_wrangler()
             except Exception as exc:
                 print(f"[deploy] File upload error {rel}: {exc}", file=sys.stderr)
                 return 1
