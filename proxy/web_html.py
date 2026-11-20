@@ -495,6 +495,12 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <input id="heartbeat_sec" inputmode="numeric">
           <label data-i18n="gui.label.connect_timeout"></label>
           <input id="connect_timeout" inputmode="decimal">
+          <label data-i18n="gui.label.handshake_timeout"></label>
+          <input id="handshake_timeout" inputmode="decimal">
+          <label data-i18n="gui.label.connect_retries"></label>
+          <input id="connect_retries" inputmode="numeric">
+          <label data-i18n="gui.label.connect_retry_delay"></label>
+          <input id="connect_retry_delay" inputmode="decimal">
           <label data-i18n="gui.label.max_payload"></label>
           <input id="max_payload_mb" inputmode="numeric">
           <label data-i18n="gui.label.max_connections"></label>
@@ -631,6 +637,25 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
           <input id="cert_days_page" inputmode="numeric">
           <label data-i18n="gui.label.cert_generator"></label>
           <select id="cert_generator_page"></select>
+        </div>
+      </div>
+      <div class="card">
+        <h2 data-i18n="web.cert_import_title"></h2>
+        <p class="hint" data-i18n="web.cert_import_hint"></p>
+        <div class="grid2">
+          <label data-i18n="web.cert_path_label"></label>
+          <input id="cert_import_cert_path" autocomplete="off" spellcheck="false">
+          <label data-i18n="web.key_path_label"></label>
+          <input id="cert_import_key_path" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="grid2" style="margin-top:10px">
+          <label data-i18n="web.cert_pem_label"></label>
+          <textarea id="cert_import_cert_pem" rows="6" spellcheck="false"></textarea>
+          <label data-i18n="web.key_pem_label"></label>
+          <textarea id="cert_import_key_pem" rows="6" spellcheck="false"></textarea>
+        </div>
+        <div class="actions" style="margin-top:12px">
+          <button class="btn primary" id="btn-import-cert" data-i18n="gui.button.import_cert"></button>
         </div>
       </div>
     </section>
@@ -1106,7 +1131,8 @@ function fillConfig(config, options, problems) {
   loadAppearanceControls(state.appearance);
   const fields = ['target', 'listen_host', 'wss_port', 'ws_port', 'server_brand',
     'server_brand_version', 'spoof_brand', 'log_level', 'heartbeat_sec',
-    'connect_timeout', 'max_payload_mb', 'max_connections', 'cert_dir',
+    'connect_timeout', 'handshake_timeout', 'connect_retries', 'connect_retry_delay',
+    'max_payload_mb', 'max_connections', 'cert_dir',
     'cert_common_name', 'cert_extra_names', 'cert_days', 'cert_generator',
     'web_host', 'web_port'];
   fields.forEach(id => { const el = $('#' + id); if (el) el.value = config[id] ?? ''; });
@@ -1363,6 +1389,9 @@ function collectConfig() {
   config.web_port = numberValue('web_port', t('gui.label.web_port'), true);
   config.heartbeat_sec = numberValue('heartbeat_sec', t('gui.label.heartbeat'), true);
   config.connect_timeout = numberValue('connect_timeout', t('gui.label.connect_timeout'), false);
+  config.handshake_timeout = numberValue('handshake_timeout', t('gui.label.handshake_timeout'), false);
+  config.connect_retries = numberValue('connect_retries', t('gui.label.connect_retries'), true);
+  config.connect_retry_delay = numberValue('connect_retry_delay', t('gui.label.connect_retry_delay'), false);
   config.max_payload_mb = numberValue('max_payload_mb', t('gui.label.max_payload'), true);
   config.max_connections = numberValue('max_connections', t('gui.label.max_connections'), true);
   config.cert_days = numberValue('cert_days', t('gui.label.cert_days'), true);
@@ -1807,6 +1836,7 @@ async function loadCert() {
     }
     const rows = [
       [t('web.cert_file'), data.cert_path],
+      [t('web.cert_source'), (info.source === 'custom' ? t('web.cert_source_custom') : t('web.cert_source_auto'))],
       [t('web.valid_until'), info.not_after || '—'],
       [t('web.fingerprint'), info.thumbprint || '—'],
       [t('web.covers'), (info.alt_names || []).join(', ') || '—']
@@ -1839,6 +1869,25 @@ async function installCert() {
   try {
     await api('/api/cert/install', { method: 'POST', body: {} });
     toast(t('web.cert_installed'), 'ok');
+  } catch (err) { toast(err.message, 'error', 7000); }
+}
+async function importCert() {
+  const body = {
+    cert_pem: $('#cert_import_cert_pem').value.trim(),
+    key_pem: $('#cert_import_key_pem').value.trim(),
+    cert_path: $('#cert_import_cert_path').value.trim(),
+    key_path: $('#cert_import_key_path').value.trim()
+  };
+  if (!body.cert_pem && !body.cert_path) {
+    toast(t('web.cert_failed', { error: 'no certificate provided' }), 'error'); return;
+  }
+  if (!body.key_pem && !body.key_path) {
+    toast(t('web.cert_failed', { error: 'no private key provided' }), 'error'); return;
+  }
+  try {
+    await api('/api/cert/import', { method: 'POST', body });
+    toast(t('web.cert_import_ok'), 'ok');
+    loadCert();
   } catch (err) { toast(err.message, 'error', 7000); }
 }
 
@@ -2051,6 +2100,7 @@ function bindEvents() {
   $('#btn-use-none').addEventListener('click', clearActive);
   $('#btn-generate-cert').addEventListener('click', generateCert);
   $('#btn-install-cert').addEventListener('click', installCert);
+  $('#btn-import-cert').addEventListener('click', importCert);
   $('#theme-select').addEventListener('change', async event => {
     const theme = event.target.value;
     document.documentElement.dataset.theme = theme;
