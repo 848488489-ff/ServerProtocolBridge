@@ -150,16 +150,24 @@ class WsClient:
                 self.inbox.append(frame)
 
     def _reader(self) -> None:
-        try:
-            while True:
+        while True:
+            try:
                 chunk = self.sock.recv(65536)
-                if not chunk:
-                    self.eof = True
-                    return
-                with self._lock:
-                    self._ingest(chunk)
-        except (OSError, ssl.SSLError):
-            self.eof = True
+            except socket.timeout:
+                # An idle socket timing out is not EOF: the connection is still
+                # open, only no data arrived.  Keep waiting so a frame sent
+                # after a long quiet stretch (e.g. a slow retry-then-close) is
+                # still read; treating it as EOF would kill the reader and the
+                # test would miss the close frame.
+                continue
+            except (OSError, ssl.SSLError):
+                self.eof = True
+                return
+            if not chunk:
+                self.eof = True
+                return
+            with self._lock:
+                self._ingest(chunk)
 
     def send(self, data: bytes, opcode: int = wsproto.OP_BINARY) -> None:
         self.sock.sendall(wsproto.encode_frame(opcode, data, mask=True))
@@ -439,6 +447,93 @@ class CertificateTests(unittest.TestCase):
             self.assertIn(expected, names)
         self.assertEqual(len(names), len(set(names)), 'names must not be duplicated')
 
+    # ------------------------------------------------------------ import
+
+    def test_import_certificate_valid(self):
+        directory = self.cert_dir / 'imported-valid'
+        info = certs.import_certificate(
+            directory, cert_pem=self.certificate['cert_pem'],
+            key_pem=self.certificate['key_pem'])
+        self.assertEqual(info['source'], 'custom')
+        self.assertTrue(info['imported'])
+        self.assertTrue(info['thumbprint'])
+        cert_path, key_path = certs.certificate_paths(directory)
+        self.assertTrue(cert_path.exists())
+        self.assertTrue(key_path.exists())
+        # the imported pair must load as a real TLS server identity
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(str(cert_path), str(key_path))
+
+    def test_import_certificate_by_path(self):
+        source = self.cert_dir / 'source-files'
+        source.mkdir(exist_ok=True)
+        cert_path, key_path = certs.certificate_paths(source)
+        cert_path.write_text(self.certificate['cert_pem'], encoding='ascii')
+        key_path.write_text(self.certificate['key_pem'], encoding='ascii')
+        info = certs.import_certificate(
+            self.cert_dir / 'imported-path',
+            cert_path=str(cert_path), key_path=str(key_path))
+        self.assertEqual(info['source'], 'custom')
+
+    def test_import_certificate_rejects_mismatch(self):
+        other = x509.create_self_signed_certificate(common_name='other',
+                                                    alt_names=['other.test'])
+        with self.assertRaises(ValueError):
+            certs.import_certificate(
+                self.cert_dir / 'imported-mismatch',
+                cert_pem=self.certificate['cert_pem'], key_pem=other['key_pem'])
+
+    def test_import_certificate_rejects_bad_pem(self):
+        with self.assertRaises(ValueError):
+            certs.import_certificate(
+                self.cert_dir / 'imported-badpem',
+                cert_pem='not a certificate', key_pem='not a key')
+
+    def test_import_certificate_rejects_expired(self):
+        cert_pem, key_pem = self._expired_pair()
+        with self.assertRaises(ValueError):
+            certs.import_certificate(
+                self.cert_dir / 'imported-expired',
+                cert_pem=cert_pem, key_pem=key_pem)
+
+    def test_import_certificate_keeps_existing_on_failure(self):
+        directory = self.cert_dir / 'imported-keep'
+        good = certs.import_certificate(
+            directory, cert_pem=self.certificate['cert_pem'],
+            key_pem=self.certificate['key_pem'])
+        with self.assertRaises(ValueError):
+            certs.import_certificate(directory, cert_pem='junk', key_pem='junk')
+        current = certs.inspect_certificate(*certs.certificate_paths(directory))
+        self.assertEqual(current['thumbprint'], good['thumbprint'])
+
+    @staticmethod
+    def _expired_pair():
+        import datetime
+
+        from cryptography import x509 as cx509
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.x509.oid import NameOID
+
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        name = cx509.Name([cx509.NameAttribute(NameOID.COMMON_NAME, 'localhost')])
+        cert = (cx509.CertificateBuilder()
+                .subject_name(name).issuer_name(name)
+                .public_key(key.public_key()).serial_number(1)
+                .not_valid_before(now - datetime.timedelta(days=30))
+                .not_valid_after(now - datetime.timedelta(days=1))
+                .add_extension(
+                    cx509.SubjectAlternativeName([cx509.DNSName('localhost')]),
+                    False)
+                .sign(key, hashes.SHA256()))
+        cert_pem = cert.public_bytes(serialization.Encoding.PEM).decode('ascii')
+        key_pem = key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption()).decode('ascii')
+        return cert_pem, key_pem
+
 
 # ---------------------------------------------------------------- WebSocket frames
 
@@ -657,6 +752,50 @@ class ConfigTests(unittest.TestCase):
         config.max_connections = -1
         self.assertTrue(any(tr('core.config.max_connections_range') in item
                             for item in config.validate()))
+
+    def test_connection_reliability_defaults(self):
+        config = Config()
+        self.assertEqual(config.handshake_timeout, 30.0)
+        self.assertEqual(config.connect_retries, 2)
+        self.assertEqual(config.connect_retry_delay, 1.0)
+
+    def test_connection_reliability_validation(self):
+        config = Config()
+        config.target = 'play.example.net'
+        self.assertEqual(config.validate(), [])
+        config.handshake_timeout = -1
+        self.assertTrue(any(tr('core.config.handshake_timeout_non_negative') in item
+                            for item in config.validate()))
+        config = Config()
+        config.target = 'play.example.net'
+        config.connect_retries = -1
+        self.assertTrue(any(tr('core.config.connect_retries_non_negative') in item
+                            for item in config.validate()))
+        config = Config()
+        config.target = 'play.example.net'
+        config.connect_retry_delay = -0.5
+        self.assertTrue(any(tr('core.config.connect_retry_delay_non_negative') in item
+                            for item in config.validate()))
+        config = Config()
+        config.target = 'play.example.net'
+        config.handshake_timeout = 0        # 0 = disabled is legal
+        config.connect_retries = 0          # 0 = no retry is legal
+        config.connect_retry_delay = 0
+        self.assertEqual(config.validate(), [])
+
+    def test_connection_reliability_roundtrip(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'config.json'
+            config = Config()
+            config.target = 'mc.hypixel.net:25565'
+            config.handshake_timeout = 15.0
+            config.connect_retries = 5
+            config.connect_retry_delay = 0.5
+            config.save(path)
+            loaded = Config.load(path)
+            self.assertEqual(loaded.handshake_timeout, 15.0)
+            self.assertEqual(loaded.connect_retries, 5)
+            self.assertEqual(loaded.connect_retry_delay, 0.5)
 
     def test_unknown_keys_ignored(self):
         config = Config.from_dict({'target': 'a:1', 'unknown_key': 5, 'wss_port': '1234'})
@@ -1618,6 +1757,7 @@ class ProxyEndToEndTests(unittest.TestCase):
         config.wss_port = 0
         config.ws_port = free_port()
         config.connect_timeout = 2
+        config.connect_retries = 0        # this test covers the unreachable close, not retry timing
         config.heartbeat_sec = 0
         server = ProxyServer(config, Logger('error', echo=False))
         server.start()
@@ -1673,6 +1813,80 @@ class ProxyEndToEndTests(unittest.TestCase):
         self.assertEqual(info['generator'], 'openssl')
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.load_cert_chain(info['cert_path'], info['key_path'])  # loading cleanly means it is valid
+
+
+# ---------------------------------------------------------------- Connection reliability (2.5.1)
+
+
+class ConnectionReliabilityTests(unittest.TestCase):
+    """The handshake/login deadline and the backend connect-retry loop."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.backend = EchoServer(greeting=b'HELLO-FROM-SERVER')
+        cls._lang = i18n.get_language()
+        i18n.set_language('en')          # keep the log assertions language-stable
+
+    @classmethod
+    def tearDownClass(cls):
+        i18n.set_language(cls._lang)
+        cls.backend.close()
+        cls.tmp.cleanup()
+
+    def _server(self, **overrides):
+        lines: list[str] = []
+
+        def callback(level, text):
+            lines.append(text)
+
+        config = Config()
+        config.target = '127.0.0.1:%d' % self.backend.port
+        config.listen_host = '127.0.0.1'
+        config.wss_port = free_port()
+        config.ws_port = free_port()
+        config.cert_dir = str(Path(self.tmp.name) / 'certs')
+        config.cert_generator = 'python'
+        config.heartbeat_sec = 0
+        for key, value in overrides.items():
+            setattr(config, key, value)
+        server = ProxyServer(config, Logger('debug', callback=callback, echo=False))
+        server.start()
+        return server, config, lines
+
+    def test_handshake_timeout_drops_stalled_session(self):
+        """A peer that connects but never finishes the login must be dropped
+        when the handshake deadline fires (close code 1001), not held open."""
+        server, config, _lines = self._server(handshake_timeout=1.0)
+        try:
+            client, _headers = connect_ws(config.ws_port)
+            closed = client.wait_close(6)      # send nothing: a stalled peer
+            client.close()
+            self.assertIsNotNone(
+                closed, 'a stalled session must be dropped by the handshake deadline')
+            self.assertEqual(closed[0], 1001)
+        finally:
+            server.stop()
+
+    def test_connect_retries_unreachable_backend(self):
+        """A backend that refuses the connection is retried the configured
+        number of times (each attempt logged) before the player is told."""
+        dead_port = free_port()                # nothing listens on this port
+        server, config, lines = self._server(
+            target='127.0.0.1:%d' % dead_port,
+            connect_timeout=1.0, connect_retries=2, connect_retry_delay=0.1)
+        try:
+            client, _headers = connect_ws(config.ws_port)
+            client.send(b'\x01\x02\x03')       # any first frame drives the connect path
+            closed = client.wait_close(8)
+            client.close()
+            retries = [line for line in lines if 'retrying' in line]
+            self.assertEqual(
+                len(retries), 2,
+                'expected two retry attempts for connect_retries=2, got %r' % retries)
+            self.assertIsNotNone(closed, 'the session must end after the retries give up')
+        finally:
+            server.stop()
 
 
 if __name__ == '__main__':

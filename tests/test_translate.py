@@ -1452,6 +1452,7 @@ class TranslatorSchedulingTests(unittest.IsolatedAsyncioTestCase):
         bridge = object.__new__(Bridge)
         bridge._translator_direct = False
         bridge._translator_inflight = 0
+        bridge._handshake_timer = None
         return bridge
 
     async def test_login_stays_on_worker_but_play_switches_to_direct(self):
