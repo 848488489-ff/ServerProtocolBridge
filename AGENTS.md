@@ -170,3 +170,29 @@ ships to end users.
 - Before committing, run the UTF-8 audit described in "Text-file editing": no
   BOM, no U+FFFD, no mojibake leads, and no Chinese in paths or tooling output.
 - Keep each commit focused: one logical change per commit.
+
+## GitHub Releases
+
+Releases are tagged `v<version>` and correspond to the files in
+`web/api/version.json` (version, sizes, URLs).
+
+Process for a release (usually after the version bump and artifact rebuild):
+
+1. Push all commits to `origin/main` (`git push origin main`; the network can
+   drop the connection — the upload line `eXXX..5d03acb main -> main` means the
+   push went through, even if the command reports a non-zero status).
+2. Clear every GitHub Release (`DELETE /repos/{owner}/{repo}/releases/{id}`
+   via the REST API) — "clear and redo".
+3. Create the new Release: `tag_name` = `v<version>`, `name` = version, and a
+   body from the changelog in `web/api/version.json` (Chinese + English).
+4. Upload the four artifacts from `web/downloads/` as Release assets: the
+   EXE, APK, Linux ELF and the source ZIP (name = the file's real name).
+   `gh` is not installed here, so the REST API is used
+   (`POST .../releases/{id}/assets?name=...` on `uploads.github.com`); the
+   token is in `GH_TOKEN`. The network to GitHub is flaky — retry uploads.
+5. Cloudflare Pages was already deployed via wrangler (or the Direct Upload
+   API, falling back to wrangler when Cloudflare Access blocks it); the site
+   must serve the new version (verify `/api/version.json`).
+
+`web/downloads/` binaries are committed (see Git rules above), so the
+artifacts exist locally even when GitHub is unreachable.
