@@ -162,7 +162,7 @@ ships to end users.
   used by this repository: `fix:`, `feat:`, `chore:`, `docs:`, `build:`,
   `ci:`, `test:` followed by a lowercase summary.
 - Do not commit machine-local artifacts: `config.json`, `certs/` (private
-  keys), `dist/`, `.wrangler/`, `cloudflare_credentials.json`,
+  keys), `dist/`, `.wrangler/`,
   `local-config-backup/`, or the `source_export/` staging directory.
 - **Do commit the release binaries** under `web/downloads/` (EXE, APK, Linux
   ELF and the source ZIP) — the website serves them directly. The ZIP is caught

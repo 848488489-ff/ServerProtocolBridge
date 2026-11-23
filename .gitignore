@@ -11,9 +11,6 @@ android/.idea/
 android/captures/
 *.iml
 
-# Cloudflare Pages deploy credentials (never committed)
-cloudflare_credentials.json
-
 # TLS material for the local wss:// listener: the private key must never be
 # committed (cert.pem alone is public, key.pem is the server identity)
 certs/
