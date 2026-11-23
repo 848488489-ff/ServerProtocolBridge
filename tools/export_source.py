@@ -84,7 +84,6 @@ WEB_FILES = (
     "i18n.js",
     "icon.svg",
     "favicon.ico",
-    "_headers",
 )
 # Copy the whole API directory, not just version/FAQ: the static reference and
 # every JSON endpoint are part of the website source package.
