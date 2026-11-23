@@ -190,9 +190,12 @@ Process for a release (usually after the version bump and artifact rebuild):
    `gh` is not installed here, so the REST API is used
    (`POST .../releases/{id}/assets?name=...` on `uploads.github.com`); the
    token is in `GH_TOKEN`. The network to GitHub is flaky — retry uploads.
-5. Cloudflare Pages was already deployed via wrangler (or the Direct Upload
-   API, falling back to wrangler when Cloudflare Access blocks it); the site
-   must serve the new version (verify `/api/version.json`).
+5. GitHub Pages was already deployed automatically (see
+   `.github/workflows/pages.yml`; the site is published from the `web/`
+   directory on push to `main`); the old Cloudflare Pages address
+   (`banbengengxinjiancha.pages.dev`) 301-redirects to the GitHub Pages site.
+   Verify the new site serves the new version:
+   `https://848488489-ff.github.io/ServerProtocolBridge/api/version.json`.
 
 `web/downloads/` binaries are committed (see Git rules above), so the
 artifacts exist locally even when GitHub is unreachable.

@@ -1,0 +1,43 @@
+# Deploy the download website (web/) to GitHub Pages on every push to main.
+#
+# The site is published at https://848488489-ff.github.io/ServerProtocolBridge/.
+# The old Cloudflare Pages address (banbengengxinjiancha.pages.dev) 301-redirects
+# to this GitHub Pages site.
+#
+# The Pages source must be set to "GitHub Actions" (the first deployment on a
+# fresh repository enables it automatically through the `pages` environment).
+name: Deploy site to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push cancels an in-flight one.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

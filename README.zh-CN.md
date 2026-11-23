@@ -70,7 +70,7 @@ python -m pytest tests/ -q
 proxy/       桥接核心：协议翻译、WebSocket/TCP 泵、Web UI、多语言
 tools/       构建、导出源码、许可证与发布辅助
 tests/       Pytest 套件（协议、翻译、加密、API、Web UI）
-web/         项目更新/下载网站（Cloudflare Pages）
+web/         项目更新/下载网站（GitHub Pages）
 android/     Kotlin Android 包装（Gradle + Chaquopy）
 ```
 

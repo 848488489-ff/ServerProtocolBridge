@@ -37,16 +37,16 @@ from .i18n import get_language, tr
 from .version import VERSION
 
 # Public endpoint that announces the newest release: a plain static file on
-# Cloudflare Pages (see the update section of the README for the
-# expected document).  *.pages.dev is reachable from mainland China, unlike
-# *.workers.dev, which is DNS-poisoned there.
+# GitHub Pages (see the update section of the README for the
+# expected document).  The site used to live on Cloudflare Pages; the old
+# pages.dev address now auto-redirects to this GitHub Pages site.
 #
 # This address is compiled into the program and is not a setting: it is never
 # read from config.json, and no window or command-line option edits it, so an
 # installed copy always asks the official endpoint.  Listing several URLs here
 # (comma separated, tried in order -- see check()) is a decision made when the
 # program is built, not something a user can influence.
-PAGES_UPDATE_URL = 'https://banbengengxinjiancha.pages.dev/api/version.json'
+PAGES_UPDATE_URL = 'https://848488489-ff.github.io/ServerProtocolBridge/api/version.json'
 DEFAULT_UPDATE_URL = PAGES_UPDATE_URL
 
 # The endpoint may sit on the other side of the planet, so give it room: the

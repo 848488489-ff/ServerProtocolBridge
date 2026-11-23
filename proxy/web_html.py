@@ -63,6 +63,11 @@ a { color: var(--accent); }
   width: 100%; background: var(--field); border: 1px solid var(--border);
   border-radius: 8px; padding: 7px 9px;
 }
+.side-gh {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--muted); font-size: 13px; text-decoration: none;
+}
+.side-gh:hover { color: var(--accent); }
 .main { flex: 1; min-width: 0; padding: 18px 22px 22px; }
 .header { display: flex; align-items: flex-start; gap: 16px; margin-bottom: 12px; }
 .header h1 { margin: 0; font-size: 23px; font-weight: 700; line-height: 1.25; }
@@ -306,6 +311,8 @@ dialog::backdrop { background: rgba(0, 0, 0, .42); }
     <div class="side-foot">
       <div><label data-i18n="gui.label.theme"></label><select id="theme-select"></select></div>
       <div><label data-i18n="gui.language"></label><select id="language-select"></select></div>
+      <a class="side-gh" href="https://github.com/848488489-ff/ServerProtocolBridge"
+         target="_blank" rel="noreferrer" data-i18n="gui.side.github"></a>
     </div>
   </aside>
 
