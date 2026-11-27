@@ -1,4 +1,4 @@
-# Deploy the download website (web/) to GitHub Pages on every push to main.
+# Deploy the download website (docs/) to GitHub Pages on every push to main.
 #
 # The site is published at https://848488489-ff.github.io/ServerProtocolBridge/.
 # The old Cloudflare Pages address (banbengengxinjiancha.pages.dev) 301-redirects
@@ -37,7 +37,7 @@ jobs:
       - name: Upload site
         uses: actions/upload-pages-artifact@v3
         with:
-          path: web
+          path: docs
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4

@@ -77,7 +77,7 @@ python -m pytest tests/ -q
 proxy/       bridge core: protocol translation, WebSocket/TCP pumps, Web UI, i18n
 tools/       build, source export, licence and release helpers
 tests/       pytest suite (protocol, translation, crypto, API, Web UI)
-web/         release/download website (GitHub Pages)
+docs/         release/download website (GitHub Pages)
 android/     Kotlin Android wrapper (Gradle + Chaquopy)
 ```
 

@@ -265,12 +265,16 @@ def build_readme(version: str, generated_at: str, version_json: Path) -> str:
         "\n   Linux program (x86_64, glibc 2.36+)\n     {0}\n".format(linux_url)
         if linux_url else ""
     )
-    # Derive the archive name from the version instead of reading
-    # ``source_name`` / ``source_url`` off the manifest: export_source only
-    # rewrites the size and hash fields, so those two still point at the
-    # previous release until the archive is uploaded.
+    # The source ZIP is served from the GitHub Release, not the site.  Prefer
+    # the manifest's ``source_url`` when it already points at the release;
+    # otherwise derive the Release asset URL from the repo and tag.
     zip_name = "ServerProtocolBridge-{v}-source.zip".format(v=version)
-    zip_url = _join_url(page, "/downloads/" + zip_name)
+    source_url = str(data.get("source_url") or "").strip()
+    if source_url and "releases/download/" in source_url:
+        zip_url = source_url
+    else:
+        repo = "https://github.com/848488489-ff/ServerProtocolBridge"
+        zip_url = "{0}/releases/download/v{1}/{2}".format(repo, version, zip_name)
 
     return f"""Server Protocol Bridge {version} - source package
 Generated: {generated_at}
@@ -463,7 +467,8 @@ def main() -> int:
         size_mb = zip_path.stat().st_size / (1024 * 1024)
         log(f"      size:   {size_mb:.2f} MB ({zip_path.stat().st_size} bytes)")
         log("[4/4] updated api/version.json with source_size")
-        log("      copy the ZIP into web/downloads/ before deploying the site")
+        log("      upload the ZIP as a GitHub Release asset; the site's")
+        log("      source link points at the Release, not /downloads/")
     else:
         log("[3/4] skipped ZIP (--no-zip)")
         log("[4/4] api/version.json was not updated")

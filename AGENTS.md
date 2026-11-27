@@ -62,7 +62,7 @@ python tools/build.py
   user-visible text is translated.
 - The version number has a single source of truth: `proxy/version_info.py`
   (`VERSION`). `proxy/version.py` imports it, and the matching numbers in
-  `android/app/build.gradle` and `web/api/version.json` must be bumped
+  `android/app/build.gradle` and `docs/api/version.json` must be bumped
   together.
 - Keep modules small and focused; large files are split by responsibility
   (e.g. `translator_login_*.py`, `proxy_bridge_*.py`).
@@ -129,8 +129,8 @@ The repository is English-only. The single exception is in-app UI copy that
 ships to end users.
 
 - **Allowed Chinese:** the `zh` entries in `proxy/locales/*.py`, the `zh`
-  strings in `web/assets/app.js` / `web/i18n.js`, Chinese content inside
-  `web/api/*.json` that is shown on the website, and `README.zh-CN.md`.
+  strings in `docs/assets/app.js` / `docs/i18n.js`, Chinese content inside
+  `docs/api/*.json` that is shown on the website, and `README.zh-CN.md`.
 - **Everything else is English:** file and directory names, script output and
   log messages, docstrings, code comments, commit messages, documentation,
   release notes in build tooling, and the generated `README.txt` inside the
@@ -164,9 +164,11 @@ ships to end users.
 - Do not commit machine-local artifacts: `config.json`, `certs/` (private
   keys), `dist/`, `.wrangler/`,
   `local-config-backup/`, or the `source_export/` staging directory.
-- **Do commit the release binaries** under `web/downloads/` (EXE, APK, Linux
-  ELF and the source ZIP) — the website serves them directly. The ZIP is caught
-  by the `*.zip` ignore rule, so add it explicitly with `git add -f`.
+- **Do commit the release binaries** under `docs/downloads/` (EXE, APK, Linux
+  ELF) — the website serves them directly. The **source ZIP is not hosted by
+  the site** anymore: the site's "Get source" link points at the GitHub
+  Release asset instead (`https://github.com/848488489-ff/ServerProtocolBridge/
+  releases/download/v<version>/ServerProtocolBridge-<version>-source.zip`).
 - Before committing, run the UTF-8 audit described in "Text-file editing": no
   BOM, no U+FFFD, no mojibake leads, and no Chinese in paths or tooling output.
 - Keep each commit focused: one logical change per commit.
@@ -174,7 +176,7 @@ ships to end users.
 ## GitHub Releases
 
 Releases are tagged `v<version>` and correspond to the files in
-`web/api/version.json` (version, sizes, URLs).
+`docs/api/version.json` (version, sizes, URLs).
 
 Process for a release (usually after the version bump and artifact rebuild):
 
@@ -184,18 +186,19 @@ Process for a release (usually after the version bump and artifact rebuild):
 2. Clear every GitHub Release (`DELETE /repos/{owner}/{repo}/releases/{id}`
    via the REST API) — "clear and redo".
 3. Create the new Release: `tag_name` = `v<version>`, `name` = version, and a
-   body from the changelog in `web/api/version.json` (Chinese + English).
-4. Upload the four artifacts from `web/downloads/` as Release assets: the
-   EXE, APK, Linux ELF and the source ZIP (name = the file's real name).
+   body from the changelog in `docs/api/version.json` (Chinese + English).
+4. Upload the four artifacts as Release assets: the EXE, APK and Linux ELF
+   from `docs/downloads/`, and the source ZIP from the repository root
+   (`ServerProtocolBridge-<version>-source.zip`, name = the file's real name).
    `gh` is not installed here, so the REST API is used
    (`POST .../releases/{id}/assets?name=...` on `uploads.github.com`); the
    token is in `GH_TOKEN`. The network to GitHub is flaky — retry uploads.
 5. GitHub Pages was already deployed automatically (see
-   `.github/workflows/pages.yml`; the site is published from the `web/`
+   `.github/workflows/pages.yml`; the site is published from the `docs/`
    directory on push to `main`); the old Cloudflare Pages address
    (`banbengengxinjiancha.pages.dev`) 301-redirects to the GitHub Pages site.
    Verify the new site serves the new version:
    `https://848488489-ff.github.io/ServerProtocolBridge/api/version.json`.
 
-`web/downloads/` binaries are committed (see Git rules above), so the
+`docs/downloads/` binaries are committed (see Git rules above), so the
 artifacts exist locally even when GitHub is unreachable.
